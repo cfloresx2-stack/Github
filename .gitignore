@@ -2,3 +2,6 @@
 ~$*.pptx
 ~$*.docx
 ~$*.xlsx
+
+# Configuración local de Claude Code
+.claude/
