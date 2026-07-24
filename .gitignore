@@ -1,0 +1,4 @@
+# Archivos de bloqueo temporal de Microsoft Office
+~$*.pptx
+~$*.docx
+~$*.xlsx
