@@ -55,4 +55,20 @@ fn full_pipeline_from_load_to_voltage_drop() {
         220.0,
     );
     assert!(vd_pct < 3.0, "caída de tensión {vd_pct}% excede el 3% recomendado");
+
+    // Módulo 4.8: selección de protección de conductor (240.4(B) — siguiente tamaño
+    // estándar superior, permitido porque el circuito no alimenta tomacorrientes
+    // para cargas portátiles).
+    let protection_amps = conductor_protection_amps(selection.corrected_ampacity, true);
+    assert_eq!(protection_amps, 50.0);
+
+    // Verificación de capacidad interruptiva contra la falla disponible en el
+    // tablero (dato que vendría del módulo de cortocircuito, aún no implementado —
+    // aquí se asume un valor típico de placa de tablero de baja tensión).
+    let interrupting_check = check_interrupting_capacity(22.0, 8.0);
+    assert_eq!(interrupting_check, InterruptingCapacityCheck::Suficiente);
+
+    // Coordinación básica contra el interruptor principal aguas arriba (100 A).
+    let coordination = evaluate_basic_coordination(100.0, protection_amps);
+    assert_eq!(coordination, Coordination::Selectiva);
 }

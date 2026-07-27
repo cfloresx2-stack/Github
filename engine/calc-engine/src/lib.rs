@@ -10,9 +10,13 @@
 //! - Caída de tensión (módulo [`voltage_drop`]).
 //! - Dimensionamiento de conductor para grupos de motores (módulo [`motor`]).
 //!
+//! - Selección de protección de conductor y de motor, verificación de capacidad
+//!   interruptiva y heurística de coordinación básica (módulo [`protection`]).
+//!
 //! ## Pendiente (ver Secciones 5 y 11 del plan maestro)
-//! Canalizaciones/llenado de ductos, protecciones y coordinación, transformadores,
-//! cortocircuito, puesta a tierra, factor de potencia/capacitores.
+//! Canalizaciones/llenado de ductos, transformadores, cortocircuito (el módulo de
+//! protecciones ya acepta la corriente de falla como parámetro, pero aún no hay un
+//! motor que la calcule), puesta a tierra, factor de potencia/capacitores.
 //!
 //! ## ⚠️ Origen de los datos tabulares — requiere validación de un ingeniero
 //! Las tablas de ampacidad y los factores de corrección usados aquí son los valores
@@ -35,6 +39,7 @@ pub mod common;
 pub mod conductor;
 pub mod load;
 pub mod motor;
+pub mod protection;
 pub mod voltage_drop;
 
 pub use common::Phases;
@@ -48,4 +53,9 @@ pub use load::{
     LoadCategory,
 };
 pub use motor::motor_group_conductor_ampacity;
+pub use protection::{
+    check_interrupting_capacity, conductor_protection_amps, evaluate_basic_coordination,
+    motor_branch_protection_amps, motor_branch_protection_max_percent, next_standard_size,
+    Coordination, InterruptingCapacityCheck, ProtectionKind, STANDARD_DEVICE_SIZES,
+};
 pub use voltage_drop::{voltage_drop_percent, voltage_drop_volts, K_ALUMINUM, K_COPPER};

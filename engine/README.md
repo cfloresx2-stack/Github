@@ -27,16 +27,17 @@ engine/
       conductor.rs        # Módulos 4.4-4.6: corriente de diseño, ampacidad, correcciones, selección
       voltage_drop.rs      # Caída de tensión
       motor.rs              # Dimensionamiento de conductor para grupos de motores
-      lib.rs                 # punto de entrada, aviso de procedencia de datos
+      protection.rs           # Módulo 4.8: protecciones, capacidad interruptiva, coordinación básica
+      lib.rs                    # punto de entrada, aviso de procedencia de datos
     tests/
-      pipeline.rs             # prueba de integración: carga → demanda → conductor → caída de tensión
+      pipeline.rs                # prueba de integración: carga → demanda → conductor → protección → caída de tensión
 ```
 
 ## Correr las pruebas
 
 ```bash
 cd engine
-cargo test        # 22 pruebas unitarias + 1 de integración
+cargo test        # 34 pruebas unitarias + 1 de integración
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -61,7 +62,13 @@ release).
 
 ## Qué falta (ver Secciones 5 y 11 del plan maestro)
 
-Canalizaciones/llenado de ductos, protecciones y coordinación, transformadores,
-cortocircuito, puesta a tierra, factor de potencia/capacitores. El siguiente módulo
-recomendado es **protecciones** (Módulo 4.8), porque ya depende de la ampacidad de
-conductor que este motor calcula.
+Canalizaciones/llenado de ductos, transformadores, cortocircuito, puesta a tierra,
+factor de potencia/capacitores. El siguiente módulo recomendado es **cortocircuito**
+(Sección 5.7), porque hoy `protection::check_interrupting_capacity` recibe la
+corriente de falla disponible como parámetro externo — nada en el motor la calcula
+todavía.
+
+**Nota sobre `protection::evaluate_basic_coordination`:** es una heurística de campo
+(relación 2:1 entre protecciones en serie), no un análisis de curvas tiempo-corriente
+con datos del fabricante. Documentado explícitamente en el código — no usar como
+única base de una memoria de cálculo de coordinación de protecciones.
