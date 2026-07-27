@@ -8,6 +8,7 @@ import {
   select_conductor,
   voltage_drop_percent,
   evaluate_voltage_drop,
+  evaluate_conductor_ampacity,
 } from "../pkg/calc_engine_wasm.js";
 
 // Mismo escenario que engine/calc-engine/tests/pipeline.rs:
@@ -35,9 +36,23 @@ assert.ok(selection.corrected_ampacity >= requiredCurrent);
 const vdPct = voltage_drop_percent(requiredCurrent, 25.0, selection.conductor, true, 220.0);
 assert.ok(vdPct < 3.0, `voltage drop: ${vdPct}%`);
 
-const finding = JSON.parse(evaluate_voltage_drop("Alim-Compresores", true, vdPct));
-assert.equal(finding.status, "Cumple");
-assert.ok(finding.observation.includes(vdPct.toFixed(2)));
+const vdFinding = JSON.parse(evaluate_voltage_drop("Alim-Compresores", true, vdPct));
+assert.equal(vdFinding.status, "Cumple");
+assert.ok(vdFinding.observation.includes(vdPct.toFixed(2)));
+
+const ampacityFinding = JSON.parse(
+  evaluate_conductor_ampacity("Alim-Compresores", requiredCurrent, selection.corrected_ampacity),
+);
+assert.equal(ampacityFinding.status, "Cumple");
 
 console.log("OK — WASM reproduce el pipeline de calc-engine/compliance-engine:");
-console.log({ installed, demand, designCurrent, requiredCurrent, selection, vdPct, finding });
+console.log({
+  installed,
+  demand,
+  designCurrent,
+  requiredCurrent,
+  selection,
+  vdPct,
+  vdFinding,
+  ampacityFinding,
+});

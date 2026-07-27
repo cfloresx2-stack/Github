@@ -1,0 +1,8 @@
+{
+  "name": "calc_engine_wasm",
+  "version": "0.1.0",
+  "private": true,
+  "main": "calc_engine_wasm.js",
+  "types": "calc_engine_wasm.d.ts",
+  "files": ["calc_engine_wasm.js", "calc_engine_wasm_bg.wasm", "calc_engine_wasm_bg.wasm.d.ts", "calc_engine_wasm.d.ts"]
+}

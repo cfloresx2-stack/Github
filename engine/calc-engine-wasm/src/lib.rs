@@ -116,6 +116,16 @@ pub fn voltage_drop_percent(
     ))
 }
 
+fn finding_to_json(finding: &compliance_engine::ComplianceFinding) -> String {
+    format!(
+        r#"{{"rule_id":"{}","status":"{:?}","norm_reference":"{}","observation":"{}"}}"#,
+        finding.rule_id,
+        finding.status,
+        finding.norm_reference.code.replace('"', "'"),
+        finding.observation.replace('"', "'")
+    )
+}
+
 /// Sección 6: evalúa la regla de caída de tensión y retorna el hallazgo como JSON:
 /// `{"rule_id","status","norm_reference","observation"}`.
 #[wasm_bindgen]
@@ -126,11 +136,21 @@ pub fn evaluate_voltage_drop(
 ) -> String {
     let finding =
         compliance_engine::evaluate_voltage_drop(circuit_name, is_feeder, voltage_drop_percent);
-    format!(
-        r#"{{"rule_id":"{}","status":"{:?}","norm_reference":"{}","observation":"{}"}}"#,
-        finding.rule_id,
-        finding.status,
-        finding.norm_reference.code.replace('"', "'"),
-        finding.observation.replace('"', "'")
-    )
+    finding_to_json(&finding)
+}
+
+/// Sección 6: evalúa la regla de ampacidad de conductor (obligatoria) y retorna el
+/// hallazgo como JSON, mismo formato que [`evaluate_voltage_drop`].
+#[wasm_bindgen]
+pub fn evaluate_conductor_ampacity(
+    circuit_name: &str,
+    required_current_amps: f64,
+    corrected_ampacity_amps: f64,
+) -> String {
+    let finding = compliance_engine::evaluate_conductor_ampacity(
+        circuit_name,
+        required_current_amps,
+        corrected_ampacity_amps,
+    );
+    finding_to_json(&finding)
 }
