@@ -5,7 +5,7 @@
 
 **Referencias técnicas base:** NOM-001-SEDE-2018 (Instalaciones Eléctricas), *Ugly's Electrical Reference*, tablas y metodologías de cálculo de carga, conductores, protecciones y puesta a tierra derivadas de dichas fuentes.
 
-**Nombre de trabajo:** **ElectraNOM** *(placeholder — pendiente de validación de marca/disponibilidad)*
+**Nombre:** **ElectraNOM**
 
 ---
 
@@ -169,7 +169,7 @@ Este vacío, combinado con la obligatoriedad legal de cumplimiento NOM-001-SEDE 
 │Proyectos│   │Motor de      │ │Motor     │ │IA / Asistente │ │Documentos  │
 │Servicio │   │Cálculo       │ │Normativo │ │Experto (RAG)  │ │& Reportes  │
 │(CRUD,   │   │Eléctrico     │ │NOM-001   │ │               │ │(PDF/Excel/ │
-│versiones│   │(Node/Python) │ │-SEDE     │ │               │ │diagramas)  │
+│versiones│   │(Rust)        │ │-SEDE     │ │               │ │diagramas)  │
 └────┬────┘   └──────┬───────┘ └────┬─────┘ └──────┬────────┘ └─────┬──────┘
      │               │               │              │                │
      └───────────────┴───────┬───────┴──────────────┴────────────────┘
@@ -208,7 +208,8 @@ Este vacío, combinado con la obligatoriedad legal de cumplimiento NOM-001-SEDE 
   - `ai-assistant-service`: orquestación IA/RAG (Sección 7).
   - `reporting-service`: generación PDF/Excel/diagramas.
   - `billing-service`: suscripciones, facturación (Sección 12).
-- Lenguaje recomendado backend: **TypeScript (NestJS)** para servicios de negocio + **Python (FastAPI)** para motor de cálculo/IA (ecosistema científico y de ML).
+- Lenguaje recomendado backend: **TypeScript (NestJS)** para servicios de negocio (proyectos, documentos, facturación) + **Rust** para el `calc-engine-service` (motor de cálculo, Sección 5) + **Python (FastAPI)** para el `ai-assistant-service` (orquestación IA/RAG, ecosistema ML).
+- **Motor de cálculo en Rust como núcleo único multiplataforma:** el mismo crate de Rust se expone de tres formas — (1) como servicio nativo en el backend, (2) compilado a **WebAssembly** para ejecutarse en el cliente Web, y (3) enlazado vía FFI (UniFFI/swift-bridge) como librería nativa en las apps Swift de iPhone/iPad/Mac. Esto garantiza que **el mismo cálculo determinístico corre en todas las plataformas** (sin reimplementar fórmulas en cada lenguaje) y habilita **cálculo offline en iPad** (Sección 8.5) sin depender de conectividad.
 - Comunicación interna: REST/gRPC + colas de eventos (SQS/RabbitMQ) para procesos asíncronos (generación de reportes, cálculos pesados de cortocircuito).
 
 ### 3.4 Base de datos
@@ -926,7 +927,8 @@ Plataforma **Web + iPad** (prioridad, por ser el dispositivo de modelado princip
 | iOS/iPadOS/macOS | Swift 5.x, SwiftUI, Swift Package Manager, Combine/async-await |
 | Web | TypeScript, React, Next.js, Tailwind CSS |
 | Backend de negocio | Node.js + NestJS (TypeScript) |
-| Motor de cálculo / IA | Python + FastAPI (numpy/scipy para cálculos, integración SDK Anthropic) |
+| Motor de cálculo eléctrico | **Rust** — crate único compilado a servicio nativo, WebAssembly (Web) y librería FFI (Swift, vía UniFFI) |
+| IA / orquestación | Python + FastAPI (integración SDK Anthropic, RAG) |
 | Base de datos transaccional | PostgreSQL 15+ |
 | Base vectorial | pgvector (extensión de Postgres) o Pinecone gestionado |
 | Cache/sesión | Redis |
