@@ -1,6 +1,6 @@
 # ElectraNOM — Motor de cálculo y motor normativo (Rust)
 
-Dos crates que implementan las Secciones 5 y 6 del plan maestro:
+Tres crates que implementan las Secciones 5 y 6 del plan maestro:
 [`docs/PLAN_MAESTRO_PLATAFORMA_ELECTRICA.md`](../docs/PLAN_MAESTRO_PLATAFORMA_ELECTRICA.md).
 
 - **`calc-engine`** — motor de cálculo determinístico. Cubre el alcance crítico del
@@ -9,6 +9,8 @@ Dos crates que implementan las Secciones 5 y 6 del plan maestro:
 - **`compliance-engine`** — motor normativo (Sección 6): evalúa resultados de cálculo
   contra reglas y produce hallazgos (`Cumple` / `Advertencia` / `NoCumple` /
   `NoEvaluable`) con evidencia y referencia normativa.
+- **`calc-engine-wasm`** — bindings de WebAssembly de ambos motores, probados desde
+  Node.js. Ver [`calc-engine-wasm/README.md`](calc-engine-wasm/README.md).
 
 ## Por qué Rust
 
@@ -16,8 +18,12 @@ Un único crate (`calc-engine`) se reutiliza en las tres plataformas del product
 (Sección 3.3 del plan maestro):
 
 1. **Backend** — como servicio nativo (`calc-engine-service`).
-2. **Web** — compilado a WebAssembly.
+2. **Web** — compilado a WebAssembly. **Ya verificado end-to-end** (`calc-engine-wasm`
+   compila a `wasm32-unknown-unknown` y reproduce desde Node.js los mismos resultados
+   que `cargo test`, incluyendo el motor normativo).
 3. **iPhone/iPad/Mac** — enlazado como librería nativa vía FFI (UniFFI/swift-bridge).
+   **Aún no implementado** — requiere Xcode/macOS para compilar y probar el lado
+   Swift, no disponible en este entorno.
 
 Esto garantiza que el mismo cálculo determinístico corre en todas las plataformas y
 habilita cálculo **offline en iPad** sin depender de conectividad.
@@ -58,6 +64,10 @@ engine/
       voltage_drop.rs, conductor.rs, protection.rs, conduit.rs, grounding.rs  # 5 reglas
       lib.rs                                # punto de entrada, aviso de estado de referencias normativas
     tests/with_calc_engine.rs                # integración con calc-engine (dev-dependency)
+  calc-engine-wasm/
+    src/lib.rs                                # bindings #[wasm_bindgen] de ambos motores
+    test/pipeline.test.mjs                    # prueba manual desde Node.js (ver su README)
+    pkg/                                      # generado por wasm-bindgen, no commiteado
 ```
 
 ## Correr las pruebas
@@ -66,8 +76,11 @@ engine/
 cd engine
 cargo test --workspace              # 64 pruebas unitarias + 4 de integración
 cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy -p calc_engine_wasm --target wasm32-unknown-unknown -- -D warnings
 cargo fmt --check
 ```
+
+Para compilar y probar el WASM, ver [`calc-engine-wasm/README.md`](calc-engine-wasm/README.md).
 
 ## ⚠️ Antes de usar en un proyecto real
 

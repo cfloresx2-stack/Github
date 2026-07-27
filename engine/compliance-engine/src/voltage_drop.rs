@@ -29,9 +29,9 @@ pub fn evaluate_voltage_drop(
         "circuito derivado"
     };
     let comparison = if voltage_drop_percent <= RECOMMENDED_LIMIT_PERCENT {
-        "dentro de"
+        "dentro del"
     } else {
-        "por encima de"
+        "por encima del"
     };
     ComplianceFinding {
         rule_id: "caida_tension",
@@ -43,7 +43,7 @@ pub fn evaluate_voltage_drop(
         },
         observation: format!(
             "El {segment} \"{circuit_name}\" presenta una caída de tensión calculada de \
-             {voltage_drop_percent:.2}%, {comparison} el límite recomendado de \
+             {voltage_drop_percent:.2}%, {comparison} límite recomendado de \
              {RECOMMENDED_LIMIT_PERCENT:.0}%."
         ),
     }

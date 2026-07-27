@@ -1,0 +1,67 @@
+# calc-engine-wasm
+
+Bindings de WebAssembly para `calc-engine` y `compliance-engine`. Prueba de que la
+premisa arquitectónica de la Sección 3.3 del plan maestro ("un único núcleo Rust
+reutilizado en Web") funciona de verdad — no solo en `cargo test`, sino compilado a
+WASM y ejecutado desde JavaScript.
+
+**No es la API definitiva del producto.** Expone un subconjunto curado de funciones
+(corriente de diseño, selección de conductor, caída de tensión, regla de cumplimiento
+de caída de tensión) suficiente para demostrar el pipeline completo desde JS. El
+contrato JSON real para el servicio de proyectos (Sección 3.3) debe diseñarse aparte.
+
+## Por qué un crate separado
+
+`calc-engine` y `compliance-engine` no tienen ninguna dependencia de `wasm-bindgen`.
+Todo el acoplamiento a WASM/JS vive en este tercer crate, para que los dos motores
+sigan siendo reutilizables tal cual en el backend nativo y en los futuros bindings de
+Swift (FFI/UniFFI) sin arrastrar dependencias de JavaScript.
+
+## Compilar y generar los bindings
+
+```bash
+# Una sola vez: target de compilación + CLI que genera el JS (misma versión que la
+# dependencia wasm-bindgen del Cargo.toml, hoy 0.2.126).
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.126
+
+# Compilar a WASM
+cargo build -p calc_engine_wasm --target wasm32-unknown-unknown --release
+
+# Generar los bindings de JS (target nodejs; para uso en navegador usar --target web)
+wasm-bindgen --target nodejs --out-dir calc-engine-wasm/pkg \
+  target/wasm32-unknown-unknown/release/calc_engine_wasm.wasm
+```
+
+`pkg/` es un artefacto generado — no está commiteado (ver `.gitignore`), se
+regenera con el comando de arriba.
+
+## Probar desde Node
+
+```bash
+cd engine/calc-engine-wasm
+node test/pipeline.test.mjs
+```
+
+Reproduce el mismo escenario que `engine/calc-engine/tests/pipeline.rs` (Rust puro)
+y verifica que el WASM da resultados idénticos — incluyendo el hallazgo de
+`compliance-engine` para la regla de caída de tensión.
+
+## Funciones expuestas
+
+| Función JS | Cubre |
+|---|---|
+| `design_current_amps(power_va, voltage, three_phase)` | Módulo 4.4 |
+| `continuous_load_adjusted_current(design_current, is_continuous)` | 125% de carga continua |
+| `select_conductor(required_amps, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Módulos 4.5–4.6 |
+| `voltage_drop_percent(current_amps, one_way_length_m, conductor_name, three_phase, nominal_voltage)` | Caída de tensión |
+| `evaluate_voltage_drop(circuit_name, is_feeder, voltage_drop_percent)` → JSON | Sección 6, regla de caída de tensión |
+
+## Pendiente
+
+- Exponer el resto de `calc-engine` (protecciones, cortocircuito, tierra, factor de
+  potencia) y de `compliance-engine` (las otras 4 reglas) con el mismo patrón.
+- Contrato JSON diseñado (hoy es `format!` a mano) — considerar `serde`/`serde-wasm-bindgen`
+  cuando el contrato deje de ser exploratorio.
+- Build para `--target web` (navegador) además de `--target nodejs`.
+- FFI para Swift (UniFFI) — no se aborda en este crate.
