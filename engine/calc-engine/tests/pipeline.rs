@@ -62,10 +62,20 @@ fn full_pipeline_from_load_to_voltage_drop() {
     let protection_amps = conductor_protection_amps(selection.corrected_ampacity, true);
     assert_eq!(protection_amps, 50.0);
 
-    // Verificación de capacidad interruptiva contra la falla disponible en el
-    // tablero (dato que vendría del módulo de cortocircuito, aún no implementado —
-    // aquí se asume un valor típico de placa de tablero de baja tensión).
-    let interrupting_check = check_interrupting_capacity(22.0, 8.0);
+    // Sección 5.7: cortocircuito por método por unidad, sistema radial (fuente
+    // despreciada — ver aviso de `short_circuit` sobre esta aproximación —,
+    // transformador de 300 kVA / 4.5% Z, más el mismo alimentador ya seleccionado).
+    let system_base = PerUnitBase::new(5_000_000.0, 220.0);
+    let z_transformer = transformer_impedance_pu(4.5, 300_000.0, 220.0, system_base);
+    let feeder_ohms = conductor_resistance_ohms(&selection.conductor, 25.0, K_COPPER);
+    let z_feeder = conductor_impedance_pu(feeder_ohms, system_base);
+    let z_total = radial_system_impedance_pu(0.0, z_transformer, z_feeder);
+    let fault_current_ka = three_phase_fault_current_amps(z_total, system_base) / 1_000.0;
+    assert!(fault_current_ka > 0.5, "falla implausiblemente baja: {fault_current_ka} kA");
+
+    // Verificación de capacidad interruptiva de un interruptor de 10 kA AIC (típico
+    // en tableros derivados de baja tensión) contra la falla calculada.
+    let interrupting_check = check_interrupting_capacity(10.0, fault_current_ka);
     assert_eq!(interrupting_check, InterruptingCapacityCheck::Suficiente);
 
     // Coordinación básica contra el interruptor principal aguas arriba (100 A).

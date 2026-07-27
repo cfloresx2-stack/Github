@@ -28,16 +28,17 @@ engine/
       voltage_drop.rs      # Caída de tensión
       motor.rs              # Dimensionamiento de conductor para grupos de motores
       protection.rs           # Módulo 4.8: protecciones, capacidad interruptiva, coordinación básica
-      lib.rs                    # punto de entrada, aviso de procedencia de datos
+      short_circuit.rs          # Sección 5.7: cortocircuito trifásico por método por unidad (sistema radial)
+      lib.rs                      # punto de entrada, aviso de procedencia de datos
     tests/
-      pipeline.rs                # prueba de integración: carga → demanda → conductor → protección → caída de tensión
+      pipeline.rs                  # prueba de integración: carga → demanda → conductor → protección → cortocircuito → caída de tensión
 ```
 
 ## Correr las pruebas
 
 ```bash
 cd engine
-cargo test        # 34 pruebas unitarias + 1 de integración
+cargo test        # 40 pruebas unitarias + 1 de integración
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -62,13 +63,16 @@ release).
 
 ## Qué falta (ver Secciones 5 y 11 del plan maestro)
 
-Canalizaciones/llenado de ductos, transformadores, cortocircuito, puesta a tierra,
-factor de potencia/capacitores. El siguiente módulo recomendado es **cortocircuito**
-(Sección 5.7), porque hoy `protection::check_interrupting_capacity` recibe la
-corriente de falla disponible como parámetro externo — nada en el motor la calcula
-todavía.
+Canalizaciones/llenado de ductos, puesta a tierra, factor de potencia/capacitores. El
+siguiente módulo recomendado es **puesta a tierra** (Sección 5.8), porque el calibre
+del conductor de tierra depende de la capacidad de la protección aguas arriba, que ya
+calcula `protection.rs`.
 
-**Nota sobre `protection::evaluate_basic_coordination`:** es una heurística de campo
-(relación 2:1 entre protecciones en serie), no un análisis de curvas tiempo-corriente
-con datos del fabricante. Documentado explícitamente en el código — no usar como
-única base de una memoria de cálculo de coordinación de protecciones.
+**Notas de alcance explícitas (documentadas también en el código):**
+- `protection::evaluate_basic_coordination` es una heurística de campo (relación 2:1
+  entre protecciones en serie), no un análisis de curvas tiempo-corriente con datos
+  del fabricante.
+- `short_circuit` solo resuelve **sistemas radiales de una sola fuente** (fuente →
+  transformador → alimentador) y solo **magnitud de falla trifásica simétrica** — no
+  redes en malla, no falla línea-tierra. Ver el aviso completo al inicio de
+  `short_circuit.rs`.

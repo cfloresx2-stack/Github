@@ -12,11 +12,13 @@
 //!
 //! - Selección de protección de conductor y de motor, verificación de capacidad
 //!   interruptiva y heurística de coordinación básica (módulo [`protection`]).
+//! - Cortocircuito trifásico simétrico por el método por unidad, sistema radial de
+//!   una sola fuente (módulo [`short_circuit`]).
 //!
 //! ## Pendiente (ver Secciones 5 y 11 del plan maestro)
-//! Canalizaciones/llenado de ductos, transformadores, cortocircuito (el módulo de
-//! protecciones ya acepta la corriente de falla como parámetro, pero aún no hay un
-//! motor que la calcule), puesta a tierra, factor de potencia/capacitores.
+//! Canalizaciones/llenado de ductos, puesta a tierra, factor de potencia/capacitores,
+//! falla línea-tierra y topologías en malla/múltiples fuentes (ver limitaciones
+//! explícitas en el módulo [`short_circuit`]).
 //!
 //! ## ⚠️ Origen de los datos tabulares — requiere validación de un ingeniero
 //! Las tablas de ampacidad y los factores de corrección usados aquí son los valores
@@ -40,6 +42,7 @@ pub mod conductor;
 pub mod load;
 pub mod motor;
 pub mod protection;
+pub mod short_circuit;
 pub mod voltage_drop;
 
 pub use common::Phases;
@@ -57,5 +60,9 @@ pub use protection::{
     check_interrupting_capacity, conductor_protection_amps, evaluate_basic_coordination,
     motor_branch_protection_amps, motor_branch_protection_max_percent, next_standard_size,
     Coordination, InterruptingCapacityCheck, ProtectionKind, STANDARD_DEVICE_SIZES,
+};
+pub use short_circuit::{
+    conductor_impedance_pu, conductor_resistance_ohms, radial_system_impedance_pu,
+    three_phase_fault_current_amps, transformer_impedance_pu, PerUnitBase,
 };
 pub use voltage_drop::{voltage_drop_percent, voltage_drop_volts, K_ALUMINUM, K_COPPER};
