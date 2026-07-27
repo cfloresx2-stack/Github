@@ -5,3 +5,7 @@
 
 # Configuración local de Claude Code
 .claude/
+
+# Rust
+/engine/target/
+Cargo.lock
