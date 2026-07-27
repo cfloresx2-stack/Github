@@ -33,7 +33,10 @@ pub struct PerUnitBase {
 
 impl PerUnitBase {
     pub fn new(power_va: f64, voltage_v: f64) -> Self {
-        Self { power_va, voltage_v }
+        Self {
+            power_va,
+            voltage_v,
+        }
     }
 
     /// Corriente base trifásica, en amperes.
@@ -130,7 +133,10 @@ mod tests {
 
     #[test]
     fn radial_system_impedance_sums_in_series() {
-        assert_eq!(radial_system_impedance_pu(0.02, 1.15, 0.13), 0.02 + 1.15 + 0.13);
+        assert_eq!(
+            radial_system_impedance_pu(0.02, 1.15, 0.13),
+            0.02 + 1.15 + 0.13
+        );
     }
 
     #[test]
@@ -158,7 +164,10 @@ mod tests {
         let fault_at_transformer_secondary =
             three_phase_fault_current_amps(z_transformer, system_base);
 
-        let conductor = COPPER_CONDUCTORS.iter().find(|c| c.name == "4/0 AWG").unwrap();
+        let conductor = COPPER_CONDUCTORS
+            .iter()
+            .find(|c| c.name == "4/0 AWG")
+            .unwrap();
         let feeder_ohms = conductor_resistance_ohms(conductor, 15.0, K_COPPER);
         let feeder_pu = conductor_impedance_pu(feeder_ohms, system_base);
         let z_total = radial_system_impedance_pu(0.0, z_transformer, feeder_pu);

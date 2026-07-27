@@ -43,24 +43,132 @@ impl ConductorSize {
 /// Tabla de conductores de cobre, calibres 14 AWG a 500 kcmil, en orden ascendente
 /// de ampacidad. Fuente: NEC Table 310.16 (cobre, ≤3 conductores, 30 °C ambiente).
 pub const COPPER_CONDUCTORS: &[ConductorSize] = &[
-    ConductorSize { name: "14 AWG", circular_mils: 4_110.0, ampacity_60c: 15.0, ampacity_75c: 20.0, ampacity_90c: 25.0 },
-    ConductorSize { name: "12 AWG", circular_mils: 6_530.0, ampacity_60c: 20.0, ampacity_75c: 25.0, ampacity_90c: 30.0 },
-    ConductorSize { name: "10 AWG", circular_mils: 10_380.0, ampacity_60c: 30.0, ampacity_75c: 35.0, ampacity_90c: 40.0 },
-    ConductorSize { name: "8 AWG", circular_mils: 16_510.0, ampacity_60c: 40.0, ampacity_75c: 50.0, ampacity_90c: 55.0 },
-    ConductorSize { name: "6 AWG", circular_mils: 26_240.0, ampacity_60c: 55.0, ampacity_75c: 65.0, ampacity_90c: 75.0 },
-    ConductorSize { name: "4 AWG", circular_mils: 41_740.0, ampacity_60c: 70.0, ampacity_75c: 85.0, ampacity_90c: 95.0 },
-    ConductorSize { name: "3 AWG", circular_mils: 52_620.0, ampacity_60c: 85.0, ampacity_75c: 100.0, ampacity_90c: 110.0 },
-    ConductorSize { name: "2 AWG", circular_mils: 66_360.0, ampacity_60c: 95.0, ampacity_75c: 115.0, ampacity_90c: 130.0 },
-    ConductorSize { name: "1 AWG", circular_mils: 83_690.0, ampacity_60c: 110.0, ampacity_75c: 130.0, ampacity_90c: 145.0 },
-    ConductorSize { name: "1/0 AWG", circular_mils: 105_600.0, ampacity_60c: 125.0, ampacity_75c: 150.0, ampacity_90c: 170.0 },
-    ConductorSize { name: "2/0 AWG", circular_mils: 133_100.0, ampacity_60c: 145.0, ampacity_75c: 175.0, ampacity_90c: 195.0 },
-    ConductorSize { name: "3/0 AWG", circular_mils: 167_800.0, ampacity_60c: 165.0, ampacity_75c: 200.0, ampacity_90c: 225.0 },
-    ConductorSize { name: "4/0 AWG", circular_mils: 211_600.0, ampacity_60c: 195.0, ampacity_75c: 230.0, ampacity_90c: 260.0 },
-    ConductorSize { name: "250 kcmil", circular_mils: 250_000.0, ampacity_60c: 215.0, ampacity_75c: 255.0, ampacity_90c: 290.0 },
-    ConductorSize { name: "300 kcmil", circular_mils: 300_000.0, ampacity_60c: 240.0, ampacity_75c: 285.0, ampacity_90c: 320.0 },
-    ConductorSize { name: "350 kcmil", circular_mils: 350_000.0, ampacity_60c: 260.0, ampacity_75c: 310.0, ampacity_90c: 350.0 },
-    ConductorSize { name: "400 kcmil", circular_mils: 400_000.0, ampacity_60c: 280.0, ampacity_75c: 335.0, ampacity_90c: 380.0 },
-    ConductorSize { name: "500 kcmil", circular_mils: 500_000.0, ampacity_60c: 320.0, ampacity_75c: 380.0, ampacity_90c: 430.0 },
+    ConductorSize {
+        name: "14 AWG",
+        circular_mils: 4_110.0,
+        ampacity_60c: 15.0,
+        ampacity_75c: 20.0,
+        ampacity_90c: 25.0,
+    },
+    ConductorSize {
+        name: "12 AWG",
+        circular_mils: 6_530.0,
+        ampacity_60c: 20.0,
+        ampacity_75c: 25.0,
+        ampacity_90c: 30.0,
+    },
+    ConductorSize {
+        name: "10 AWG",
+        circular_mils: 10_380.0,
+        ampacity_60c: 30.0,
+        ampacity_75c: 35.0,
+        ampacity_90c: 40.0,
+    },
+    ConductorSize {
+        name: "8 AWG",
+        circular_mils: 16_510.0,
+        ampacity_60c: 40.0,
+        ampacity_75c: 50.0,
+        ampacity_90c: 55.0,
+    },
+    ConductorSize {
+        name: "6 AWG",
+        circular_mils: 26_240.0,
+        ampacity_60c: 55.0,
+        ampacity_75c: 65.0,
+        ampacity_90c: 75.0,
+    },
+    ConductorSize {
+        name: "4 AWG",
+        circular_mils: 41_740.0,
+        ampacity_60c: 70.0,
+        ampacity_75c: 85.0,
+        ampacity_90c: 95.0,
+    },
+    ConductorSize {
+        name: "3 AWG",
+        circular_mils: 52_620.0,
+        ampacity_60c: 85.0,
+        ampacity_75c: 100.0,
+        ampacity_90c: 110.0,
+    },
+    ConductorSize {
+        name: "2 AWG",
+        circular_mils: 66_360.0,
+        ampacity_60c: 95.0,
+        ampacity_75c: 115.0,
+        ampacity_90c: 130.0,
+    },
+    ConductorSize {
+        name: "1 AWG",
+        circular_mils: 83_690.0,
+        ampacity_60c: 110.0,
+        ampacity_75c: 130.0,
+        ampacity_90c: 145.0,
+    },
+    ConductorSize {
+        name: "1/0 AWG",
+        circular_mils: 105_600.0,
+        ampacity_60c: 125.0,
+        ampacity_75c: 150.0,
+        ampacity_90c: 170.0,
+    },
+    ConductorSize {
+        name: "2/0 AWG",
+        circular_mils: 133_100.0,
+        ampacity_60c: 145.0,
+        ampacity_75c: 175.0,
+        ampacity_90c: 195.0,
+    },
+    ConductorSize {
+        name: "3/0 AWG",
+        circular_mils: 167_800.0,
+        ampacity_60c: 165.0,
+        ampacity_75c: 200.0,
+        ampacity_90c: 225.0,
+    },
+    ConductorSize {
+        name: "4/0 AWG",
+        circular_mils: 211_600.0,
+        ampacity_60c: 195.0,
+        ampacity_75c: 230.0,
+        ampacity_90c: 260.0,
+    },
+    ConductorSize {
+        name: "250 kcmil",
+        circular_mils: 250_000.0,
+        ampacity_60c: 215.0,
+        ampacity_75c: 255.0,
+        ampacity_90c: 290.0,
+    },
+    ConductorSize {
+        name: "300 kcmil",
+        circular_mils: 300_000.0,
+        ampacity_60c: 240.0,
+        ampacity_75c: 285.0,
+        ampacity_90c: 320.0,
+    },
+    ConductorSize {
+        name: "350 kcmil",
+        circular_mils: 350_000.0,
+        ampacity_60c: 260.0,
+        ampacity_75c: 310.0,
+        ampacity_90c: 350.0,
+    },
+    ConductorSize {
+        name: "400 kcmil",
+        circular_mils: 400_000.0,
+        ampacity_60c: 280.0,
+        ampacity_75c: 335.0,
+        ampacity_90c: 380.0,
+    },
+    ConductorSize {
+        name: "500 kcmil",
+        circular_mils: 500_000.0,
+        ampacity_60c: 320.0,
+        ampacity_75c: 380.0,
+        ampacity_90c: 430.0,
+    },
 ];
 
 /// Corriente de diseño de un circuito (Módulo 4.4), sin el 125% de carga continua.
@@ -113,11 +221,7 @@ pub fn ambient_correction_factor(ambient_c: f64, rating: InsulationRating) -> Op
         InsulationRating::C75 => row.3,
         InsulationRating::C90 => row.4,
     };
-    if factor.is_nan() {
-        None
-    } else {
-        Some(factor)
-    }
+    if factor.is_nan() { None } else { Some(factor) }
 }
 
 /// Factor de ajuste por agrupamiento: más de 3 conductores portadores de corriente
@@ -220,7 +324,10 @@ mod tests {
 
     #[test]
     fn ambient_correction_base_range_is_unity() {
-        assert_eq!(ambient_correction_factor(28.0, InsulationRating::C75), Some(1.00));
+        assert_eq!(
+            ambient_correction_factor(28.0, InsulationRating::C75),
+            Some(1.00)
+        );
     }
 
     #[test]
@@ -243,8 +350,7 @@ mod tests {
     fn select_conductor_picks_smallest_that_meets_ampacity() {
         // 28 A requeridos, 75°C, 30°C ambiente, ≤3 conductores → 10 AWG (35 A) cubre;
         // 8 AWG (50 A) también cubre, pero 10 AWG es el más económico que cumple.
-        let selection =
-            select_conductor_by_ampacity(28.0, InsulationRating::C75, 28.0, 3).unwrap();
+        let selection = select_conductor_by_ampacity(28.0, InsulationRating::C75, 28.0, 3).unwrap();
         assert_eq!(selection.conductor.name, "10 AWG");
         assert_eq!(selection.corrected_ampacity, 35.0);
     }
@@ -262,12 +368,21 @@ mod tests {
     #[test]
     fn select_conductor_errors_when_ambient_out_of_table() {
         let err = select_conductor_by_ampacity(28.0, InsulationRating::C60, 95.0, 3).unwrap_err();
-        assert_eq!(err, ConductorError::AmbientOutOfTableRange { ambient_c: 95.0 });
+        assert_eq!(
+            err,
+            ConductorError::AmbientOutOfTableRange { ambient_c: 95.0 }
+        );
     }
 
     #[test]
     fn select_conductor_errors_when_nothing_in_table_is_enough() {
-        let err = select_conductor_by_ampacity(10_000.0, InsulationRating::C90, 28.0, 3).unwrap_err();
-        assert_eq!(err, ConductorError::NoConductorMeetsAmpacity { required_amps: 10_000.0 });
+        let err =
+            select_conductor_by_ampacity(10_000.0, InsulationRating::C90, 28.0, 3).unwrap_err();
+        assert_eq!(
+            err,
+            ConductorError::NoConductorMeetsAmpacity {
+                required_amps: 10_000.0
+            }
+        );
     }
 }

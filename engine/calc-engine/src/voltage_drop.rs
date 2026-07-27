@@ -53,7 +53,13 @@ pub fn voltage_drop_percent(
     phases: Phases,
     nominal_voltage: f64,
 ) -> f64 {
-    let vd = voltage_drop_volts(current_amps, one_way_length_m, conductor, k_ohm_cmil_per_ft, phases);
+    let vd = voltage_drop_volts(
+        current_amps,
+        one_way_length_m,
+        conductor,
+        k_ohm_cmil_per_ft,
+        phases,
+    );
     (vd / nominal_voltage) * 100.0
 }
 
@@ -69,7 +75,14 @@ mod tests {
     #[test]
     fn voltage_drop_within_expected_range_for_known_case() {
         // Circuito trifásico, 40 m (una vía), 50 A, conductor 8 AWG cobre, 480 V.
-        let pct = voltage_drop_percent(50.0, 40.0, conductor("8 AWG"), K_COPPER, Phases::Three, 480.0);
+        let pct = voltage_drop_percent(
+            50.0,
+            40.0,
+            conductor("8 AWG"),
+            K_COPPER,
+            Phases::Three,
+            480.0,
+        );
         assert!(pct > 1.7 && pct < 2.0, "unexpected voltage drop: {pct}%");
     }
 
@@ -89,8 +102,10 @@ mod tests {
 
     #[test]
     fn single_phase_uses_multiplier_two() {
-        let three_phase = voltage_drop_volts(50.0, 40.0, conductor("8 AWG"), K_COPPER, Phases::Three);
-        let single_phase = voltage_drop_volts(50.0, 40.0, conductor("8 AWG"), K_COPPER, Phases::Single);
+        let three_phase =
+            voltage_drop_volts(50.0, 40.0, conductor("8 AWG"), K_COPPER, Phases::Three);
+        let single_phase =
+            voltage_drop_volts(50.0, 40.0, conductor("8 AWG"), K_COPPER, Phases::Single);
         // 2 / sqrt(3) ≈ 1.1547
         assert!((single_phase / three_phase - 2.0 / 3f64.sqrt()).abs() < 1e-9);
     }

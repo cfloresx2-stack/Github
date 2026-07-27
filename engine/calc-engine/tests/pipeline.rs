@@ -11,8 +11,20 @@ fn full_pipeline_from_load_to_voltage_drop() {
     // vía), aislamiento THHW 75 °C.
     let loads = vec![
         Load::new("Compresor", 8_000.0, 0.88, LoadCategory::Fuerza, true),
-        Load::new("Banda transportadora", 5_000.0, 0.85, LoadCategory::Fuerza, true),
-        Load::new("Tablero de control", 2_000.0, 0.90, LoadCategory::Fuerza, false),
+        Load::new(
+            "Banda transportadora",
+            5_000.0,
+            0.85,
+            LoadCategory::Fuerza,
+            true,
+        ),
+        Load::new(
+            "Tablero de control",
+            2_000.0,
+            0.90,
+            LoadCategory::Fuerza,
+            false,
+        ),
     ];
 
     // Módulo 4.1: carga instalada.
@@ -26,11 +38,17 @@ fn full_pipeline_from_load_to_voltage_drop() {
 
     // Módulo 4.4: corriente de diseño trifásica a 220 V.
     let design_current = design_current_amps(demand, 220.0, Phases::Three);
-    assert!((design_current - 35.428).abs() < 0.01, "got {design_current}");
+    assert!(
+        (design_current - 35.428).abs() < 0.01,
+        "got {design_current}"
+    );
 
     // El circuito alimenta cargas continuas → 125%.
     let required_current = continuous_load_adjusted_current(design_current, true);
-    assert!((required_current - 44.285).abs() < 0.01, "got {required_current}");
+    assert!(
+        (required_current - 44.285).abs() < 0.01,
+        "got {required_current}"
+    );
 
     // Módulos 4.5–4.6: selección de conductor con corrección por temperatura
     // ambiente (35 °C) y agrupamiento (3 conductores portadores de corriente).
@@ -54,7 +72,10 @@ fn full_pipeline_from_load_to_voltage_drop() {
         Phases::Three,
         220.0,
     );
-    assert!(vd_pct < 3.0, "caída de tensión {vd_pct}% excede el 3% recomendado");
+    assert!(
+        vd_pct < 3.0,
+        "caída de tensión {vd_pct}% excede el 3% recomendado"
+    );
 
     // Módulo 4.8: selección de protección de conductor (240.4(B) — siguiente tamaño
     // estándar superior, permitido porque el circuito no alimenta tomacorrientes
@@ -71,7 +92,10 @@ fn full_pipeline_from_load_to_voltage_drop() {
     let z_feeder = conductor_impedance_pu(feeder_ohms, system_base);
     let z_total = radial_system_impedance_pu(0.0, z_transformer, z_feeder);
     let fault_current_ka = three_phase_fault_current_amps(z_total, system_base) / 1_000.0;
-    assert!(fault_current_ka > 0.5, "falla implausiblemente baja: {fault_current_ka} kA");
+    assert!(
+        fault_current_ka > 0.5,
+        "falla implausiblemente baja: {fault_current_ka} kA"
+    );
 
     // Verificación de capacidad interruptiva de un interruptor de 10 kA AIC (típico
     // en tableros derivados de baja tensión) contra la falla calculada.
@@ -81,4 +105,21 @@ fn full_pipeline_from_load_to_voltage_drop() {
     // Coordinación básica contra el interruptor principal aguas arriba (100 A).
     let coordination = evaluate_basic_coordination(100.0, protection_amps);
     assert_eq!(coordination, Coordination::Selectiva);
+
+    // Módulo 4.11: calibre del conductor de puesta a tierra de equipos, en función
+    // de la protección de 50 A ya seleccionada (no del calibre del conductor de
+    // fase).
+    let grounding_conductor = equipment_grounding_conductor_awg(protection_amps);
+    assert_eq!(grounding_conductor, "10 AWG");
+}
+
+#[test]
+fn power_factor_correction_for_the_same_installation() {
+    // Nivel de instalación completa (no de un circuito individual): 180 kW de
+    // demanda activa, FP medido 0.80, objetivo 0.95 para evitar penalización CFE.
+    let kvar = required_capacitor_kvar(180.0, 0.80, 0.95);
+    assert!(kvar > 0.0);
+    // El banco debe reducir kVAR reactivos, no eliminarlos por completo ni
+    // sobrecorregir de forma absurda para este caso.
+    assert!(kvar < 180.0, "kVAR de banco implausiblemente alto: {kvar}");
 }

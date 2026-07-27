@@ -86,7 +86,13 @@ mod tests {
     fn installed_load_sums_all_loads() {
         let loads = vec![
             Load::new("Motor 1", 3730.0, 0.86, LoadCategory::Motores, false),
-            Load::new("Iluminación", 1200.0, 0.95, LoadCategory::AlumbradoGeneral, true),
+            Load::new(
+                "Iluminación",
+                1200.0,
+                0.95,
+                LoadCategory::AlumbradoGeneral,
+                true,
+            ),
         ];
         assert_eq!(installed_load_va(&loads), 4930.0);
     }
@@ -96,7 +102,13 @@ mod tests {
         let loads = vec![
             Load::new("Motor 1", 1000.0, 0.86, LoadCategory::Motores, false),
             Load::new("Motor 2", 500.0, 0.86, LoadCategory::Motores, false),
-            Load::new("Iluminación", 1200.0, 0.95, LoadCategory::AlumbradoGeneral, true),
+            Load::new(
+                "Iluminación",
+                1200.0,
+                0.95,
+                LoadCategory::AlumbradoGeneral,
+                true,
+            ),
         ];
         let totals = installed_load_by_category(&loads);
         assert_eq!(totals.len(), 2);

@@ -16,9 +16,9 @@
 /// Tamaños comerciales estándar de dispositivos de protección (equiv. Tabla 240.6(A)
 /// NEC), en amperes, orden ascendente.
 pub const STANDARD_DEVICE_SIZES: &[f64] = &[
-    15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0,
-    125.0, 150.0, 175.0, 200.0, 225.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 600.0, 700.0,
-    800.0, 1000.0, 1200.0, 1600.0, 2000.0, 2500.0, 3000.0, 4000.0, 5000.0, 6000.0,
+    15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0, 125.0,
+    150.0, 175.0, 200.0, 225.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 600.0, 700.0, 800.0,
+    1000.0, 1200.0, 1600.0, 2000.0, 2500.0, 3000.0, 4000.0, 5000.0, 6000.0,
 ];
 
 /// Redondea `amps` al siguiente tamaño comercial estándar igual o superior.
@@ -191,7 +191,10 @@ mod tests {
 
     #[test]
     fn coordination_selective_at_ratio_2_to_1() {
-        assert_eq!(evaluate_basic_coordination(100.0, 50.0), Coordination::Selectiva);
+        assert_eq!(
+            evaluate_basic_coordination(100.0, 50.0),
+            Coordination::Selectiva
+        );
     }
 
     #[test]
@@ -204,6 +207,9 @@ mod tests {
 
     #[test]
     fn coordination_none_below_1_5() {
-        assert_eq!(evaluate_basic_coordination(70.0, 50.0), Coordination::NoSelectiva);
+        assert_eq!(
+            evaluate_basic_coordination(70.0, 50.0),
+            Coordination::NoSelectiva
+        );
     }
 }
