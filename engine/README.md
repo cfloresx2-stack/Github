@@ -82,30 +82,39 @@ cargo fmt --check
 
 Para compilar y probar el WASM, ver [`calc-engine-wasm/README.md`](calc-engine-wasm/README.md).
 
-## ⚠️ Antes de usar en un proyecto real
+## ✅ Validación normativa — tablas numéricas de `calc-engine`
 
-**`calc-engine`:** las tablas de ampacidad y factores de corrección (`conductor.rs`)
-y el calibre de tierra de equipos (`grounding.rs`) son los valores **estándar de la
-Tabla 310.16 / 310.15(B)(2)(a) / 310.15(C)(1) / 250.122 del NEC**, que la
-NOM-001-SEDE-2018 y Ugly's Electrical Reference replican con la misma estructura.
+Las 7 tablas/reglas numéricas de `calc-engine` que dependen de la NOM se compararon
+línea por línea contra el texto oficial de `docs/referencias/NOM-001-SEDE-2018.pdf`
+(extracción de texto directa — es un PDF nativo, no un escaneo, así que a diferencia
+de `Uglys_compressed.pdf` sí produjo texto confiable). Revisión de César Flores,
+ingeniero responsable del proyecto:
 
-**`compliance-engine`:** cada `NormReference` generado está marcado **"(equiv.)"**
-porque el código de artículo proviene del NEC análogo, no de la NOM-001-SEDE-2018
-verificada.
+| Tabla en el código | Tabla en la NOM oficial | Resultado |
+|---|---|---|
+| `conductor::COPPER_CONDUCTORS` | Tabla 310-15(b)(16) | **1 error corregido** (3 AWG a 90 °C: 110→115 A) |
+| `conductor::ambient_correction_factor` | Tabla 310-15(b)(2)(a) | Exacta |
+| `conductor::adjustment_factor` | Tabla 310-15(b)(3)(a) | Exacta |
+| `grounding::equipment_grounding_conductor_awg` | Tabla 250-122 | Exacta |
+| `protection::motor_branch_protection_max_percent` | Tabla 430-52 | Exacta |
+| `protection::STANDARD_DEVICE_SIZES` | Tabla 240-6(a) | Exacta |
+| `conduit::max_fill_percent` | Tabla 1, Capítulo 10 | Exacta |
 
-En ambos casos: se intentó extraer las tablas/artículos directamente de
-`docs/referencias/NOM-001-SEDE-2018.pdf` (1,171 páginas) y de
-`docs/referencias/Uglys_compressed.pdf`, pero la extracción automática de texto
-produce columnas numéricas desalineadas (problema del escaneo original, no de la
-herramienta) — no es seguro tomar esos números/artículos tal cual. Las cifras usadas
-aquí provienen de la tabla estándar NEC/NOM ampliamente conocida, **no de un parseo
-automático de esos PDF**.
+De más de 150 valores comparados, solo el de la ampacidad a 90 °C del calibre 3 AWG
+estaba mal — ya corregido, con una prueba de regresión que lo fija
+(`ampacity_3_awg_matches_nom_table_310_15_b_16`).
 
-**Antes de usar estos motores en un proyecto real, valida cada tabla y cada
-referencia de artículo línea por línea contra el PDF oficial de la
-NOM-001-SEDE-2018.** Esto es exactamente el trabajo de validación normativa que el
-plan maestro asigna al ingeniero responsable (Sección 16.5: banco de casos de prueba
-+ revisión técnica humana obligatoria antes de cada release).
+**Pendiente todavía:**
+- **`compliance-engine`:** cada `NormReference` generado sigue marcado **"(equiv.)"**
+  y usa notación de artículo estilo NEC ("215.2(A)"). Al hacer esta revisión se
+  confirmó que la NOM usa notación con guion ("215-2"), distinta — falta reescribir
+  esas referencias con el número de artículo real de la NOM, no solo el símbolo.
+- Fórmulas generales de ingeniería que no provienen de una tabla específica de la
+  NOM (constantes K de caída de tensión, método por unidad de cortocircuito, fórmula
+  de Dwight para resistencia de electrodo) — son formulaciones estándar de campo, no
+  requieren validación tabular, pero conviene que las revises igual.
+
+Ver el aviso detallado en `calc-engine/src/lib.rs` y en la cabecera de cada módulo.
 
 ## Qué queda fuera de esta versión (a propósito, no como pendiente silencioso)
 

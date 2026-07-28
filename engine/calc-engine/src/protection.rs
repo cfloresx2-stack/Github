@@ -1,10 +1,14 @@
 //! Módulo 4.8: selección de protecciones y verificación de coordinación básica.
 //!
 //! Cubre:
-//! - Dimensionamiento de protección de conductor (equiv. Art. 240 NEC/NOM).
-//! - Dimensionamiento de protección de rama-circuito de motor (equiv. Art. 430,
-//!   Tabla 430.52 NEC — categoría "todos los demás motores"; no cubre aún la
-//!   categoría de motores Diseño B de alta eficiencia, que usa otros porcentajes).
+//! - Dimensionamiento de protección de conductor (Art. 240). `STANDARD_DEVICE_SIZES`
+//!   **✅ validado contra la Tabla 240-6(a) de la NOM-001-SEDE-2018 oficial** —
+//!   coincide exactamente (36 valores).
+//! - Dimensionamiento de protección de rama-circuito de motor (Art. 430, Tabla
+//!   430-52 — categoría "todos los demás motores"; no cubre aún la categoría de
+//!   motores Diseño B de alta eficiencia, que usa otros porcentajes).
+//!   `motor_branch_protection_max_percent` **✅ validado contra la Tabla 430-52 de
+//!   la NOM oficial** — los 3 porcentajes (250%/175%/300%) coinciden exactamente.
 //! - Verificación de capacidad interruptiva contra la falla disponible en ese punto.
 //! - Heurística de coordinación entre dos protecciones en serie.
 //!

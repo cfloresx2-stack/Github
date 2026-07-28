@@ -1,12 +1,14 @@
 //! Módulos 4.4–4.6: corriente de diseño, ampacidad, correcciones y selección de
 //! conductor.
 //!
-//! **Origen de los datos tabulares:** los valores de ampacidad base y de los factores
-//! de corrección son los valores estándar de la Tabla 310.16 / 310.15(B)(2)(a) /
-//! 310.15(C)(1) del NEC, que la NOM-001-SEDE-2018 y Ugly's Electrical Reference
-//! replican con la misma estructura. Deben validarse línea por línea contra
-//! `docs/referencias/NOM-001-SEDE-2018.pdf` antes de usarse en un proyecto real —
-//! ver el aviso completo en `lib.rs`.
+//! **✅ Validado contra la NOM-001-SEDE-2018 oficial** (`docs/referencias/NOM-001-SEDE-2018.pdf`,
+//! extracción de texto directa, no OCR): `COPPER_CONDUCTORS` contra la Tabla
+//! 310-15(b)(16), `ambient_correction_factor` contra la Tabla 310-15(b)(2)(a), y
+//! `adjustment_factor` contra la Tabla 310-15(b)(3)(a). Revisión manual de César
+//! Flores + verificación cruzada del texto oficial: de 54 valores de ampacidad, se
+//! encontró y corrigió **un** error (3 AWG a 90 °C: era 110 A, la NOM dice 115 A —
+//! ver la prueba `ampacity_3_awg_matches_nom_table_310_15_b_16`). Los factores de
+//! corrección y de ajuste coinciden exactamente, sin cambios.
 
 use crate::common::Phases;
 
@@ -90,7 +92,7 @@ pub const COPPER_CONDUCTORS: &[ConductorSize] = &[
         circular_mils: 52_620.0,
         ampacity_60c: 85.0,
         ampacity_75c: 100.0,
-        ampacity_90c: 110.0,
+        ampacity_90c: 115.0,
     },
     ConductorSize {
         name: "2 AWG",
@@ -302,6 +304,19 @@ pub fn select_conductor_by_ampacity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regresión: validado línea por línea contra la Tabla 310-15(b)(16) del texto
+    /// oficial de docs/referencias/NOM-001-SEDE-2018.pdf (César Flores, revisión
+    /// manual). El valor original aquí era 110 A -- la NOM dice 115 A. Único error
+    /// encontrado en la validación de esta tabla completa (18 calibres × 3 columnas).
+    #[test]
+    fn ampacity_3_awg_matches_nom_table_310_15_b_16() {
+        let conductor = COPPER_CONDUCTORS
+            .iter()
+            .find(|c| c.name == "3 AWG")
+            .unwrap();
+        assert_eq!(conductor.ampacity_90c, 115.0);
+    }
 
     #[test]
     fn design_current_single_phase() {

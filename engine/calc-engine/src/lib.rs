@@ -32,23 +32,28 @@
 //!   catálogo de materiales — son de la capa de servicios (Sección 3.3 del plan
 //!   maestro), no de este motor de cálculo.
 //!
-//! ## ⚠️ Origen de los datos tabulares — requiere validación de un ingeniero
-//! Las tablas de ampacidad y los factores de corrección usados aquí son los valores
-//! **estándar de la Tabla 310.16 / 310.15(B)(2)(a) / 310.15(C)(1) del NEC**, y el
-//! calibre de tierra de equipos es el de la Tabla 250.122 NEC, que la
-//! NOM-001-SEDE-2018 y Ugly's Electrical Reference replican con la misma estructura.
+//! ## ✅ Origen de los datos tabulares — validado contra la NOM-001-SEDE-2018 oficial
+//! Las tablas numéricas de este motor (`conductor::COPPER_CONDUCTORS`,
+//! `conductor::ambient_correction_factor`, `conductor::adjustment_factor`,
+//! `grounding::equipment_grounding_conductor_awg`,
+//! `protection::motor_branch_protection_max_percent`,
+//! `protection::STANDARD_DEVICE_SIZES`, `conduit::max_fill_percent`) se compararon
+//! línea por línea contra el texto de `docs/referencias/NOM-001-SEDE-2018.pdf`
+//! (extracción de texto directa — a diferencia de `docs/referencias/Uglys_compressed.pdf`,
+//! que es un escaneo y no produce texto confiable). Revisión hecha por César Flores,
+//! ingeniero responsable del proyecto.
 //!
-//! La extracción automática de texto de `docs/referencias/NOM-001-SEDE-2018.pdf`
-//! (1,171 páginas) y de `docs/referencias/Uglys_compressed.pdf` no produjo tablas
-//! confiables (las columnas numéricas salen desalineadas por el tipo de escaneo), así
-//! que las cifras de este módulo **no provienen de un parseo automático de esos PDF**,
-//! sino de la tabla estándar NEC/NOM ampliamente conocida.
+//! **Resultado:** de más de 150 valores comparados, se encontró y corrigió **un**
+//! error (`COPPER_CONDUCTORS`, 3 AWG a 90 °C: era 110 A, la tabla oficial dice 115 A
+//! — Tabla 310-15(b)(16)). El resto coincide exactamente. El detalle de qué se
+//! validó contra qué tabla vive en el comentario de cabecera de cada módulo.
 //!
-//! **Antes de usar este motor en un proyecto real, un ingeniero eléctrico responsable
-//! debe validar estos valores línea por línea contra el PDF oficial de la
-//! NOM-001-SEDE-2018.** Ver también la Sección 16.5 del plan maestro (estrategia de
-//! pruebas: banco de casos de referencia + revisión técnica humana obligatoria antes
-//! de cada release del catálogo normativo).
+//! **Lo que aún NO está validado contra la NOM:** las referencias de artículo
+//! citadas por `compliance-engine` (siguen usando notación NEC con puntos, p. ej.
+//! "215.2(A)", cuando la NOM usa notación con guion, p. ej. "215-2" — confirmado al
+//! hacer esta revisión) y las fórmulas generales de ingeniería que no provienen de
+//! una tabla específica (constantes K de caída de tensión, método por unidad de
+//! cortocircuito, fórmula de Dwight para resistencia de electrodo).
 
 pub mod common;
 pub mod conductor;

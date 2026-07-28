@@ -2,9 +2,11 @@
 //!
 //! Cubre:
 //! - Calibre del conductor de puesta a tierra de equipos, en función de la
-//!   capacidad de la protección aguas arriba (equiv. Tabla 250.122 NEC — **no** del
-//!   calibre del conductor de fase).
-//! - Resistencia de un electrodo vertical simple (fórmula de Dwight).
+//!   capacidad de la protección aguas arriba (**no** del calibre del conductor de
+//!   fase). **✅ Validado línea por línea contra la Tabla 250-122 de la
+//!   NOM-001-SEDE-2018 oficial** — coincide exactamente, sin errores (19 niveles).
+//! - Resistencia de un electrodo vertical simple (fórmula de Dwight) — fórmula
+//!   general de ingeniería, no proviene de una tabla específica de la NOM.
 //!
 //! **No implementado:** arreglos de electrodos múltiples en paralelo o mallas de
 //! tierra. La resistencia combinada de electrodos múltiples depende de resistencia

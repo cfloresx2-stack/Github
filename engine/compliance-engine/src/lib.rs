@@ -22,12 +22,18 @@
 //!   salvo que exista electrodo suplementario.
 //!
 //! ## ⚠️ Estado de las referencias normativas — requiere validación de un ingeniero
-//! Cada [`types::NormReference`] generado está marcado **"(equiv.)"** porque el
-//! código de artículo proviene del NEC análogo — **no se validó contra el número de
-//! artículo exacto de la NOM-001-SEDE-2018**, por la misma razón documentada en
-//! `calc_engine`: la extracción automática de `docs/referencias/NOM-001-SEDE-2018.pdf`
-//! no produjo texto confiable para mapear artículo por artículo (columnas
-//! desalineadas por el tipo de escaneo).
+//! Cada [`types::NormReference`] generado está marcado **"(equiv.)"** y usa notación
+//! de artículo estilo NEC ("215.2(A)", con puntos) porque el código de artículo
+//! proviene del NEC análogo — **no se validó contra el número de artículo exacto de
+//! la NOM-001-SEDE-2018**.
+//!
+//! A diferencia de lo que se pensaba al escribir esto: `docs/referencias/NOM-001-SEDE-2018.pdf`
+//! **sí** produce texto confiable con extracción directa (es un PDF nativo, no un
+//! escaneo — ver la validación hecha en `calc_engine`, que sí comparó sus tablas
+//! numéricas línea por línea contra este mismo PDF con éxito). Lo que se confirmó al
+//! hacerlo es que **la NOM usa notación de artículo con guion, no con puntos**
+//! (p. ej. "215-2", no "215.2(A)") — así que además de verificar que cada regla cita
+//! el artículo correcto, hay que corregir el *formato* de la cita.
 //!
 //! **Antes de usar las observaciones generadas como evidencia formal de
 //! cumplimiento, un ingeniero eléctrico responsable debe reemplazar cada "(equiv.)"

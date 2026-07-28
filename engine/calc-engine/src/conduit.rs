@@ -1,16 +1,18 @@
 //! Módulo 4.7: llenado de ductos/canalizaciones.
 //!
-//! Implementa la regla de porcentaje de llenado (equiv. NEC Chapter 9, Table 1) y la
-//! comparación de áreas.
+//! Implementa la regla de porcentaje de llenado y la comparación de áreas.
+//! `max_fill_percent` **✅ validado contra la Tabla 1 del Capítulo 10 de la
+//! NOM-001-SEDE-2018 oficial** (nota: en la NOM esta tabla vive en el Capítulo 10,
+//! no en el 9 como en el NEC) — coincide exactamente: 1 conductor 53%, 2
+//! conductores 31%, más de 2 conductores 40%.
 //!
 //! **No implementado:** las tablas de área transversal de conductor por tipo de
 //! aislamiento (THHN, XHHW, etc.) ni las tablas de área interna por tipo y calibre
-//! de canalización (EMT, PVC, RMC, LFMC...). Son decenas de filas por tabla — el
-//! mismo tipo de dato que salió desalineado al extraer texto de los PDF de
-//! referencia (ver aviso en `lib.rs`) — y el riesgo de reproducir un valor
-//! incorrecto de memoria es alto. Estas áreas deben tomarse de la tabla oficial
-//! (NOM-001-SEDE-2018 Capítulo 9 o catálogo de fabricante) y pasarse como parámetro
-//! a las funciones de este módulo, no embeberse aquí.
+//! de canalización (EMT, PVC, RMC, LFMC...) — la Tabla 1 del Capítulo 10 remite a
+//! ellas (Tablas 4, 5 y 5A). Son decenas de filas por tabla y el riesgo de
+//! reproducir un valor incorrecto de memoria es alto. Estas áreas deben tomarse de
+//! la tabla oficial o catálogo de fabricante y pasarse como parámetro a las
+//! funciones de este módulo, no embeberse aquí.
 
 /// Porcentaje máximo de llenado permitido según el número de conductores en la
 /// canalización (equiv. NEC Chapter 9, Table 1: 1 conductor 53%, 2 conductores 31%,
