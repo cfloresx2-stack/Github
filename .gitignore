@@ -12,4 +12,5 @@ Cargo.lock
 
 # Artefactos generados de wasm-bindgen (regenerar con: ver engine/calc-engine-wasm/README.md)
 /engine/calc-engine-wasm/pkg/
+/engine/calc-engine-wasm/pkg-web/
 /engine/calc-engine-wasm/node_modules/
