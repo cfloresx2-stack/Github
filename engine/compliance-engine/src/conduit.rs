@@ -1,6 +1,10 @@
-//! Regla: llenado de canalización dentro del porcentaje máximo permitido (equiv.
-//! NEC Chapter 9, Table 1). Requisito obligatorio — el sobrellenado dificulta el
-//! tendido y daña el aislamiento de los conductores.
+//! Regla: llenado de canalización dentro del porcentaje máximo permitido.
+//!
+//! **✅ Referencia validada contra la NOM-001-SEDE-2018 oficial** — Tabla 1,
+//! Capítulo 10 (nota: en la NOM esta tabla vive en el Capítulo 10, no en el 9 como
+//! en el NEC — misma tabla que valida `calc_engine::conduit::max_fill_percent`, ver
+//! ese módulo). Requisito obligatorio — el sobrellenado dificulta el tendido y daña
+//! el aislamiento de los conductores.
 
 use crate::types::{ComplianceFinding, ComplianceStatus, NormReference};
 
@@ -18,7 +22,7 @@ pub fn evaluate_conduit_fill(
         rule_id: "llenado_ducto",
         status,
         norm_reference: NormReference {
-            code: "NOM-001-SEDE-2018 (equiv. NEC Chapter 9, Table 1)".to_string(),
+            code: "NOM-001-SEDE-2018, Tabla 1, Capítulo 10".to_string(),
             title: "Porcentaje de llenado de canalización".to_string(),
         },
         observation: format!(

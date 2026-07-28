@@ -104,17 +104,27 @@ De más de 150 valores comparados, solo el de la ampacidad a 90 °C del calibre 
 estaba mal — ya corregido, con una prueba de regresión que lo fija
 (`ampacity_3_awg_matches_nom_table_310_15_b_16`).
 
-**Pendiente todavía:**
-- **`compliance-engine`:** cada `NormReference` generado sigue marcado **"(equiv.)"**
-  y usa notación de artículo estilo NEC ("215.2(A)"). Al hacer esta revisión se
-  confirmó que la NOM usa notación con guion ("215-2"), distinta — falta reescribir
-  esas referencias con el número de artículo real de la NOM, no solo el símbolo.
-- Fórmulas generales de ingeniería que no provienen de una tabla específica de la
-  NOM (constantes K de caída de tensión, método por unidad de cortocircuito, fórmula
-  de Dwight para resistencia de electrodo) — son formulaciones estándar de campo, no
-  requieren validación tabular, pero conviene que las revises igual.
+**`compliance-engine` también validado:** las 5 referencias normativas que genera
+cada regla (`NormReference`) ya citan el artículo real de la NOM, con su notación
+correcta (con guion, p. ej. "215-2", no "215.2(A)" como el NEC):
 
-Ver el aviso detallado en `calc-engine/src/lib.rs` y en la cabecera de cada módulo.
+| Regla | Referencia NOM confirmada |
+|---|---|
+| Caída de tensión, alimentador | Art. 215-2(a), NOTA 1 |
+| Caída de tensión, circuito derivado | Art. 210-19(a), NOTA 4 |
+| Ampacidad de conductor | Tabla 310-15(b)(16) |
+| Capacidad interruptiva | Art. 110-9 |
+| Llenado de canalización | Tabla 1, Capítulo 10 |
+| Resistencia de electrodo único | Art. 250-53(a)(2) |
+
+**Pendiente todavía:** fórmulas generales de ingeniería que no provienen de una
+tabla o artículo específico de la NOM (constantes K de caída de tensión, método por
+unidad de cortocircuito, fórmula de Dwight para resistencia de electrodo) — son
+formulaciones estándar de campo, no requieren validación normativa puntual, pero
+conviene que las revises igual.
+
+Ver el aviso detallado en `calc-engine/src/lib.rs`, `compliance-engine/src/lib.rs`, y
+en la cabecera de cada módulo.
 
 ## Qué queda fuera de esta versión (a propósito, no como pendiente silencioso)
 

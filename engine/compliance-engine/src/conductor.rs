@@ -1,6 +1,10 @@
-//! Regla: ampacidad del conductor debe alcanzar la corriente requerida (equiv. Art.
-//! 240/310 NEC). A diferencia de la caída de tensión, este es un requisito de
-//! seguridad obligatorio — se clasifica `NoCumple`, no `Advertencia`.
+//! Regla: ampacidad del conductor debe alcanzar la corriente requerida.
+//!
+//! **✅ Referencia validada contra la NOM-001-SEDE-2018 oficial** — Tabla
+//! 310-15(b)(16) (la misma tabla que valida `calc_engine::conductor::COPPER_CONDUCTORS`,
+//! ver ese módulo). A diferencia de la caída de tensión, esto es un requisito de
+//! seguridad obligatorio, no una recomendación — se clasifica `NoCumple`, no
+//! `Advertencia`, cuando falla.
 
 use crate::types::{ComplianceFinding, ComplianceStatus, NormReference};
 
@@ -18,7 +22,7 @@ pub fn evaluate_conductor_ampacity(
         rule_id: "ampacidad_conductor",
         status,
         norm_reference: NormReference {
-            code: "NOM-001-SEDE-2018 (equiv. NEC Art. 310, Tabla 310.16)".to_string(),
+            code: "NOM-001-SEDE-2018, Tabla 310-15(b)(16)".to_string(),
             title: "Ampacidad del conductor".to_string(),
         },
         observation: format!(

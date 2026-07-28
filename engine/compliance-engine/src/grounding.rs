@@ -1,6 +1,10 @@
-//! Regla: resistencia máxima de un electrodo de tierra único (equiv. NEC
-//! 250.53(A)(2)): si un solo electrodo no logra 25 Ω o menos, se exige complementar
-//! con un electrodo adicional.
+//! Regla: resistencia máxima de un electrodo de tierra único.
+//!
+//! **✅ Referencia validada contra la NOM-001-SEDE-2018 oficial** — Art. 250-53(a)(2):
+//! "Si un electrodo de puesta a tierra de una sola varilla, tubería o placa tiene
+//! una resistencia a tierra de 25 ohms o menos, no se requiere un electrodo
+//! adicional" (texto exacto de la excepción). El valor de 25 Ω y la condición del
+//! electrodo adicional coinciden exactamente con lo ya implementado aquí.
 
 use crate::types::{ComplianceFinding, ComplianceStatus, NormReference};
 
@@ -25,7 +29,7 @@ pub fn evaluate_single_electrode_resistance(
         rule_id: "resistencia_electrodo",
         status,
         norm_reference: NormReference {
-            code: "NOM-001-SEDE-2018 (equiv. NEC 250.53(A)(2))".to_string(),
+            code: "NOM-001-SEDE-2018, Art. 250-53(a)(2)".to_string(),
             title: "Resistencia máxima de electrodo único".to_string(),
         },
         observation: format!(

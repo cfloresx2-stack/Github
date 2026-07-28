@@ -21,25 +21,30 @@
 //! - Resistencia de electrodo de tierra único (módulo [`grounding`]) — obligatoria,
 //!   salvo que exista electrodo suplementario.
 //!
-//! ## ⚠️ Estado de las referencias normativas — requiere validación de un ingeniero
-//! Cada [`types::NormReference`] generado está marcado **"(equiv.)"** y usa notación
-//! de artículo estilo NEC ("215.2(A)", con puntos) porque el código de artículo
-//! proviene del NEC análogo — **no se validó contra el número de artículo exacto de
-//! la NOM-001-SEDE-2018**.
+//! ## ✅ Estado de las referencias normativas — validadas contra la NOM-001-SEDE-2018 oficial
+//! Las 5 referencias de [`types::NormReference`] se verificaron contra el texto de
+//! `docs/referencias/NOM-001-SEDE-2018.pdf` (extracción directa, PDF nativo — mismo
+//! método que validó las tablas numéricas de `calc_engine`) y ahora citan el
+//! artículo real de la NOM, con su notación con guion (p. ej. "215-2", no "215.2(A)"
+//! como el NEC):
 //!
-//! A diferencia de lo que se pensaba al escribir esto: `docs/referencias/NOM-001-SEDE-2018.pdf`
-//! **sí** produce texto confiable con extracción directa (es un PDF nativo, no un
-//! escaneo — ver la validación hecha en `calc_engine`, que sí comparó sus tablas
-//! numéricas línea por línea contra este mismo PDF con éxito). Lo que se confirmó al
-//! hacerlo es que **la NOM usa notación de artículo con guion, no con puntos**
-//! (p. ej. "215-2", no "215.2(A)") — así que además de verificar que cada regla cita
-//! el artículo correcto, hay que corregir el *formato* de la cita.
+//! | Regla | Referencia NOM confirmada |
+//! |---|---|
+//! | Caída de tensión, alimentador (`voltage_drop`) | Art. 215-2(a), NOTA 1 |
+//! | Caída de tensión, circuito derivado (`voltage_drop`) | Art. 210-19(a), NOTA 4 |
+//! | Ampacidad de conductor (`conductor`) | Tabla 310-15(b)(16) |
+//! | Capacidad interruptiva (`protection`) | Art. 110-9 |
+//! | Llenado de canalización (`conduit`) | Tabla 1, Capítulo 10 |
+//! | Resistencia de electrodo único (`grounding`) | Art. 250-53(a)(2) |
 //!
-//! **Antes de usar las observaciones generadas como evidencia formal de
-//! cumplimiento, un ingeniero eléctrico responsable debe reemplazar cada "(equiv.)"
-//! por la referencia exacta de la NOM-001-SEDE-2018 vigente**, y confirmar si el
-//! límite de caída de tensión es recomendación u obligación en el proyecto
-//! específico (ver aviso en `voltage_drop.rs`).
+//! Revisión de César Flores, ingeniero responsable del proyecto. El texto de cada
+//! artículo (transcrito en el comentario de cabecera del módulo correspondiente)
+//! confirma no solo el número, sino que la clasificación `Advertencia` vs.
+//! `NoCumple` de cada regla es correcta: los dos artículos de caída de tensión son
+//! notas de recomendación ("proporcionará una eficiencia razonable de operación"),
+//! mientras que ampacidad, capacidad interruptiva, llenado y resistencia de
+//! electrodo son requisitos con lenguaje obligatorio ("deben", "no se exigirá... a
+//! menos que").
 //!
 //! ## Pendiente (Sección 6 del plan maestro)
 //! - Catálogo de reglas versionado y cargado desde datos externos — aquí las reglas
