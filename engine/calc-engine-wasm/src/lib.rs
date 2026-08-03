@@ -91,6 +91,53 @@ pub fn select_conductor(
     ))
 }
 
+/// Lista de calibres disponibles en `COPPER_CONDUCTORS`, en el mismo orden
+/// ascendente de la tabla (para poblar un selector de calibre forzado en la UI).
+/// Retorna un JSON array de strings, p. ej. `["14 AWG","12 AWG",...,"500 kcmil"]`.
+#[wasm_bindgen]
+pub fn conductor_names() -> String {
+    let names: Vec<String> = COPPER_CONDUCTORS
+        .iter()
+        .map(|c| format!("\"{}\"", c.name))
+        .collect();
+    format!("[{}]", names.join(","))
+}
+
+/// Igual que [`select_conductor`], pero para un calibre elegido por el usuario en
+/// vez del mínimo que cumple ampacidad — cubre el caso de subir de calibre a
+/// propósito para reducir la caída de tensión (Sección 5.4 del plan maestro), algo
+/// que `select_conductor_by_ampacity` no evalúa por diseño. La ampacidad corregida
+/// resultante puede terminar por debajo de la requerida si el calibre elegido es
+/// insuficiente; eso se refleja en el JSON devuelto (y en el hallazgo de
+/// `evaluate_conductor_ampacity`, no aquí).
+#[wasm_bindgen]
+pub fn conductor_ampacity_by_name(
+    name: &str,
+    insulation_rating: &str,
+    ambient_c: f64,
+    current_carrying_conductors: u32,
+) -> Result<String, JsValue> {
+    let rating = insulation_from_str(insulation_rating)?;
+    let conductor = COPPER_CONDUCTORS
+        .iter()
+        .find(|c| c.name == name)
+        .ok_or_else(|| JsValue::from_str(&format!("calibre no reconocido: \"{name}\"")))?;
+    let temperature_factor = calc_engine::ambient_correction_factor(ambient_c, rating)
+        .ok_or_else(|| {
+            JsValue::from_str(&format!(
+                "{ambient_c} °C está fuera del rango de la tabla de corrección"
+            ))
+        })?;
+    let grouping_factor = calc_engine::adjustment_factor(current_carrying_conductors);
+    let base_ampacity = conductor.base_ampacity(rating);
+    let corrected =
+        calc_engine::corrected_ampacity(base_ampacity, temperature_factor, grouping_factor, 1.0);
+    Ok(format!(
+        r#"{{"conductor":"{}","base_ampacity":{},"temperature_factor":{},"grouping_factor":{},"corrected_ampacity":{}}}"#,
+        conductor.name, base_ampacity, temperature_factor, grouping_factor, corrected
+    ))
+}
+
 /// Caída de tensión (cobre) para un calibre ya seleccionado por [`select_conductor`].
 #[wasm_bindgen]
 pub fn voltage_drop_percent(

@@ -66,6 +66,8 @@ persistencia), ver `backend/projects-service/test/e2e.test.ts`.
 | `design_current_amps(power_va, voltage, three_phase)` | Módulo 4.4 |
 | `continuous_load_adjusted_current(design_current, is_continuous)` | 125% de carga continua |
 | `select_conductor(required_amps, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Módulos 4.5–4.6 |
+| `conductor_names()` → JSON | Lista de calibres de `COPPER_CONDUCTORS`, para poblar un selector de "calibre forzado" |
+| `conductor_ampacity_by_name(name, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Igual que `select_conductor`, pero para un calibre elegido por el usuario (subir de calibre a propósito, p. ej. para bajar la caída de tensión) en vez del mínimo automático |
 | `voltage_drop_percent(current_amps, one_way_length_m, conductor_name, three_phase, nominal_voltage)` | Caída de tensión |
 | `evaluate_voltage_drop(circuit_name, is_feeder, voltage_drop_percent)` → JSON | Sección 6, regla de caída de tensión |
 | `evaluate_conductor_ampacity(circuit_name, required_current_amps, corrected_ampacity_amps)` → JSON | Sección 6, regla de ampacidad |

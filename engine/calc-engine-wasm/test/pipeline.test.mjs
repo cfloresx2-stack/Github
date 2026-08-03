@@ -6,6 +6,8 @@ import {
   design_current_amps,
   continuous_load_adjusted_current,
   select_conductor,
+  conductor_names,
+  conductor_ampacity_by_name,
   voltage_drop_percent,
   evaluate_voltage_drop,
   evaluate_conductor_ampacity,
@@ -44,6 +46,27 @@ const ampacityFinding = JSON.parse(
   evaluate_conductor_ampacity("Alim-Compresores", requiredCurrent, selection.corrected_ampacity),
 );
 assert.equal(ampacityFinding.status, "Cumple");
+
+// Calibre forzado manualmente (Sección 5.4): mismo circuito pero con un recorrido
+// más largo (60 m) para que el calibre automático (8 AWG) quede en Advertencia por
+// caída de tensión, y verificar que subir de calibre a mano (4 AWG, vía
+// `conductor_ampacity_by_name`) sí la resuelve.
+const names = JSON.parse(conductor_names());
+assert.ok(names.includes("8 AWG") && names.includes("4 AWG"), `catálogo: ${names}`);
+
+const longLength = 60.0;
+const vdAuto = voltage_drop_percent(requiredCurrent, longLength, selection.conductor, true, 220.0);
+assert.ok(vdAuto > 3.0, `caída de tensión con calibre automático: ${vdAuto}%`);
+const vdAutoFinding = JSON.parse(evaluate_voltage_drop("Alim-Compresores", true, vdAuto));
+assert.equal(vdAutoFinding.status, "Advertencia");
+
+const forced = JSON.parse(conductor_ampacity_by_name("4 AWG", "75", 35.0, 3));
+assert.equal(forced.conductor, "4 AWG");
+assert.ok(forced.corrected_ampacity >= requiredCurrent);
+const vdForced = voltage_drop_percent(requiredCurrent, longLength, forced.conductor, true, 220.0);
+assert.ok(vdForced < 3.0, `caída de tensión con calibre forzado: ${vdForced}%`);
+const vdForcedFinding = JSON.parse(evaluate_voltage_drop("Alim-Compresores", true, vdForced));
+assert.equal(vdForcedFinding.status, "Cumple");
 
 console.log("OK — WASM reproduce el pipeline de calc-engine/compliance-engine:");
 console.log({
