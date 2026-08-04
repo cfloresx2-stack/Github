@@ -52,7 +52,7 @@ fn full_pipeline_from_load_to_voltage_drop() {
 
     // Módulos 4.5–4.6: selección de conductor con corrección por temperatura
     // ambiente (35 °C) y agrupamiento (3 conductores portadores de corriente).
-    let selection = select_conductor_by_ampacity(required_current, InsulationRating::C75, 35.0, 3)
+    let selection = select_conductor_by_ampacity(required_current, ConductorMaterial::Copper, InsulationRating::C75, 35.0, 3)
         .expect("debe existir un calibre que cumpla la ampacidad requerida");
 
     // Rango 31-35 °C / 75 °C → factor 0.94; ≤3 conductores → sin derate por

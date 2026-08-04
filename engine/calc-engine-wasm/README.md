@@ -65,12 +65,15 @@ persistencia), ver `backend/projects-service/test/e2e.test.ts`.
 |---|---|
 | `design_current_amps(power_va, voltage, three_phase)` | Módulo 4.4 |
 | `continuous_load_adjusted_current(design_current, is_continuous)` | 125% de carga continua |
-| `select_conductor(required_amps, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Módulos 4.5–4.6 |
-| `conductor_names()` → JSON | Lista de calibres de `COPPER_CONDUCTORS`, para poblar un selector de "calibre forzado" |
-| `conductor_ampacity_by_name(name, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Igual que `select_conductor`, pero para un calibre elegido por el usuario (subir de calibre a propósito, p. ej. para bajar la caída de tensión) en vez del mínimo automático |
-| `voltage_drop_percent(current_amps, one_way_length_m, conductor_name, three_phase, nominal_voltage)` | Caída de tensión |
+| `select_conductor(required_amps, material, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Módulos 4.5–4.6. `material` es `"copper"` o `"aluminum"` |
+| `conductor_names(material)` → JSON | Lista de calibres de `COPPER_CONDUCTORS`/`ALUMINUM_CONDUCTORS` según `material`, para poblar un selector de "calibre forzado" |
+| `conductor_ampacity_by_name(name, material, insulation_rating, ambient_c, current_carrying_conductors)` → JSON | Igual que `select_conductor`, pero para un calibre elegido por el usuario (subir de calibre a propósito, p. ej. para bajar la caída de tensión) en vez del mínimo automático |
+| `voltage_drop_percent(current_amps, one_way_length_m, conductor_name, material, three_phase, nominal_voltage)` | Caída de tensión. `material` decide la constante K (cobre 12.9, aluminio 21.2 Ω·cmil/ft) |
 | `evaluate_voltage_drop(circuit_name, is_feeder, voltage_drop_percent)` → JSON | Sección 6, regla de caída de tensión |
 | `evaluate_conductor_ampacity(circuit_name, required_current_amps, corrected_ampacity_amps)` → JSON | Sección 6, regla de ampacidad |
+| `conduit_types()` → JSON | Catálogo de tipos de tubería soportados (`emt`, `pvc_sch40`, `rmc`), para poblar un selector |
+| `select_conduit(conductor_name, family, conductor_count, conduit_type)` → JSON | Módulo 4.7: tamaño comercial de tubería más económico que cumple el % de relleno. `family` (área del conductor aislado) es `"thhn"`, `"thw"` o `"xhhw"` |
+| `evaluate_conduit_fill(conduit_label, total_conductor_area_mm2, usable_area_mm2)` → JSON | Sección 6, regla de llenado de canalización (áreas en mm²) |
 
 ## Pendiente
 

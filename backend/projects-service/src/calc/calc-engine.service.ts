@@ -42,9 +42,11 @@ export class CalcEngineService {
     insulationRating: string,
     ambientC: number,
     currentCarryingConductors: number,
+    material: 'copper' | 'aluminum' = 'copper',
   ): ConductorSelectionResult {
     const json = wasm.select_conductor(
       requiredAmps,
+      material,
       insulationRating,
       ambientC,
       currentCarryingConductors,
@@ -58,11 +60,13 @@ export class CalcEngineService {
     conductorName: string,
     threePhase: boolean,
     nominalVoltage: number,
+    material: 'copper' | 'aluminum' = 'copper',
   ): number {
     return wasm.voltage_drop_percent(
       currentAmps,
       oneWayLengthM,
       conductorName,
+      material,
       threePhase,
       nominalVoltage,
     );

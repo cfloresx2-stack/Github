@@ -68,12 +68,15 @@ pub mod voltage_drop;
 
 pub use common::Phases;
 pub use conductor::{
-    COPPER_CONDUCTORS, ConductorError, ConductorSelection, ConductorSize, InsulationRating,
-    adjustment_factor, ambient_correction_factor, continuous_load_adjusted_current,
-    corrected_ampacity, design_current_amps, select_conductor_by_ampacity,
+    ALUMINUM_CONDUCTORS, COPPER_CONDUCTORS, ConductorError, ConductorMaterial,
+    ConductorSelection, ConductorSize, InsulationRating, adjustment_factor,
+    ambient_correction_factor, continuous_load_adjusted_current, corrected_ampacity,
+    design_current_amps, select_conductor_by_ampacity,
 };
 pub use conduit::{
-    ConduitFillCheck, check_conduit_fill, max_fill_percent, usable_conduit_area_sq_in,
+    ConduitFillCheck, ConduitSelection, ConduitSizeError, ConduitType, InsulationFamily,
+    check_conduit_fill, conductor_area_mm2, max_fill_percent, select_conduit_size,
+    usable_conduit_area_sq_in,
 };
 pub use grounding::{equipment_grounding_conductor_awg, single_rod_resistance_ohms};
 pub use load::{

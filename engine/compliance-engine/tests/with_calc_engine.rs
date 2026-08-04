@@ -32,7 +32,7 @@ fn calc_engine_results_pass_compliance_rules() {
     let design_current = design_current_amps(demand, 220.0, Phases::Three);
     let required_current = continuous_load_adjusted_current(design_current, true);
     let selection =
-        select_conductor_by_ampacity(required_current, InsulationRating::C75, 35.0, 3).unwrap();
+        select_conductor_by_ampacity(required_current, ConductorMaterial::Copper, InsulationRating::C75, 35.0, 3).unwrap();
 
     let ampacity_finding = evaluate_conductor_ampacity(
         "Alim-Compresores",

@@ -173,6 +173,44 @@ pub const COPPER_CONDUCTORS: &[ConductorSize] = &[
     },
 ];
 
+/// Material del conductor. Determina qué tabla de ampacidad usar (`COPPER_CONDUCTORS`
+/// o `ALUMINUM_CONDUCTORS`) y, junto con [`crate::voltage_drop::K_COPPER`] /
+/// [`crate::voltage_drop::K_ALUMINUM`], la constante de resistividad para caída de
+/// tensión.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConductorMaterial {
+    Copper,
+    Aluminum,
+}
+
+/// Tabla de conductores de aluminio, calibres 12 AWG a 500 kcmil (la NOM no define
+/// ampacidad de aluminio por debajo de 12 AWG). Mismos `circular_mils` que el
+/// calibre de cobre equivalente -- el diámetro físico del conductor desnudo está
+/// estandarizado por designación AWG/kcmil, independientemente del material; solo
+/// cambia la ampacidad (la conductividad del aluminio es menor).
+///
+/// **✅ Validado contra la NOM-001-SEDE-2018 oficial** — Tabla 310-15(b)(16),
+/// columnas de aluminio (misma tabla que ya valida `COPPER_CONDUCTORS`).
+pub const ALUMINUM_CONDUCTORS: &[ConductorSize] = &[
+    ConductorSize { name: "12 AWG", circular_mils: 6_530.0, ampacity_60c: 15.0, ampacity_75c: 20.0, ampacity_90c: 25.0 },
+    ConductorSize { name: "10 AWG", circular_mils: 10_380.0, ampacity_60c: 25.0, ampacity_75c: 30.0, ampacity_90c: 35.0 },
+    ConductorSize { name: "8 AWG", circular_mils: 16_510.0, ampacity_60c: 35.0, ampacity_75c: 40.0, ampacity_90c: 45.0 },
+    ConductorSize { name: "6 AWG", circular_mils: 26_240.0, ampacity_60c: 40.0, ampacity_75c: 50.0, ampacity_90c: 55.0 },
+    ConductorSize { name: "4 AWG", circular_mils: 41_740.0, ampacity_60c: 55.0, ampacity_75c: 65.0, ampacity_90c: 75.0 },
+    ConductorSize { name: "3 AWG", circular_mils: 52_620.0, ampacity_60c: 65.0, ampacity_75c: 75.0, ampacity_90c: 85.0 },
+    ConductorSize { name: "2 AWG", circular_mils: 66_360.0, ampacity_60c: 75.0, ampacity_75c: 90.0, ampacity_90c: 100.0 },
+    ConductorSize { name: "1 AWG", circular_mils: 83_690.0, ampacity_60c: 85.0, ampacity_75c: 100.0, ampacity_90c: 115.0 },
+    ConductorSize { name: "1/0 AWG", circular_mils: 105_600.0, ampacity_60c: 100.0, ampacity_75c: 120.0, ampacity_90c: 135.0 },
+    ConductorSize { name: "2/0 AWG", circular_mils: 133_100.0, ampacity_60c: 115.0, ampacity_75c: 135.0, ampacity_90c: 150.0 },
+    ConductorSize { name: "3/0 AWG", circular_mils: 167_800.0, ampacity_60c: 130.0, ampacity_75c: 155.0, ampacity_90c: 175.0 },
+    ConductorSize { name: "4/0 AWG", circular_mils: 211_600.0, ampacity_60c: 150.0, ampacity_75c: 180.0, ampacity_90c: 205.0 },
+    ConductorSize { name: "250 kcmil", circular_mils: 250_000.0, ampacity_60c: 170.0, ampacity_75c: 205.0, ampacity_90c: 230.0 },
+    ConductorSize { name: "300 kcmil", circular_mils: 300_000.0, ampacity_60c: 195.0, ampacity_75c: 230.0, ampacity_90c: 260.0 },
+    ConductorSize { name: "350 kcmil", circular_mils: 350_000.0, ampacity_60c: 210.0, ampacity_75c: 250.0, ampacity_90c: 280.0 },
+    ConductorSize { name: "400 kcmil", circular_mils: 400_000.0, ampacity_60c: 225.0, ampacity_75c: 270.0, ampacity_90c: 305.0 },
+    ConductorSize { name: "500 kcmil", circular_mils: 500_000.0, ampacity_60c: 260.0, ampacity_75c: 310.0, ampacity_90c: 350.0 },
+];
+
 /// Corriente de diseño de un circuito (Módulo 4.4), sin el 125% de carga continua.
 pub fn design_current_amps(power_va: f64, voltage: f64, phases: Phases) -> f64 {
     match phases {
@@ -276,6 +314,7 @@ pub struct ConductorSelection {
 /// ese segundo criterio y, si no se cumple, subir de calibre (Sección 5.4).
 pub fn select_conductor_by_ampacity(
     required_amps: f64,
+    material: ConductorMaterial,
     rating: InsulationRating,
     ambient_c: f64,
     current_carrying_conductors: u32,
@@ -283,8 +322,12 @@ pub fn select_conductor_by_ampacity(
     let temperature_factor = ambient_correction_factor(ambient_c, rating)
         .ok_or(ConductorError::AmbientOutOfTableRange { ambient_c })?;
     let grouping_factor = adjustment_factor(current_carrying_conductors);
+    let table = match material {
+        ConductorMaterial::Copper => COPPER_CONDUCTORS,
+        ConductorMaterial::Aluminum => ALUMINUM_CONDUCTORS,
+    };
 
-    COPPER_CONDUCTORS
+    table
         .iter()
         .find_map(|c| {
             let base = c.base_ampacity(rating);
@@ -365,7 +408,7 @@ mod tests {
     fn select_conductor_picks_smallest_that_meets_ampacity() {
         // 28 A requeridos, 75°C, 30°C ambiente, ≤3 conductores → 10 AWG (35 A) cubre;
         // 8 AWG (50 A) también cubre, pero 10 AWG es el más económico que cumple.
-        let selection = select_conductor_by_ampacity(28.0, InsulationRating::C75, 28.0, 3).unwrap();
+        let selection = select_conductor_by_ampacity(28.0, ConductorMaterial::Copper, InsulationRating::C75, 28.0, 3).unwrap();
         assert_eq!(selection.conductor.name, "10 AWG");
         assert_eq!(selection.corrected_ampacity, 35.0);
     }
@@ -375,14 +418,14 @@ mod tests {
         // Mismos 28 A requeridos, pero con 10 conductores agrupados (factor 0.50):
         // 10 AWG corregido = 35 × 0.50 = 17.5 A (no alcanza) → debe subir de calibre.
         let selection =
-            select_conductor_by_ampacity(28.0, InsulationRating::C75, 28.0, 10).unwrap();
+            select_conductor_by_ampacity(28.0, ConductorMaterial::Copper, InsulationRating::C75, 28.0, 10).unwrap();
         assert_ne!(selection.conductor.name, "10 AWG");
         assert!(selection.corrected_ampacity >= 28.0);
     }
 
     #[test]
     fn select_conductor_errors_when_ambient_out_of_table() {
-        let err = select_conductor_by_ampacity(28.0, InsulationRating::C60, 95.0, 3).unwrap_err();
+        let err = select_conductor_by_ampacity(28.0, ConductorMaterial::Copper, InsulationRating::C60, 95.0, 3).unwrap_err();
         assert_eq!(
             err,
             ConductorError::AmbientOutOfTableRange { ambient_c: 95.0 }
@@ -392,7 +435,7 @@ mod tests {
     #[test]
     fn select_conductor_errors_when_nothing_in_table_is_enough() {
         let err =
-            select_conductor_by_ampacity(10_000.0, InsulationRating::C90, 28.0, 3).unwrap_err();
+            select_conductor_by_ampacity(10_000.0, ConductorMaterial::Copper, InsulationRating::C90, 28.0, 3).unwrap_err();
         assert_eq!(
             err,
             ConductorError::NoConductorMeetsAmpacity {

@@ -10,10 +10,10 @@ use crate::types::{ComplianceFinding, ComplianceStatus, NormReference};
 
 pub fn evaluate_conduit_fill(
     conduit_label: &str,
-    total_conductor_area_sq_in: f64,
-    usable_area_sq_in: f64,
+    total_conductor_area_mm2: f64,
+    usable_area_mm2: f64,
 ) -> ComplianceFinding {
-    let status = if total_conductor_area_sq_in <= usable_area_sq_in {
+    let status = if total_conductor_area_mm2 <= usable_area_mm2 {
         ComplianceStatus::Cumple
     } else {
         ComplianceStatus::NoCumple
@@ -22,13 +22,13 @@ pub fn evaluate_conduit_fill(
         rule_id: "llenado_ducto",
         status,
         norm_reference: NormReference {
-            code: "NOM-001-SEDE-2018, Tabla 1, Capítulo 10".to_string(),
+            code: "NOM-001-SEDE-2018, Tabla 1, Capítulo 10 / Tabla 4".to_string(),
             title: "Porcentaje de llenado de canalización".to_string(),
         },
         observation: format!(
             "La canalización \"{conduit_label}\" tiene un área utilizable de \
-             {usable_area_sq_in:.4} in²; los conductores instalados ocupan \
-             {total_conductor_area_sq_in:.4} in²."
+             {usable_area_mm2:.1} mm²; los conductores instalados ocupan \
+             {total_conductor_area_mm2:.1} mm²."
         ),
     }
 }
