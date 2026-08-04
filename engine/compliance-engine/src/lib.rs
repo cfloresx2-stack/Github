@@ -12,7 +12,7 @@
 //! real (un servicio de proyectos).
 //!
 //! ## Alcance implementado
-//! Reglas cuantitativas sobre 5 resultados que produce `calc-engine`:
+//! Reglas cuantitativas sobre 6 resultados que produce `calc-engine`:
 //! - Caída de tensión (módulo [`voltage_drop`]) — clasificada como `Advertencia`
 //!   (recomendación), no `NoCumple`, ver aviso en ese módulo.
 //! - Ampacidad de conductor (módulo [`conductor`]) — obligatoria, `NoCumple` si falla.
@@ -20,9 +20,10 @@
 //! - Llenado de canalización (módulo [`conduit`]) — obligatoria.
 //! - Resistencia de electrodo de tierra único (módulo [`grounding`]) — obligatoria,
 //!   salvo que exista electrodo suplementario.
+//! - Protección de circuito derivado de motor (módulo [`motor`]) — obligatoria.
 //!
 //! ## ✅ Estado de las referencias normativas — validadas contra la NOM-001-SEDE-2018 oficial
-//! Las 5 referencias de [`types::NormReference`] se verificaron contra el texto de
+//! Las referencias de [`types::NormReference`] se verificaron contra el texto de
 //! `docs/referencias/NOM-001-SEDE-2018.pdf` (extracción directa, PDF nativo — mismo
 //! método que validó las tablas numéricas de `calc_engine`) y ahora citan el
 //! artículo real de la NOM, con su notación con guion (p. ej. "215-2", no "215.2(A)"
@@ -36,6 +37,7 @@
 //! | Capacidad interruptiva (`protection`) | Art. 110-9 |
 //! | Llenado de canalización (`conduit`) | Tabla 1, Capítulo 10 |
 //! | Resistencia de electrodo único (`grounding`) | Art. 250-53(a)(2) |
+//! | Protección de circuito derivado de motor (`motor`) | Tabla 430-52 |
 //!
 //! Revisión de César Flores, ingeniero responsable del proyecto. El texto de cada
 //! artículo (transcrito en el comentario de cabecera del módulo correspondiente)
@@ -61,6 +63,7 @@
 pub mod conductor;
 pub mod conduit;
 pub mod grounding;
+pub mod motor;
 pub mod protection;
 pub mod types;
 pub mod voltage_drop;
@@ -68,6 +71,7 @@ pub mod voltage_drop;
 pub use conductor::evaluate_conductor_ampacity;
 pub use conduit::evaluate_conduit_fill;
 pub use grounding::evaluate_single_electrode_resistance;
+pub use motor::evaluate_motor_protection;
 pub use protection::evaluate_interrupting_capacity;
 pub use types::{ComplianceFinding, ComplianceStatus, NormReference};
 pub use voltage_drop::evaluate_voltage_drop;

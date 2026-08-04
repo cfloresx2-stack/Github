@@ -78,11 +78,18 @@ persistencia), ver `backend/projects-service/test/e2e.test.ts`.
 | `grounding_conductor_awg(protection_amps)` | Calibre del conductor de puesta a tierra de equipos (Tabla 250-122) |
 | `select_conduit_by_area(required_area_mm2, conductor_count, conduit_type)` → JSON | Igual que `select_conduit`, para un área total ya sumada a mano (tubería con calibres mixtos) |
 | `evaluate_conduit_fill(conduit_label, total_conductor_area_mm2, usable_area_mm2)` → JSON | Sección 6, regla de llenado de canalización (áreas en mm²) |
+| `motor_hp_labels(voltage, three_phase)` → JSON | Catálogo de hp con FLC de tabla disponible para esa tensión/fases, para poblar un selector |
+| `motor_protection_kinds()` → JSON | Catálogo de tipos de dispositivo de protección de motor (`inverse_time_breaker`, `time_delay_fuse`, `non_time_delay_fuse`) |
+| `motor_flc_amps(hp_label, voltage, three_phase)` | Corriente a plena carga de motor, de Tabla 430-248/430-250 (no de placa) |
+| `motor_conductor_ampacity(flc_amps)` | Ampacidad mínima del conductor del circuito derivado de motor: 125% de la FLC (Art. 430-22) |
+| `motor_protection_amps(flc_amps, kind)` | Tamaño de protección de circuito derivado de motor (Tabla 430-52) |
+| `evaluate_motor_protection(circuit_name, protection_amps, motor_flc_amps, max_allowed_amps)` → JSON | Sección 6, regla de protección de circuito derivado de motor |
 
 ## Pendiente
 
-- Exponer el resto de `calc-engine` (protecciones, cortocircuito, tierra, factor de
-  potencia) y de `compliance-engine` (las otras 3 reglas) con el mismo patrón.
+- Exponer el resto de `calc-engine` (cortocircuito, tierra, factor de potencia,
+  grupos de motores en un mismo alimentador vía `motor_group_conductor_ampacity`)
+  con el mismo patrón.
 - Contrato JSON diseñado (hoy es `format!` a mano) — considerar `serde`/`serde-wasm-bindgen`
   cuando el contrato deje de ser exploratorio.
 - Build para `--target web` (navegador) además de `--target nodejs`.

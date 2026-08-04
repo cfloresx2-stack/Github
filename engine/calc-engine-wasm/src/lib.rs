@@ -20,10 +20,12 @@
 
 use calc_engine::{
     ALUMINUM_CONDUCTORS, COPPER_CONDUCTORS, ConductorError, ConductorMaterial, ConduitSizeError,
-    ConduitType, InsulationFamily, InsulationRating, K_ALUMINUM, K_COPPER, Phases,
-    conductor_area_mm2 as calc_conductor_area_mm2, conductor_protection_amps,
-    equipment_grounding_conductor_awg, select_conductor_by_ampacity, select_conduit_size,
-    select_conduit_size_for_area, voltage_drop_percent as calc_voltage_drop_percent,
+    ConduitType, InsulationFamily, InsulationRating, K_ALUMINUM, K_COPPER, MOTOR_HP_LABELS,
+    Phases, ProtectionKind, conductor_area_mm2 as calc_conductor_area_mm2,
+    conductor_protection_amps, equipment_grounding_conductor_awg, motor_branch_circuit_ampacity,
+    motor_branch_protection_amps, motor_full_load_current, select_conductor_by_ampacity,
+    select_conduit_size, select_conduit_size_for_area,
+    voltage_drop_percent as calc_voltage_drop_percent,
 };
 use wasm_bindgen::prelude::*;
 
@@ -88,6 +90,18 @@ fn conduit_type_from_str(conduit_type: &str) -> Result<ConduitType, JsValue> {
         "rmc" => Ok(ConduitType::Rmc),
         other => Err(JsValue::from_str(&format!(
             "tipo de tubería inválido: \"{other}\" (use \"emt\", \"pvc_sch40\" o \"rmc\")"
+        ))),
+    }
+}
+
+fn protection_kind_from_str(kind: &str) -> Result<ProtectionKind, JsValue> {
+    match kind {
+        "inverse_time_breaker" => Ok(ProtectionKind::InverseTimeBreaker),
+        "time_delay_fuse" => Ok(ProtectionKind::TimeDelayFuse),
+        "non_time_delay_fuse" => Ok(ProtectionKind::NonTimeDelayFuse),
+        other => Err(JsValue::from_str(&format!(
+            "tipo de protección inválido: \"{other}\" (use \"inverse_time_breaker\", \
+             \"time_delay_fuse\" o \"non_time_delay_fuse\")"
         ))),
     }
 }
@@ -381,6 +395,77 @@ pub fn evaluate_conduit_fill(
         conduit_label,
         total_conductor_area_mm2,
         usable_area_mm2,
+    );
+    finding_to_json(&finding)
+}
+
+/// Catálogo de etiquetas de hp de motor disponibles para `voltage`/`three_phase`
+/// dados (monofásico se detiene en 10 hp; trifásico llega a 200 hp) -- para poblar
+/// un selector de hp en la UI que no ofrezca combinaciones sin FLC de tabla.
+/// Retorna JSON array de strings, en el mismo orden que `MOTOR_HP_LABELS`.
+#[wasm_bindgen]
+pub fn motor_hp_labels(voltage: f64, three_phase: bool) -> String {
+    let labels: Vec<String> = MOTOR_HP_LABELS
+        .iter()
+        .filter(|(label, _)| motor_full_load_current(label, voltage, three_phase).is_some())
+        .map(|(label, _)| format!("\"{label}\""))
+        .collect();
+    format!("[{}]", labels.join(","))
+}
+
+/// Catálogo de tipos de dispositivo de protección de motor, para poblar un
+/// selector en la UI. Retorna JSON: `[{"value","label"},...]`.
+#[wasm_bindgen]
+pub fn motor_protection_kinds() -> String {
+    r#"[{"value":"inverse_time_breaker","label":"Interruptor de tiempo inverso (250% FLC)"},{"value":"time_delay_fuse","label":"Fusible de acción retardada (175% FLC)"},{"value":"non_time_delay_fuse","label":"Fusible de acción rápida (300% FLC)"}]"#.to_string()
+}
+
+/// Corriente a plena carga (FLC) de motor, de la Tabla 430-248/430-250 -- no de la
+/// placa del fabricante. `hp_label` debe ser una de las etiquetas de
+/// [`motor_hp_labels`]. Ver el comentario de cabecera de `calc_engine::motor` para
+/// el alcance de tensiones/fases cubiertas.
+#[wasm_bindgen]
+pub fn motor_flc_amps(hp_label: &str, voltage: f64, three_phase: bool) -> Result<f64, JsValue> {
+    motor_full_load_current(hp_label, voltage, three_phase).ok_or_else(|| {
+        JsValue::from_str(&format!(
+            "no hay corriente a plena carga de tabla para \"{hp_label}\" hp a {voltage} V \
+             {}", if three_phase { "trifásico" } else { "monofásico" }
+        ))
+    })
+}
+
+/// Ampacidad mínima del conductor del circuito derivado de un motor: 125% de la
+/// FLC (Art. 430-22).
+#[wasm_bindgen]
+pub fn motor_conductor_ampacity(flc_amps: f64) -> f64 {
+    motor_branch_circuit_ampacity(flc_amps)
+}
+
+/// Tamaño de protección de circuito derivado de motor (Tabla 430-52): aplica el
+/// porcentaje máximo de la FLC según `kind` (`"inverse_time_breaker"`,
+/// `"time_delay_fuse"` o `"non_time_delay_fuse"`) y redondea al siguiente tamaño
+/// comercial estándar.
+#[wasm_bindgen]
+pub fn motor_protection_amps(flc_amps: f64, kind: &str) -> Result<f64, JsValue> {
+    let kind = protection_kind_from_str(kind)?;
+    Ok(motor_branch_protection_amps(flc_amps, kind))
+}
+
+/// Sección 6: evalúa la regla de protección de circuito derivado de motor
+/// (obligatoria) y retorna el hallazgo como JSON, mismo formato que
+/// [`evaluate_voltage_drop`].
+#[wasm_bindgen]
+pub fn evaluate_motor_protection(
+    circuit_name: &str,
+    protection_amps: f64,
+    motor_flc_amps: f64,
+    max_allowed_amps: f64,
+) -> String {
+    let finding = compliance_engine::evaluate_motor_protection(
+        circuit_name,
+        protection_amps,
+        motor_flc_amps,
+        max_allowed_amps,
     );
     finding_to_json(&finding)
 }

@@ -82,7 +82,11 @@ pub use grounding::{equipment_grounding_conductor_awg, single_rod_resistance_ohm
 pub use load::{
     Load, LoadCategory, demand_load_va, installed_load_by_category, installed_load_va, load_factor,
 };
-pub use motor::motor_group_conductor_ampacity;
+pub use motor::{
+    MOTOR_FLC_SINGLE_127V, MOTOR_FLC_SINGLE_230V, MOTOR_FLC_THREE_230V, MOTOR_FLC_THREE_460V,
+    MOTOR_HP_LABELS, motor_branch_circuit_ampacity, motor_full_load_current,
+    motor_group_conductor_ampacity,
+};
 pub use power_factor::required_capacitor_kvar;
 pub use protection::{
     Coordination, InterruptingCapacityCheck, ProtectionKind, STANDARD_DEVICE_SIZES,

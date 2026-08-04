@@ -18,6 +18,12 @@ import {
   estimate_protection_amps,
   grounding_conductor_awg,
   select_conduit_by_area,
+  motor_hp_labels,
+  motor_protection_kinds,
+  motor_flc_amps,
+  motor_conductor_ampacity,
+  motor_protection_amps,
+  evaluate_motor_protection,
 } from "../pkg/calc_engine_wasm.js";
 
 // Mismo escenario que engine/calc-engine/tests/pipeline.rs:
@@ -117,6 +123,31 @@ const mixedRequiredArea = phaseArea * 3 + groundArea;
 assert.ok(mixedRequiredArea > phaseArea * 3 && mixedRequiredArea < phaseArea * 4, "tierra suma menos que una 4a fase completa");
 const mixedConduit = JSON.parse(select_conduit_by_area(mixedRequiredArea, 4, "emt"));
 assert.ok(mixedConduit.usable_area_mm2 >= mixedConduit.required_area_mm2);
+
+// Circuito de motor (Art. 430): 10 hp, 220 V trifásico -- caso de manual conocido.
+const hpLabels = JSON.parse(motor_hp_labels(220, true));
+assert.ok(hpLabels.includes("10"));
+assert.equal(JSON.parse(motor_protection_kinds()).length, 3);
+
+const motorFlc = motor_flc_amps("10", 220, true);
+assert.equal(motorFlc, 28.0, `FLC 10hp 220V trifásico: ${motorFlc}`);
+
+const motorConductorAmpacity = motor_conductor_ampacity(motorFlc);
+assert.equal(motorConductorAmpacity, 35.0); // 125% de 28 A
+
+const motorProtection = motor_protection_amps(motorFlc, "inverse_time_breaker");
+assert.equal(motorProtection, 70.0); // 250% de 28 A = 70 A, coincide con tamaño estándar
+
+const motorSelection = JSON.parse(select_conductor(motorConductorAmpacity, "copper", "75", 35.0, 3));
+assert.equal(motorSelection.conductor, "8 AWG");
+
+const motorFinding = JSON.parse(
+  evaluate_motor_protection("Motor-Bomba-1", motorProtection, motorFlc, motorProtection),
+);
+assert.equal(motorFinding.status, "Cumple");
+
+// Monofásico no existe en 440 V -- debe fallar limpio, no devolver un número falso.
+assert.throws(() => motor_flc_amps("10", 440, false));
 
 console.log("OK — WASM reproduce el pipeline de calc-engine/compliance-engine:");
 console.log({
