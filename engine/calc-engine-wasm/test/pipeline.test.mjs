@@ -14,6 +14,10 @@ import {
   select_conduit,
   conduit_types,
   evaluate_conduit_fill,
+  conductor_area_mm2,
+  estimate_protection_amps,
+  grounding_conductor_awg,
+  select_conduit_by_area,
 } from "../pkg/calc_engine_wasm.js";
 
 // Mismo escenario que engine/calc-engine/tests/pipeline.rs:
@@ -98,6 +102,21 @@ assert.equal(conduitFinding.status, "Cumple");
 const conduitMore = JSON.parse(select_conduit("4/0 AWG", "thhn", 12, "emt"));
 assert.notEqual(conduitMore.trade_size, '1/2"');
 assert.ok(conduitMore.required_area_mm2 < conduitMore.usable_area_mm2);
+
+// Tubería con calibres mixtos (fases/neutro de un calibre, tierra de otro más
+// chico vía Tabla 250-122) -- reproduce lo que hace la calculadora: 3 fases 8 AWG
+// + 1 tierra derivada de la protección estimada para ese conductor.
+const protectionAmps = estimate_protection_amps(selection.corrected_ampacity);
+assert.equal(protectionAmps, 50); // 47 A corregidos -> siguiente estándar 50 A
+const groundGauge = grounding_conductor_awg(protectionAmps);
+assert.equal(groundGauge, "10 AWG"); // Tabla 250-122: hasta 60 A -> 10 AWG
+const phaseArea = conductor_area_mm2(selection.conductor, "thhn");
+const groundArea = conductor_area_mm2(groundGauge, "thhn");
+assert.ok(groundArea < phaseArea, "la tierra calculada debe ser de área menor que la fase");
+const mixedRequiredArea = phaseArea * 3 + groundArea;
+assert.ok(mixedRequiredArea > phaseArea * 3 && mixedRequiredArea < phaseArea * 4, "tierra suma menos que una 4a fase completa");
+const mixedConduit = JSON.parse(select_conduit_by_area(mixedRequiredArea, 4, "emt"));
+assert.ok(mixedConduit.usable_area_mm2 >= mixedConduit.required_area_mm2);
 
 console.log("OK — WASM reproduce el pipeline de calc-engine/compliance-engine:");
 console.log({

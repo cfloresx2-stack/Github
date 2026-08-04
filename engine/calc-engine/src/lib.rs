@@ -76,7 +76,7 @@ pub use conductor::{
 pub use conduit::{
     ConduitFillCheck, ConduitSelection, ConduitSizeError, ConduitType, InsulationFamily,
     check_conduit_fill, conductor_area_mm2, max_fill_percent, select_conduit_size,
-    usable_conduit_area_sq_in,
+    select_conduit_size_for_area, usable_conduit_area_sq_in,
 };
 pub use grounding::{equipment_grounding_conductor_awg, single_rod_resistance_ohms};
 pub use load::{

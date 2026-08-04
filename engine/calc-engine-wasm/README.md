@@ -72,7 +72,11 @@ persistencia), ver `backend/projects-service/test/e2e.test.ts`.
 | `evaluate_voltage_drop(circuit_name, is_feeder, voltage_drop_percent)` → JSON | Sección 6, regla de caída de tensión |
 | `evaluate_conductor_ampacity(circuit_name, required_current_amps, corrected_ampacity_amps)` → JSON | Sección 6, regla de ampacidad |
 | `conduit_types()` → JSON | Catálogo de tipos de tubería soportados (`emt`, `pvc_sch40`, `rmc`), para poblar un selector |
-| `select_conduit(conductor_name, family, conductor_count, conduit_type)` → JSON | Módulo 4.7: tamaño comercial de tubería más económico que cumple el % de relleno. `family` (área del conductor aislado) es `"thhn"`, `"thw"` o `"xhhw"` |
+| `select_conduit(conductor_name, family, conductor_count, conduit_type)` → JSON | Módulo 4.7: tamaño comercial de tubería más económico que cumple el % de relleno, para conductores todos del mismo calibre. `family` (área del conductor aislado) es `"thhn"`, `"thw"` o `"xhhw"` |
+| `conductor_area_mm2(conductor_name, family)` | Área transversal (mm²) de un conductor aislado -- para sumar áreas de calibres distintos (fases/neutro vs. tierra) antes de `select_conduit_by_area` |
+| `estimate_protection_amps(corrected_ampacity_amps)` | Redondea la ampacidad corregida al siguiente tamaño estándar de dispositivo (Tabla 240-6(a)) -- solo para alimentar `grounding_conductor_awg`, no es una selección real de protección |
+| `grounding_conductor_awg(protection_amps)` | Calibre del conductor de puesta a tierra de equipos (Tabla 250-122) |
+| `select_conduit_by_area(required_area_mm2, conductor_count, conduit_type)` → JSON | Igual que `select_conduit`, para un área total ya sumada a mano (tubería con calibres mixtos) |
 | `evaluate_conduit_fill(conduit_label, total_conductor_area_mm2, usable_area_mm2)` → JSON | Sección 6, regla de llenado de canalización (áreas en mm²) |
 
 ## Pendiente

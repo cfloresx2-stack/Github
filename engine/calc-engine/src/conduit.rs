@@ -23,12 +23,12 @@
 //! derivados que requieran una tubería mayor (servicios grandes, arreglos de barras)
 //! quedan fuera de esta versión.
 //!
-//! **Simplificación asumida:** `select_conduit_size` asume que todos los
-//! conductores dentro de la tubería son del mismo calibre (fases + neutro). En la
-//! práctica el conductor de puesta a tierra suele ser de calibre menor -- esta
-//! simplificación es conservadora (sobreestima el área ocupada, nunca la
-//! subestima), así que el tamaño de tubería recomendado puede quedar un punto por
-//! arriba del mínimo real, nunca por debajo.
+//! `select_conduit_size` asume un solo calibre para todos los conductores -- para
+//! mezclar calibres (p. ej. fases/neutro de un calibre y tierra de uno menor, según
+//! `crate::grounding::equipment_grounding_conductor_awg`) súmese el área de cada
+//! conductor por separado y úsese `select_conduit_size_for_area` directamente; el
+//! % de relleno de la Tabla 1 Capítulo 10 depende solo de cuántos conductores hay
+//! en total, no de su calibre individual.
 
 /// Porcentaje máximo de llenado permitido según el número de conductores en la
 /// canalización (equiv. NEC Chapter 9, Table 1: 1 conductor 53%, 2 conductores 31%,
@@ -264,9 +264,38 @@ pub enum ConduitSizeError {
 
 /// Selecciona el tamaño comercial más económico de `conduit_type` cuya área
 /// utilizable (según el % de relleno que corresponde a `conductor_count`, Tabla 1
+/// Capítulo 10 -- el % depende solo de CUÁNTOS conductores hay, no de su calibre)
+/// alcanza para `required_area_mm2` de conductores instalados.
+///
+/// Esta es la función de bajo nivel para instalaciones con conductores de más de
+/// un calibre en la misma tubería (p. ej. fases/neutro de un calibre y tierra de
+/// uno menor, Tabla 250-122) -- súmese el área de cada conductor por separado
+/// (`conductor_area_mm2`) antes de llamarla. [`select_conduit_size`] es el atajo
+/// para el caso de un solo calibre.
+pub fn select_conduit_size_for_area(
+    required_area_mm2: f64,
+    conductor_count: u32,
+    conduit_type: ConduitType,
+) -> Result<ConduitSelection, ConduitSizeError> {
+    sizes_for(conduit_type)
+        .iter()
+        .find(|row| row.usable_area_mm2(conductor_count) >= required_area_mm2)
+        .map(|row| ConduitSelection {
+            conduit_type,
+            trade_size: row.trade_size,
+            usable_area_mm2: row.usable_area_mm2(conductor_count),
+            required_area_mm2,
+        })
+        .ok_or(ConduitSizeError::NoSizeFits { required_area_mm2 })
+}
+
+/// Selecciona el tamaño comercial más económico de `conduit_type` cuya área
+/// utilizable (según el % de relleno que corresponde a `conductor_count`, Tabla 1
 /// Capítulo 10) alcanza para los conductores dados -- todos del mismo calibre
-/// `conductor_name` y familia de aislamiento `family` (ver la limitación
-/// documentada en la cabecera del módulo sobre el conductor de tierra).
+/// `conductor_name` y familia de aislamiento `family`. Atajo sobre
+/// [`select_conduit_size_for_area`] para el caso común de un solo calibre; para
+/// mezclar calibres (p. ej. tierra de calibre distinto) súmese el área a mano y
+/// llámese a esa función directamente.
 pub fn select_conduit_size(
     conductor_name: &str,
     family: InsulationFamily,
@@ -279,17 +308,7 @@ pub fn select_conduit_size(
         }
     })?;
     let required_area_mm2 = area_per_conductor * conductor_count as f64;
-
-    sizes_for(conduit_type)
-        .iter()
-        .find(|row| row.usable_area_mm2(conductor_count) >= required_area_mm2)
-        .map(|row| ConduitSelection {
-            conduit_type,
-            trade_size: row.trade_size,
-            usable_area_mm2: row.usable_area_mm2(conductor_count),
-            required_area_mm2,
-        })
-        .ok_or(ConduitSizeError::NoSizeFits { required_area_mm2 })
+    select_conduit_size_for_area(required_area_mm2, conductor_count, conduit_type)
 }
 
 #[cfg(test)]
@@ -371,5 +390,24 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ConduitSizeError::NoSizeFits { .. }));
+    }
+
+    #[test]
+    fn select_conduit_size_for_area_supports_mixed_gauges() {
+        // Alimentador trifásico: 3 fases 8 AWG THHN (23.61 mm² c/u) + 1 tierra 10
+        // AWG THHN (13.61 mm², calibre menor -- Tabla 250-122) = 4 conductores.
+        let phase_area = conductor_area_mm2("8 AWG", InsulationFamily::Thhn).unwrap();
+        let ground_area = conductor_area_mm2("10 AWG", InsulationFamily::Thhn).unwrap();
+        let required = phase_area * 3.0 + ground_area;
+        let selection =
+            select_conduit_size_for_area(required, 4, ConduitType::Emt).unwrap();
+        assert!((selection.required_area_mm2 - required).abs() < 1e-9);
+        assert!(selection.usable_area_mm2 >= selection.required_area_mm2);
+
+        // Sanity: usar el mismo calibre de tierra que de fase (la vía uniforme ya
+        // probada arriba) da un área mayor -- el mezclado no debe sobrestimar.
+        let uniform =
+            select_conduit_size("8 AWG", InsulationFamily::Thhn, 4, ConduitType::Emt).unwrap();
+        assert!(uniform.required_area_mm2 > selection.required_area_mm2);
     }
 }

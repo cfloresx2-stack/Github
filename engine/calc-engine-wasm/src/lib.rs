@@ -21,8 +21,9 @@
 use calc_engine::{
     ALUMINUM_CONDUCTORS, COPPER_CONDUCTORS, ConductorError, ConductorMaterial, ConduitSizeError,
     ConduitType, InsulationFamily, InsulationRating, K_ALUMINUM, K_COPPER, Phases,
-    select_conductor_by_ampacity, select_conduit_size,
-    voltage_drop_percent as calc_voltage_drop_percent,
+    conductor_area_mm2 as calc_conductor_area_mm2, conductor_protection_amps,
+    equipment_grounding_conductor_awg, select_conductor_by_ampacity, select_conduit_size,
+    select_conduit_size_for_area, voltage_drop_percent as calc_voltage_drop_percent,
 };
 use wasm_bindgen::prelude::*;
 
@@ -240,35 +241,38 @@ pub fn select_conduit(
     let family = insulation_family_from_str(family)?;
     let conduit_type = conduit_type_from_str(conduit_type)?;
     let selection = select_conduit_size(conductor_name, family, conductor_count, conduit_type)
-        .map_err(|err| {
-            JsValue::from_str(&match err {
-                ConduitSizeError::UnknownConductor { name } => {
-                    format!("calibre no reconocido para área de tubería: \"{name}\"")
-                }
-                ConduitSizeError::NoSizeFits { required_area_mm2 } => {
-                    format!(
-                        "ningún tamaño comercial (hasta 4\") de este tipo de tubería alcanza \
-                         para {required_area_mm2:.1} mm² de conductores -- reduce la cantidad \
-                         de conductores por tubería o usa un tamaño mayor al catálogo de esta \
-                         herramienta"
-                    )
-                }
-            })
-        })?;
+        .map_err(conduit_size_error_to_js)?;
+    Ok(conduit_selection_to_json(&selection))
+}
+
+fn conduit_size_error_to_js(err: ConduitSizeError) -> JsValue {
+    JsValue::from_str(&match err {
+        ConduitSizeError::UnknownConductor { name } => {
+            format!("calibre no reconocido para área de tubería: \"{name}\"")
+        }
+        ConduitSizeError::NoSizeFits { required_area_mm2 } => format!(
+            "ningún tamaño comercial (hasta 4\") de este tipo de tubería alcanza para \
+             {required_area_mm2:.1} mm² de conductores -- reduce la cantidad de conductores \
+             por tubería o usa un tamaño mayor al catálogo de esta herramienta"
+        ),
+    })
+}
+
+fn conduit_selection_to_json(selection: &calc_engine::ConduitSelection) -> String {
     let fill_percent = (selection.required_area_mm2 / selection.usable_area_mm2) * 100.0;
     let conduit_type_str = match selection.conduit_type {
         ConduitType::Emt => "emt",
         ConduitType::PvcSch40 => "pvc_sch40",
         ConduitType::Rmc => "rmc",
     };
-    Ok(format!(
+    format!(
         r#"{{"conduit_type":"{}","trade_size":"{}","usable_area_mm2":{},"required_area_mm2":{},"fill_percent":{}}}"#,
         conduit_type_str,
         selection.trade_size.replace('"', "\\\""),
         selection.usable_area_mm2,
         selection.required_area_mm2,
         fill_percent
-    ))
+    )
 }
 
 /// Catálogo de tipos de tubería soportados, para poblar un selector en la UI.
@@ -276,6 +280,53 @@ pub fn select_conduit(
 #[wasm_bindgen]
 pub fn conduit_types() -> String {
     r#"[{"value":"emt","label":"EMT — tubo conduit metálico eléctrico"},{"value":"pvc_sch40","label":"PVC Cédula 40 — tubo conduit rígido no metálico"},{"value":"rmc","label":"RMC — tubo conduit metálico pesado"}]"#.to_string()
+}
+
+/// Área transversal (mm²) de un conductor aislado dado, según su familia de
+/// aislamiento (`"thhn"`, `"thw"` o `"xhhw"`) -- pieza suelta para sumar áreas de
+/// conductores de distinto calibre en la misma tubería (fases/neutro de un calibre,
+/// tierra de otro) antes de llamar a [`select_conduit_by_area`].
+#[wasm_bindgen]
+pub fn conductor_area_mm2(conductor_name: &str, family: &str) -> Result<f64, JsValue> {
+    let family = insulation_family_from_str(family)?;
+    calc_conductor_area_mm2(conductor_name, family)
+        .ok_or_else(|| JsValue::from_str(&format!("calibre no reconocido: \"{conductor_name}\"")))
+}
+
+/// Estimación de la capacidad del dispositivo de sobrecorriente (redondeo de la
+/// ampacidad corregida del conductor al siguiente tamaño comercial estándar, Tabla
+/// 240-6(a)) -- se usa únicamente para derivar el calibre del conductor de puesta a
+/// tierra ([`grounding_conductor_awg`], Tabla 250-122); no sustituye la selección
+/// real de protección del circuito, que depende de más factores (coordinación,
+/// tipo de carga) fuera del alcance de esta función.
+#[wasm_bindgen]
+pub fn estimate_protection_amps(corrected_ampacity_amps: f64) -> f64 {
+    conductor_protection_amps(corrected_ampacity_amps, true)
+}
+
+/// Calibre del conductor de puesta a tierra de equipos (cobre), en función de la
+/// capacidad del dispositivo de sobrecorriente aguas arriba (Tabla 250-122). Ver
+/// [`estimate_protection_amps`] para obtener esa capacidad a partir de la
+/// ampacidad del conductor de fase.
+#[wasm_bindgen]
+pub fn grounding_conductor_awg(protection_amps: f64) -> String {
+    equipment_grounding_conductor_awg(protection_amps).to_string()
+}
+
+/// Igual que [`select_conduit`], pero para un área total de conductores ya sumada
+/// a mano (útil cuando la tubería mezcla calibres -- fases/neutro de un calibre y
+/// tierra de otro, ver [`conductor_area_mm2`] y [`grounding_conductor_awg`]).
+/// Retorna el mismo JSON que [`select_conduit`].
+#[wasm_bindgen]
+pub fn select_conduit_by_area(
+    required_area_mm2: f64,
+    conductor_count: u32,
+    conduit_type: &str,
+) -> Result<String, JsValue> {
+    let conduit_type = conduit_type_from_str(conduit_type)?;
+    let selection = select_conduit_size_for_area(required_area_mm2, conductor_count, conduit_type)
+        .map_err(conduit_size_error_to_js)?;
+    Ok(conduit_selection_to_json(&selection))
 }
 
 fn finding_to_json(finding: &compliance_engine::ComplianceFinding) -> String {
