@@ -41,9 +41,9 @@ pub fn evaluate_conductor_protection(
                 .to_string(),
         },
         observation: format!(
-            "El circuito \"{circuit_name}\" tiene un conductor con ampacidad corregida de \
-             {conductor_ampacity_amps:.2} A; la protección de {protection_amps:.1} A no debe \
-             exceder {max_allowed_amps:.1} A (siguiente tamaño comercial estándar permitido)."
+            "El interruptor o fusible del circuito \"{circuit_name}\" es de {protection_amps:.1} \
+             A; no debe exceder {max_allowed_amps:.1} A, el siguiente tamaño comercial estándar \
+             sobre la ampacidad corregida del conductor ({conductor_ampacity_amps:.2} A)."
         ),
     }
 }
