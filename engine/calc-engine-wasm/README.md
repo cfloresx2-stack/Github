@@ -74,7 +74,9 @@ persistencia), ver `backend/projects-service/test/e2e.test.ts`.
 | `conduit_types()` → JSON | Catálogo de tipos de tubería soportados (`emt`, `pvc_sch40`, `rmc`), para poblar un selector |
 | `select_conduit(conductor_name, family, conductor_count, conduit_type)` → JSON | Módulo 4.7: tamaño comercial de tubería más económico que cumple el % de relleno, para conductores todos del mismo calibre. `family` (área del conductor aislado) es `"thhn"`, `"thw"` o `"xhhw"` |
 | `conductor_area_mm2(conductor_name, family)` | Área transversal (mm²) de un conductor aislado -- para sumar áreas de calibres distintos (fases/neutro vs. tierra) antes de `select_conduit_by_area` |
-| `estimate_protection_amps(corrected_ampacity_amps)` | Redondea la ampacidad corregida al siguiente tamaño estándar de dispositivo (Tabla 240-6(a)) -- solo para alimentar `grounding_conductor_awg`, no es una selección real de protección |
+| `estimate_protection_amps(corrected_ampacity_amps)` | Protección automática de circuito general: redondea la ampacidad corregida al siguiente tamaño estándar de dispositivo (Art. 240-4(d), Tabla 240-6(a)). También es el máximo permitido si se fuerza un tamaño mayor, y alimenta `grounding_conductor_awg` |
+| `protection_sizes()` → JSON | Catálogo de tamaños comerciales estándar de protección (Tabla 240-6(a)), para poblar un selector de "protección forzada" |
+| `evaluate_conductor_protection(circuit_name, protection_amps, conductor_ampacity_amps, max_allowed_amps)` → JSON | Sección 6, regla de protección de circuito general (no debe exceder la ampacidad del conductor) |
 | `grounding_conductor_awg(protection_amps)` | Calibre del conductor de puesta a tierra de equipos (Tabla 250-122) |
 | `select_conduit_by_area(required_area_mm2, conductor_count, conduit_type)` → JSON | Igual que `select_conduit`, para un área total ya sumada a mano (tubería con calibres mixtos) |
 | `evaluate_conduit_fill(conduit_label, total_conductor_area_mm2, usable_area_mm2)` → JSON | Sección 6, regla de llenado de canalización (áreas en mm²) |

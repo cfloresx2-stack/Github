@@ -307,15 +307,46 @@ pub fn conductor_area_mm2(conductor_name: &str, family: &str) -> Result<f64, JsV
         .ok_or_else(|| JsValue::from_str(&format!("calibre no reconocido: \"{conductor_name}\"")))
 }
 
-/// Estimación de la capacidad del dispositivo de sobrecorriente (redondeo de la
-/// ampacidad corregida del conductor al siguiente tamaño comercial estándar, Tabla
-/// 240-6(a)) -- se usa únicamente para derivar el calibre del conductor de puesta a
-/// tierra ([`grounding_conductor_awg`], Tabla 250-122); no sustituye la selección
-/// real de protección del circuito, que depende de más factores (coordinación,
-/// tipo de carga) fuera del alcance de esta función.
+/// Capacidad del dispositivo de sobrecorriente de un circuito general (no de
+/// motor): redondeo de la ampacidad corregida del conductor al siguiente tamaño
+/// comercial estándar (Art. 240-4(d), Tabla 240-6(a)) -- es tanto la protección
+/// automática sugerida como el máximo permitido si el usuario fuerza un tamaño
+/// mayor (ver [`evaluate_conductor_protection`]). También alimenta
+/// [`grounding_conductor_awg`] (Tabla 250-122).
 #[wasm_bindgen]
 pub fn estimate_protection_amps(corrected_ampacity_amps: f64) -> f64 {
     conductor_protection_amps(corrected_ampacity_amps, true)
+}
+
+/// Catálogo de tamaños comerciales estándar de dispositivos de protección (Tabla
+/// 240-6(a)), para poblar un selector de "protección forzada". Retorna JSON array
+/// de números.
+#[wasm_bindgen]
+pub fn protection_sizes() -> String {
+    let sizes: Vec<String> = calc_engine::STANDARD_DEVICE_SIZES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    format!("[{}]", sizes.join(","))
+}
+
+/// Sección 6: evalúa que la protección de un circuito general no exceda la
+/// ampacidad del conductor (obligatoria) y retorna el hallazgo como JSON, mismo
+/// formato que [`evaluate_voltage_drop`].
+#[wasm_bindgen]
+pub fn evaluate_conductor_protection(
+    circuit_name: &str,
+    protection_amps: f64,
+    conductor_ampacity_amps: f64,
+    max_allowed_amps: f64,
+) -> String {
+    let finding = compliance_engine::evaluate_conductor_protection(
+        circuit_name,
+        protection_amps,
+        conductor_ampacity_amps,
+        max_allowed_amps,
+    );
+    finding_to_json(&finding)
 }
 
 /// Calibre del conductor de puesta a tierra de equipos (cobre), en función de la

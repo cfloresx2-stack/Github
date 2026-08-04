@@ -24,6 +24,8 @@ import {
   motor_conductor_ampacity,
   motor_protection_amps,
   evaluate_motor_protection,
+  protection_sizes,
+  evaluate_conductor_protection,
 } from "../pkg/calc_engine_wasm.js";
 
 // Mismo escenario que engine/calc-engine/tests/pipeline.rs:
@@ -148,6 +150,23 @@ assert.equal(motorFinding.status, "Cumple");
 
 // Monofásico no existe en 440 V -- debe fallar limpio, no devolver un número falso.
 assert.throws(() => motor_flc_amps("10", 440, false));
+
+// Protección de circuito general (Art. 240-4 / Tabla 240-6(a)): automática y forzada.
+const sizes = JSON.parse(protection_sizes());
+assert.ok(sizes.includes(50) && sizes.includes(15) && sizes.includes(6000));
+
+const autoProtection = estimate_protection_amps(selection.corrected_ampacity);
+assert.equal(autoProtection, 50); // 47 A corregidos -> siguiente estándar 50 A
+const protectionFindingOk = JSON.parse(
+  evaluate_conductor_protection("Alim-Compresores", autoProtection, selection.corrected_ampacity, autoProtection),
+);
+assert.equal(protectionFindingOk.status, "Cumple");
+
+// Forzar 100 A sobre un conductor cuyo máximo permitido es 50 A debe marcar NoCumple.
+const protectionFindingBad = JSON.parse(
+  evaluate_conductor_protection("Alim-Compresores", 100, selection.corrected_ampacity, autoProtection),
+);
+assert.equal(protectionFindingBad.status, "NoCumple");
 
 console.log("OK — WASM reproduce el pipeline de calc-engine/compliance-engine:");
 console.log({

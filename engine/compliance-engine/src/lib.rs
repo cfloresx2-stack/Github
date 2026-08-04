@@ -12,10 +12,12 @@
 //! real (un servicio de proyectos).
 //!
 //! ## Alcance implementado
-//! Reglas cuantitativas sobre 6 resultados que produce `calc-engine`:
+//! Reglas cuantitativas sobre 7 resultados que produce `calc-engine`:
 //! - Caída de tensión (módulo [`voltage_drop`]) — clasificada como `Advertencia`
 //!   (recomendación), no `NoCumple`, ver aviso en ese módulo.
 //! - Ampacidad de conductor (módulo [`conductor`]) — obligatoria, `NoCumple` si falla.
+//! - Protección de circuito general no debe exceder la ampacidad del conductor
+//!   (módulo [`protection`]) — obligatoria.
 //! - Capacidad interruptiva de protección (módulo [`protection`]) — obligatoria.
 //! - Llenado de canalización (módulo [`conduit`]) — obligatoria.
 //! - Resistencia de electrodo de tierra único (módulo [`grounding`]) — obligatoria,
@@ -34,6 +36,7 @@
 //! | Caída de tensión, alimentador (`voltage_drop`) | Art. 215-2(a), NOTA 1 |
 //! | Caída de tensión, circuito derivado (`voltage_drop`) | Art. 210-19(a), NOTA 4 |
 //! | Ampacidad de conductor (`conductor`) | Tabla 310-15(b)(16) |
+//! | Protección de circuito general (`protection`) | Art. 240-4 / Tabla 240-6(a) |
 //! | Capacidad interruptiva (`protection`) | Art. 110-9 |
 //! | Llenado de canalización (`conduit`) | Tabla 1, Capítulo 10 |
 //! | Resistencia de electrodo único (`grounding`) | Art. 250-53(a)(2) |
@@ -72,6 +75,6 @@ pub use conductor::evaluate_conductor_ampacity;
 pub use conduit::evaluate_conduit_fill;
 pub use grounding::evaluate_single_electrode_resistance;
 pub use motor::evaluate_motor_protection;
-pub use protection::evaluate_interrupting_capacity;
+pub use protection::{evaluate_conductor_protection, evaluate_interrupting_capacity};
 pub use types::{ComplianceFinding, ComplianceStatus, NormReference};
 pub use voltage_drop::evaluate_voltage_drop;
