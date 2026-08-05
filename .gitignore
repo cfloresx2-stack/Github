@@ -1,0 +1,7 @@
+# Archivos de bloqueo temporal de Microsoft Office
+~$*.pptx
+~$*.docx
+~$*.xlsx
+
+# Configuración local de Claude Code
+.claude/
