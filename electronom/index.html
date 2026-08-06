@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ElectroNOM - Calculadora de Circuitos (NOM-001-SEDE-2018)</title>
+<style>
+  :root {
+    --navy: #1E2761;
+    --ice: #CADCFC;
+    --white: #FFFFFF;
+    --ok: #1a7f37;
+    --warn: #b42318;
+    --bg: #f4f6fb;
+    --text: #1a1a2e;
+    --muted: #5a5f7a;
+    --border: #d8dee9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Calibri, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+  }
+  header {
+    background: var(--navy);
+    color: var(--white);
+    padding: 22px 28px;
+  }
+  header h1 { margin: 0; font-size: 22px; }
+  header p { margin: 6px 0 0; color: var(--ice); font-size: 13px; }
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 950px) {
+    .wrap { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 15px;
+    color: var(--navy);
+    margin: 0 0 14px;
+    border-bottom: 2px solid var(--ice);
+    padding-bottom: 8px;
+  }
+  label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: bold;
+    margin: 12px 0 4px;
+    color: var(--text);
+  }
+  .hint { font-weight: normal; color: var(--muted); font-size: 11.5px; }
+  select, input[type=number], input[type=text] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .checkline { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .checkline input { width: auto; }
+  .checkline label { margin: 0; }
+  button#calc {
+    width: 100%;
+    margin-top: 20px;
+    background: var(--navy);
+    color: var(--white);
+    border: none;
+    padding: 13px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button#calc:hover { background: #14184a; }
+  #motorPanel {
+    display: none;
+    margin-top: 14px;
+    padding: 12px;
+    background: #fff6e9;
+    border: 1px solid #f0d9a8;
+    border-radius: 8px;
+  }
+  table#loadsTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 12.5px;
+  }
+  table#loadsTable th {
+    background: var(--ice);
+    color: var(--navy);
+    text-align: left;
+    padding: 6px 6px;
+    font-size: 11.5px;
+  }
+  table#loadsTable td {
+    padding: 4px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  table#loadsTable input[type=text], table#loadsTable input[type=number] {
+    padding: 5px 6px;
+    font-size: 12.5px;
+  }
+  table#loadsTable input[type=checkbox] { width: auto; }
+  .rmRow {
+    background: #fbe7e4;
+    color: var(--warn);
+    border: none;
+    border-radius: 5px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  button#addLoad {
+    margin-top: 8px;
+    background: var(--white);
+    border: 1px dashed var(--navy);
+    color: var(--navy);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .totalsLine {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    background: #fafbff;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .result-block {
+    border-left: 5px solid var(--navy);
+    background: #fafbff;
+    border-radius: 0 8px 8px 0;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .result-block h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--navy);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-weight: bold;
+  }
+  .badge.ok { background: #e3f5e8; color: var(--ok); }
+  .badge.warn { background: #fbe7e4; color: var(--warn); }
+  .headline {
+    font-size: 26px;
+    font-weight: bold;
+    color: var(--navy);
+    margin: 4px 0;
+  }
+  .headline .unit { font-size: 14px; color: var(--muted); font-weight: normal; }
+  .memoria {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .memoria table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 12px; }
+  .memoria td, .memoria th { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .memoria th { background: var(--ice); color: var(--navy); }
+  .cite { font-style: italic; color: #8a8fae; }
+  .placeholder {
+    color: var(--muted);
+    font-size: 13.5px;
+    text-align: center;
+    padding: 60px 20px;
+  }
+  .resultsHead {
+    background: var(--navy);
+    color: var(--white);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .resultsHead .proj { font-size: 17px; font-weight: bold; }
+  .resultsHead .sub { font-size: 12.5px; color: var(--ice); margin-top: 4px; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 20px;
+  }
+  details summary { cursor: pointer; color: var(--navy); font-weight: bold; font-size: 12px; margin-top: 8px; }
+
+  /* Hoja desplegable de resultados */
+  details.circuitSheet {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  details.circuitSheet > summary {
+    list-style: none;
+    background: var(--navy);
+    color: var(--white);
+    padding: 16px 20px;
+    font-size: 15px;
+    font-weight: bold;
+    margin: 0;
+  }
+  details.circuitSheet > summary::-webkit-details-marker { display: none; }
+  details.circuitSheet > summary::before { content: "▾ "; }
+  details.circuitSheet:not([open]) > summary::before { content: "▸ "; }
+  details.circuitSheet > summary .sub { display: block; font-size: 12px; color: var(--ice); font-weight: normal; margin-top: 4px; }
+  .sheetBody { padding: 20px; }
+
+  button#addToMemoria {
+    width: 100%;
+    margin-top: 4px;
+    background: var(--ok);
+    color: var(--white);
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button#addToMemoria:hover { background: #145c29; }
+  button#addToMemoria:disabled { background: #9db3a5; cursor: default; }
+
+  /* Memoria de circuitos calculados (registro del proyecto) */
+  .memoriaSection {
+    grid-column: 1 / -1;
+  }
+  table#registryTable { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  table#registryTable th { background: var(--ice); color: var(--navy); text-align: left; padding: 7px 8px; font-size: 11.5px; }
+  table#registryTable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table#registryTable tr:hover { background: #fafbff; }
+  .miniBtn {
+    background: var(--white);
+    border: 1px solid var(--border);
+    color: var(--navy);
+    border-radius: 5px;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    cursor: pointer;
+    margin-right: 4px;
+  }
+  .miniBtn.danger { color: var(--warn); border-color: #f0c3bb; }
+  .registryActions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button#generateMemoria {
+    background: var(--navy); color: var(--white); border: none; padding: 11px 18px;
+    border-radius: 8px; font-size: 13.5px; font-weight: bold; cursor: pointer;
+  }
+  button#clearRegistry {
+    background: var(--white); color: var(--warn); border: 1px solid #f0c3bb; padding: 11px 18px;
+    border-radius: 8px; font-size: 13.5px; cursor: pointer;
+  }
+  .emptyRegistry { color: var(--muted); font-size: 13px; padding: 14px 0; }
+
+  /* Vista de impresión / memoria completa */
+  #printArea { display: none; }
+  @media print {
+    body > header, body > .wrap > div:first-child, .memoriaSection .registryActions,
+    table#registryTable, footer, button, .placeholder { display: none !important; }
+    body > .wrap { display: block !important; }
+    #printArea { display: block !important; }
+    details.circuitSheet { break-inside: avoid; border: 1px solid #999; }
+    details.circuitSheet > summary { background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ElectroNOM &mdash; Calculadora de Circuitos</h1>
+  <p>Calibre de conductor · Caída de tensión · Capacidad de interruptor · Diámetro de tubería &mdash; basado en NOM-001-SEDE-2018</p>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ INPUT PANEL ============ -->
+  <div>
+
+    <div class="card">
+      <h2>1. Identificación</h2>
+      <label>Nombre del proyecto</label>
+      <input type="text" id="projName" placeholder="Ej. Nave Industrial Sabritas">
+      <div class="row2">
+        <div>
+          <label>Nombre del tablero</label>
+          <input type="text" id="boardName" placeholder="Ej. TAB-1">
+        </div>
+        <div>
+          <label>Nombre del circuito</label>
+          <input type="text" id="circName" placeholder="Ej. C-3">
+        </div>
+      </div>
+
+      <label>Tipo de circuito</label>
+      <select id="circuitKind">
+        <option value="derivado">Circuito derivado (Art. 210)</option>
+        <option value="alimentador">Alimentador (Art. 215)</option>
+      </select>
+
+      <div class="checkline">
+        <input type="checkbox" id="isMotor">
+        <label for="isMotor">Es una carga de motor (aplica Art. 430 en vez del criterio general)</label>
+      </div>
+
+      <div id="motorPanel">
+        <label style="margin-top:0">Dispositivo de protección del circuito derivado del motor</label>
+        <select id="motorDevice">
+          <option value="300">Fusible sin retardo de tiempo &mdash; 300% FLC</option>
+          <option value="175">Fusible de dos elementos (retardo) &mdash; 175% FLC</option>
+          <option value="800">Interruptor de disparo instantáneo &mdash; 800% FLC</option>
+          <option value="250" selected>Interruptor de tiempo inverso &mdash; 250% FLC</option>
+        </select>
+        <p class="hint" style="margin-top:8px">Tabla 430-52. El conductor se dimensiona a 125% de la corriente a plena carga (FLC) por Art. 430-22. La protección de sobrecarga (térmico del arrancador) es independiente y no se calcula aquí.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Sistema y cargas</h2>
+
+      <div class="row2">
+        <div>
+          <label>Tensión nominal</label>
+          <select id="voltage"></select>
+        </div>
+        <div>
+          <label>Tipo de alimentación</label>
+          <select id="phaseType">
+            <option value="mono">Monofásico</option>
+            <option value="tri">Trifásico</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Tipo de sistema <span class="hint">(las opciones se ajustan según tensión y alimentación)</span></label>
+      <select id="systemType"></select>
+
+      <label style="margin-top:16px">Factor de demanda <span class="hint">(opcional, 0.1–1; reduce la carga instalada a demanda real antes de calcular la corriente)</span></label>
+      <input type="number" id="demandFactor" value="1" step="0.05" min="0.1" max="1">
+
+      <label style="margin-top:16px">Listado de cargas <span class="hint" id="loadListHint">(en modo motor: agrega una fila con la carga del motor)</span></label>
+      <table id="loadsTable">
+        <thead><tr><th>Nombre de la carga</th><th>W</th><th>FP</th><th>¿Cont.?</th><th></th></tr></thead>
+        <tbody id="loadsBody"></tbody>
+      </table>
+      <button id="addLoad" type="button">+ Agregar carga</button>
+      <div class="totalsLine" id="loadTotals"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Conductor e instalación</h2>
+
+      <div class="row2">
+        <div>
+          <label>Material del conductor</label>
+          <select id="material">
+            <option value="cu">Cobre</option>
+            <option value="al">Aluminio</option>
+          </select>
+        </div>
+        <div>
+          <label>Temp. aislamiento <span class="hint">(THHN=90°C)</span></label>
+          <select id="insulTemp">
+            <option value="60">60 °C</option>
+            <option value="75" selected>75 °C</option>
+            <option value="90">90 °C</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Temp. ambiente <span class="hint">(°C)</span></label>
+      <input type="number" id="ambient" value="30" step="1">
+    </div>
+
+    <div class="card">
+      <h2>4. Caída de tensión y tubería</h2>
+
+      <div class="row2">
+        <div>
+          <label>Longitud, un sentido <span class="hint">(m)</span></label>
+          <input type="number" id="length" value="20" step="0.1" min="0">
+        </div>
+        <div>
+          <label>Tipo de tubería</label>
+          <select id="conduitType"></select>
+        </div>
+      </div>
+    </div>
+
+    <button id="calc">Calcular circuito</button>
+  </div>
+
+  <!-- ============ RESULTS PANEL ============ -->
+  <div id="resultsWrap">
+    <div class="card">
+      <div class="placeholder">Llena los datos de la izquierda y presiona <b>Calcular circuito</b> para ver el calibre de conductor, caída de tensión, capacidad de interruptor y diámetro de tubería recomendados, con la memoria de cálculo citando los artículos de la NOM-001-SEDE-2018.</div>
+    </div>
+  </div>
+
+  <!-- ============ MEMORIA DE CIRCUITOS CALCULADOS ============ -->
+  <div class="card memoriaSection">
+    <h2>Memoria de circuitos calculados <span class="hint">(registro del proyecto)</span></h2>
+    <div id="registryTableWrap">
+      <div class="emptyRegistry">Aún no has agregado ningún circuito a la memoria. Calcula un circuito y presiona "Agregar a la memoria" para empezar a construir el registro del proyecto.</div>
+    </div>
+    <div class="registryActions">
+      <button id="generateMemoria" type="button">🖨️ Generar memoria completa (imprimir / PDF)</button>
+      <button id="clearRegistry" type="button">Vaciar memoria</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="printArea"></div>
+
+<footer>
+  Herramienta de apoyo al diseño &mdash; NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real. No sustituye la supervisión de ingeniería.
+</footer>
+
+<script>
+/* =========================================================================
+   DATOS NORMATIVOS (NOM-001-SEDE-2018)
+   ========================================================================= */
+
+// Tabla 310-15(b)(16): Ampacidad permisible (A), <=3 conductores, 30°C ambiente
+const AMPACITY_TABLE = [
+  { awg:"18",  mm2:0.824, cu60:null, cu75:null, cu90:14,  al60:null, al75:null, al90:null },
+  { awg:"16",  mm2:1.31,  cu60:null, cu75:null, cu90:18,  al60:null, al75:null, al90:null },
+  { awg:"14",  mm2:2.08,  cu60:15,  cu75:20,  cu90:25,  al60:null, al75:null, al90:null },
+  { awg:"12",  mm2:3.31,  cu60:20,  cu75:25,  cu90:30,  al60:15,  al75:20,  al90:25 },
+  { awg:"10",  mm2:5.26,  cu60:30,  cu75:35,  cu90:40,  al60:25,  al75:30,  al90:35 },
+  { awg:"8",   mm2:8.37,  cu60:40,  cu75:50,  cu90:55,  al60:35,  al75:40,  al90:45 },
+  { awg:"6",   mm2:13.3,  cu60:55,  cu75:65,  cu90:75,  al60:40,  al75:50,  al90:55 },
+  { awg:"4",   mm2:21.2,  cu60:70,  cu75:85,  cu90:95,  al60:55,  al75:65,  al90:75 },
+  { awg:"3",   mm2:26.7,  cu60:85,  cu75:100, cu90:115, al60:65,  al75:75,  al90:85 },
+  { awg:"2",   mm2:33.6,  cu60:95,  cu75:115, cu90:130, al60:75,  al75:90,  al90:100 },
+  { awg:"1",   mm2:42.4,  cu60:110, cu75:130, cu90:145, al60:85,  al75:100, al90:115 },
+  { awg:"1/0", mm2:53.49, cu60:125, cu75:150, cu90:170, al60:100, al75:120, al90:135 },
+  { awg:"2/0", mm2:67.43, cu60:145, cu75:175, cu90:195, al60:115, al75:135, al90:150 },
+  { awg:"3/0", mm2:85.01, cu60:165, cu75:200, cu90:225, al60:130, al75:155, al90:175 },
+  { awg:"4/0", mm2:107.2, cu60:195, cu75:230, cu90:260, al60:150, al75:180, al90:205 },
+  { awg:"250", mm2:127,   cu60:215, cu75:255, cu90:290, al60:170, al75:205, al90:230 },
+  { awg:"300", mm2:152,   cu60:240, cu75:285, cu90:320, al60:195, al75:230, al90:260 },
+  { awg:"350", mm2:177,   cu60:260, cu75:310, cu90:350, al60:210, al75:250, al90:280 },
+  { awg:"400", mm2:203,   cu60:280, cu75:335, cu90:380, al60:225, al75:270, al90:305 },
+  { awg:"500", mm2:253,   cu60:320, cu75:380, cu90:430, al60:260, al75:310, al90:350 },
+  { awg:"600", mm2:304,   cu60:350, cu75:420, cu90:475, al60:285, al75:340, al90:385 },
+  { awg:"700", mm2:355,   cu60:385, cu75:460, cu90:520, al60:315, al75:375, al90:425 },
+  { awg:"750", mm2:380,   cu60:400, cu75:475, cu90:535, al60:320, al75:385, al90:435 },
+  { awg:"800", mm2:405,   cu60:410, cu75:490, cu90:555, al60:330, al75:395, al90:445 },
+  { awg:"900", mm2:456,   cu60:435, cu75:520, cu90:585, al60:355, al75:425, al90:480 },
+  { awg:"1000",mm2:507,   cu60:455, cu75:545, cu90:615, al60:375, al75:445, al90:500 },
+];
+
+// Tabla 310-15(b)(2)(a): factor de corrección por temperatura ambiente (base 30°C)
+const TEMP_CORRECTION = [
+  { max:10, f60:1.29, f75:1.20, f90:1.15 },
+  { max:15, f60:1.22, f75:1.15, f90:1.12 },
+  { max:20, f60:1.15, f75:1.11, f90:1.08 },
+  { max:25, f60:1.08, f75:1.05, f90:1.04 },
+  { max:30, f60:1.00, f75:1.00, f90:1.00 },
+  { max:35, f60:0.91, f75:0.94, f90:0.96 },
+  { max:40, f60:0.82, f75:0.88, f90:0.91 },
+  { max:45, f60:0.71, f75:0.82, f90:0.87 },
+  { max:50, f60:0.58, f75:0.75, f90:0.82 },
+  { max:55, f60:0.41, f75:0.67, f90:0.76 },
+  { max:60, f60:null, f75:0.58, f90:0.71 },
+  { max:65, f60:null, f75:0.47, f90:0.65 },
+  { max:70, f60:null, f75:0.33, f90:0.58 },
+  { max:75, f60:null, f75:null, f90:0.50 },
+  { max:80, f60:null, f75:null, f90:0.41 },
+  { max:85, f60:null, f75:null, f90:0.29 },
+];
+
+// Tabla 310-15(b)(3)(a): factor de ajuste por número de conductores portadores de corriente
+const GROUPING_ADJUSTMENT = [
+  { max:3,  pct:100 },
+  { max:6,  pct:80 },
+  { max:9,  pct:70 },
+  { max:20, pct:50 },
+  { max:30, pct:45 },
+  { max:40, pct:40 },
+  { max:Infinity, pct:35 },
+];
+
+// Tabla 240-6(a): capacidades estándar en amperes
+const BREAKER_SIZES = [15,20,25,30,35,40,45,50,60,70,80,90,100,110,125,150,175,200,225,250,300,350,400,450,500,600,700,800,1000,1200,1600,2000,2500,3000];
+
+// 240-4(d): protección máxima para conductores pequeños de cobre, independiente de ampacidad de tabla
+const SMALL_CONDUCTOR_MAX_CU = { "14":15, "12":20, "10":30 };
+
+// Tabla 430-52: porcentaje máximo de FLC según dispositivo de protección
+// (valores para motores polifásicos/monofásicos de jaula de ardilla, el caso general)
+
+// Tabla 9: R (ohm/km) y XL (ohm/km) para cobre, 3 cables individuales en conduit no magnético (PVC), 75°C
+const TABLE9_PVC_CU = {
+  "14":  { r:10.2,   xl:0.190 },
+  "12":  { r:6.6,    xl:0.177 },
+  "10":  { r:3.9,    xl:0.164 },
+  "8":   { r:2.56,   xl:0.171 },
+  "6":   { r:1.61,   xl:0.167 },
+  "4":   { r:1.02,   xl:0.157 },
+  "3":   { r:0.82,   xl:0.154 },
+  "2":   { r:0.62,   xl:0.148 },
+  "1":   { r:0.49,   xl:0.151 },
+  "1/0": { r:0.39,   xl:0.144 },
+  "2/0": { r:0.33,   xl:0.141 },
+  "3/0": { r:0.253,  xl:0.138 },
+  "4/0": { r:0.203,  xl:0.135 },
+  "250": { r:0.171,  xl:0.135 },
+  "300": { r:0.144,  xl:0.135 },
+  "350": { r:0.125,  xl:0.131 },
+  "400": { r:0.108,  xl:0.131 },
+  "500": { r:0.089,  xl:0.128 },
+  "600": { r:0.075,  xl:0.128 },
+  "750": { r:0.062,  xl:0.125 },
+  "1000":{ r:0.049,  xl:0.121 },
+};
+
+// Tabla 5: área aproximada del conductor aislado tipo THHN/THWN (mm2)
+const CONDUCTOR_AREA_THHN = {
+  "18":3.548, "16":4.645, "14":6.258, "12":8.581, "10":13.61, "8":23.61, "6":32.71,
+  "4":53.16, "3":62.77, "2":74.71, "1":100.8, "1/0":119.7, "2/0":143.4, "3/0":172.8,
+  "4/0":208.8, "250":256.1, "300":297.3, "350":338.2, "400":378.3, "500":456.3,
+  "600":559.7, "700":637.9, "750":677.2, "800":715.2, "900":794.3, "1000":869.5,
+};
+
+// Tabla 4 (Capitulo 10): dimensiones y area disponible (mm2) por tuberia, columnas 1/2/>2 conductores (fr=53/31/40%)
+const CONDUIT_TABLES = {
+  pvc40: { name: "PVC Cédula 40 (Art. 352/353)", rows: [
+    { trade:'1/2"', one:75,  two:44,  over2:56 }, { trade:'3/4"', one:173, two:101, over2:131 },
+    { trade:'1"',   one:284, two:166, over2:214 }, { trade:'1-1/4"', one:495, two:290, over2:374 },
+    { trade:'1-1/2"', one:679, two:397, over2:513 }, { trade:'2"',   one:1126, two:658, over2:849 },
+    { trade:'2-1/2"', one:1605, two:939, over2:1212 }, { trade:'3"',   one:2487, two:1455, over2:1877 },
+    { trade:'3-1/2"', one:3327, two:1946, over2:2511 }, { trade:'4"',   one:4288, two:2508, over2:3237 },
+    { trade:'5"',   one:6756, two:3952, over2:5099 }, { trade:'6"',   one:9770, two:5714, over2:7373 },
+  ]},
+  pvc80: { name: "PVC Cédula 80 (Art. 352)", rows: [
+    { trade:'1/2"', one:75,  two:44,  over2:56 }, { trade:'3/4"', one:139, two:82, over2:105 },
+    { trade:'1"',   one:236, two:138, over2:178 }, { trade:'1-1/4"', one:424, two:248, over2:320 },
+    { trade:'1-1/2"', one:585, two:342, over2:442 }, { trade:'2"',   one:983, two:575, over2:742 },
+    { trade:'2-1/2"', one:1410, two:825, over2:1064 }, { trade:'3"',   one:2200, two:1287, over2:1660 },
+    { trade:'3-1/2"', one:2972, two:1738, over2:2243 }, { trade:'4"',   one:3852, two:2253, over2:2907 },
+    { trade:'5"',   one:6105, two:3571, over2:4607 }, { trade:'6"',   one:8752, two:5119, over2:6605 },
+  ]},
+  pvcA: { name: "PVC Tipo A (Art. 352)", rows: [
+    { trade:'1/2"', one:132, two:77, over2:100 }, { trade:'3/4"', one:222, two:130, over2:168 },
+    { trade:'1"',   one:370, two:216, over2:279 }, { trade:'1-1/4"', one:604, two:353, over2:456 },
+    { trade:'1-1/2"', one:795, two:465, over2:600 }, { trade:'2"',   one:1245, two:728, over2:940 },
+    { trade:'2-1/2"', one:1863, two:1090, over2:1406 }, { trade:'3"',   one:2799, two:1637, over2:2112 },
+    { trade:'3-1/2"', one:3655, two:2138, over2:2758 }, { trade:'4"',   one:4695, two:2746, over2:3543 },
+  ]},
+  pvcEB: { name: "PVC Tipo EB (Art. 352)", rows: [
+    { trade:'2"',   one:1324, two:774, over2:999 }, { trade:'3"',   one:2979, two:1743, over2:2248 },
+    { trade:'3-1/2"', one:3884, two:2272, over2:2932 }, { trade:'4"',   one:4937, two:2887, over2:3726 },
+    { trade:'5"',   one:7586, two:4437, over2:5726 }, { trade:'6"',   one:10776, two:6303, over2:8133 },
+  ]},
+  emt: { name: "Metálico EMT (Art. 358)", rows: [
+    { trade:'1/2"', one:104, two:61,  over2:78 }, { trade:'3/4"', one:182, two:106, over2:137 },
+    { trade:'1"',   one:295, two:172, over2:222 }, { trade:'1-1/4"', one:513, two:300, over2:387 },
+    { trade:'1-1/2"', one:696, two:407, over2:526 }, { trade:'2"',   one:1147, two:671, over2:866 },
+    { trade:'2-1/2"', one:2005, two:1173, over2:1513 }, { trade:'3"',   one:3022, two:1767, over2:2280 },
+    { trade:'3-1/2"', one:3949, two:2310, over2:2980 }, { trade:'4"',   one:5046, two:2951, over2:3808 },
+  ]},
+  ent: { name: "No metálico ENT (Art. 362)", rows: [
+    { trade:'1/2"', one:97,  two:57,  over2:73 }, { trade:'3/4"', one:174, two:102, over2:131 },
+    { trade:'1"',   one:284, two:166, over2:215 }, { trade:'1-1/4"', one:497, two:291, over2:375 },
+    { trade:'1-1/2"', one:679, two:397, over2:512 }, { trade:'2"',   one:1125, two:658, over2:849 },
+  ]},
+  fmc: { name: "Metálico flexible FMC (Art. 348)", rows: [
+    { trade:'3/8"', one:39, two:23, over2:30 }, { trade:'1/2"', one:108, two:63,  over2:81 },
+    { trade:'3/4"', one:182, two:106, over2:137 }, { trade:'1"',   one:279, two:163, over2:211 },
+    { trade:'1-1/4"', one:437, two:256, over2:330 }, { trade:'1-1/2"', one:636, two:372, over2:480 },
+    { trade:'2"',   one:1117, two:653, over2:843 }, { trade:'2-1/2"', one:1678, two:982, over2:1267 },
+    { trade:'3"',   one:2417, two:1414, over2:1824 }, { trade:'3-1/2"', one:3290, two:1924, over2:2483 },
+    { trade:'4"',   one:4297, two:2513, over2:3243 },
+  ]},
+  imc: { name: "Metálico semipesado IMC (Art. 342)", rows: [
+    { trade:'1/2"', one:117, two:69,  over2:89 }, { trade:'3/4"', one:200, two:117, over2:151 },
+    { trade:'1"',   one:329, two:192, over2:248 }, { trade:'1-1/4"', one:564, two:330, over2:425 },
+    { trade:'1-1/2"', one:759, two:444, over2:573 }, { trade:'2"',   one:1241, two:726, over2:937 },
+    { trade:'2-1/2"', one:1753, two:1026, over2:1323 }, { trade:'3"',   one:2711, two:1586, over2:2046 },
+    { trade:'3-1/2"', one:3616, two:2115, over2:2729 }, { trade:'4"',   one:4624, two:2705, over2:3490 },
+  ]},
+  rmc: { name: "Metálico pesado RMC (Art. 344)", rows: [
+    { trade:'1/2"', one:108, two:63,  over2:81 }, { trade:'3/4"', one:187, two:109, over2:141 },
+    { trade:'1"',   one:303, two:177, over2:229 }, { trade:'1-1/4"', one:522, two:305, over2:394 },
+    { trade:'1-1/2"', one:707, two:413, over2:533 }, { trade:'2"',   one:1165, two:681, over2:879 },
+    { trade:'2-1/2"', one:1663, two:972, over2:1255 }, { trade:'3"',   one:2565, two:1500, over2:1936 },
+    { trade:'3-1/2"', one:3424, two:2003, over2:2584 }, { trade:'4"',   one:4408, two:2578, over2:3326 },
+    { trade:'5"',   one:6916, two:4045, over2:5220 }, { trade:'6"',   one:9975, two:5834, over2:7528 },
+  ]},
+  lfncA: { name: "No metálico flexible hermético LFNC-A (Art. 356)", rows: [
+    { trade:'3/8"', one:66,  two:39,  over2:50 }, { trade:'1/2"', one:107, two:62,  over2:80 },
+    { trade:'3/4"', one:184, two:107, over2:139 }, { trade:'1"',   one:292, two:171, over2:221 },
+    { trade:'1-1/4"', one:513, two:300, over2:387 }, { trade:'1-1/2"', one:690, two:403, over2:520 },
+    { trade:'2"',   one:1143, two:669, over2:863 },
+  ]},
+  lfncB: { name: "No metálico flexible hermético LFNC-B (Art. 356)", rows: [
+    { trade:'3/8"', one:65,  two:38,  over2:49 }, { trade:'1/2"', one:108, two:63,  over2:81 },
+    { trade:'3/4"', one:185, two:108, over2:140 }, { trade:'1"',   one:299, two:175, over2:226 },
+    { trade:'1-1/4"', one:522, two:305, over2:394 }, { trade:'1-1/2"', one:676, two:395, over2:510 },
+    { trade:'2"',   one:1108, two:648, over2:836 },
+  ]},
+  lfmc: { name: "Metálico flexible hermético LFMC (Art. 350)", rows: [
+    { trade:'3/8"', one:65,  two:38,  over2:49 }, { trade:'1/2"', one:108, two:63,  over2:81 },
+    { trade:'3/4"', one:185, two:108, over2:140 }, { trade:'1"',   one:299, two:175, over2:226 },
+    { trade:'1-1/4"', one:522, two:305, over2:394 }, { trade:'1-1/2"', one:676, two:395, over2:510 },
+    { trade:'2"',   one:1108, two:648, over2:836 }, { trade:'2-1/2"', one:1668, two:976, over2:1259 },
+    { trade:'3"',   one:2559, two:1497, over2:1931 }, { trade:'3-1/2"', one:3327, two:1946, over2:2511 },
+    { trade:'4"',   one:4339, two:2538, over2:3275 },
+  ]},
+};
+
+// Tipos de sistema: define # de fases, si hay neutro/tierra y como se calculan corriente y caida de tension
+const SYSTEM_TYPES = {
+  "1F-1N":     { label: "1 fase + 1 neutro (2 hilos)",                fases:1, neutro:true,  tierra:false },
+  "1F-1N-1T":  { label: "1 fase + 1 neutro + 1 tierra (3 hilos)",     fases:1, neutro:true,  tierra:true  },
+  "2F-1T":     { label: "2 fases + 1 tierra, sin neutro (3 hilos)",   fases:2, neutro:false, tierra:true  },
+  "2F-1N":     { label: "2 fases + 1 neutro (3 hilos, bifásico)",     fases:2, neutro:true,  tierra:false },
+  "2F-1N-1T":  { label: "2 fases + 1 neutro + 1 tierra (4 hilos)",    fases:2, neutro:true,  tierra:true  },
+  "3F-1T":     { label: "3 fases + 1 tierra, sin neutro (4 hilos)",   fases:3, neutro:false, tierra:true  },
+  "3F-1N":     { label: "3 fases + 1 neutro, sin tierra (4 hilos)",   fases:3, neutro:true,  tierra:false },
+  "3F-1N-1T":  { label: "3 fases + 1 neutro + 1 tierra (5 hilos)",    fases:3, neutro:true,  tierra:true  },
+};
+// Tensiones nominales disponibles (V)
+const VOLTAGE_OPTIONS = [127, 220, 440, 480];
+
+// Que tipo(s) de alimentacion son posibles a cada tension
+const VOLTAGE_PHASE_MAP = {
+  127: ["mono"],
+  220: ["mono", "tri"],
+  440: ["tri"],
+  480: ["tri"],
+};
+
+// Que claves de SYSTEM_TYPES quedan habilitadas segun alimentacion (y, si es monofasico, segun la tension)
+const PHASE_SYSTEM_MAP = {
+  mono: {
+    127: ["1F-1N", "1F-1N-1T"],
+    220: ["2F-1T", "2F-1N", "2F-1N-1T"],
+  },
+  tri: ["3F-1T", "3F-1N", "3F-1N-1T"],
+};
+
+function systemMeta(key) {
+  const s = SYSTEM_TYPES[key];
+  const totalConductors = s.fases + (s.neutro?1:0) + (s.tierra?1:0);
+  const currentCarrying = s.fases + (s.neutro?1:0);
+  const vdFactor = s.fases === 3 ? Math.sqrt(3) : 2;
+  const vDenom = s.fases === 3 ? Math.sqrt(3) : 1; // para I = VA / (vDenom * V)
+  return { ...s, totalConductors, currentCarrying, vdFactor, vDenom };
+}
+
+const AWG_ORDER = AMPACITY_TABLE.map(r => r.awg);
+
+/* =========================================================================
+   POBLAR SELECTS
+   ========================================================================= */
+(function initSelects() {
+  const sysSel = document.getElementById('systemType');
+  Object.entries(SYSTEM_TYPES).forEach(([key, s]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = `${key} — ${s.label}`;
+    sysSel.appendChild(o);
+  });
+
+  const conduitSel = document.getElementById('conduitType');
+  Object.entries(CONDUIT_TABLES).forEach(([key, c]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = c.name;
+    conduitSel.appendChild(o);
+  });
+  conduitSel.value = "pvc40";
+
+  const voltSel = document.getElementById('voltage');
+  VOLTAGE_OPTIONS.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v + " V";
+    voltSel.appendChild(o);
+  });
+  voltSel.value = "127";
+
+  updatePhaseOptions();
+  updateSystemOptions();
+})();
+
+/* =========================================================================
+   RESTRICCIONES CRUZADAS: tension <-> alimentacion <-> tipo de sistema
+   ========================================================================= */
+function updatePhaseOptions() {
+  const voltage = parseInt(document.getElementById('voltage').value);
+  const allowed = VOLTAGE_PHASE_MAP[voltage] || ["mono", "tri"];
+  const sel = document.getElementById('phaseType');
+  Array.from(sel.options).forEach(o => { o.disabled = !allowed.includes(o.value); });
+  if (!allowed.includes(sel.value)) sel.value = allowed[0];
+}
+
+function updateSystemOptions() {
+  const voltage = parseInt(document.getElementById('voltage').value);
+  const phase = document.getElementById('phaseType').value;
+  const allowedKeys = phase === "tri" ? PHASE_SYSTEM_MAP.tri : (PHASE_SYSTEM_MAP.mono[voltage] || []);
+  const sel = document.getElementById('systemType');
+  Array.from(sel.options).forEach(o => { o.disabled = !allowedKeys.includes(o.value); });
+  if (!allowedKeys.includes(sel.value)) sel.value = allowedKeys[0];
+}
+
+document.getElementById('voltage').addEventListener('change', () => { updatePhaseOptions(); updateSystemOptions(); });
+document.getElementById('phaseType').addEventListener('change', updateSystemOptions);
+
+/* =========================================================================
+   LISTA DE CARGAS (tabla dinámica)
+   ========================================================================= */
+function addLoadRow(name="", watts=1000, fp=0.9, cont=false) {
+  const tbody = document.getElementById('loadsBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="ld-name" value="${name}" placeholder="Ej. Contactos"></td>
+    <td><input type="number" class="ld-w" value="${watts}" min="0" step="1" style="width:80px"></td>
+    <td><input type="number" class="ld-fp" value="${fp}" min="0.1" max="1" step="0.01" style="width:60px"></td>
+    <td style="text-align:center"><input type="checkbox" class="ld-cont" ${cont?'checked':''}></td>
+    <td><button type="button" class="rmRow">&times;</button></td>
+  `;
+  tr.querySelector('.rmRow').addEventListener('click', () => { tr.remove(); updateLoadTotals(); });
+  tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateLoadTotals));
+  tbody.appendChild(tr);
+  updateLoadTotals();
+}
+function getLoads() {
+  return Array.from(document.querySelectorAll('#loadsBody tr')).map(tr => {
+    const watts = parseFloat(tr.querySelector('.ld-w').value) || 0;
+    const fp = parseFloat(tr.querySelector('.ld-fp').value) || 1;
+    return {
+      name: tr.querySelector('.ld-name').value || 'Carga',
+      watts,
+      fp,
+      va: watts / fp, // potencia aparente = potencia real / factor de potencia
+      q: watts * Math.tan(Math.acos(fp)), // potencia reactiva (se asume inductiva/retrasada, el caso típico)
+      cont: tr.querySelector('.ld-cont').checked,
+    };
+  });
+}
+// Suma vectorial de P y Q de un grupo de cargas -> VA y FP combinados reales
+// (VA_total = raiz(P_total^2 + Q_total^2); NO es la suma aritmetica de los VA individuales,
+// salvo que todas las cargas tengan el mismo FP)
+function combinePQ(loads) {
+  const p = loads.reduce((s,l) => s + l.watts, 0);
+  const q = loads.reduce((s,l) => s + l.q, 0);
+  const va = Math.sqrt(p*p + q*q);
+  const fp = va > 0 ? p / va : 1;
+  return { p, q, va, fp };
+}
+function updateLoadTotals() {
+  const loads = getLoads();
+  const total = combinePQ(loads);
+  const cont = combinePQ(loads.filter(l=>l.cont));
+  const noCont = combinePQ(loads.filter(l=>!l.cont));
+  const totalVA = total.va, contVA = cont.va, noContVA = noCont.va, weightedFP = total.fp;
+  const demandFactor = parseFloat(document.getElementById('demandFactor').value) || 1;
+  const totalVAdemanda = totalVA * demandFactor;
+  const contVAdemanda = contVA * demandFactor;
+  const noContVAdemanda = noContVA * demandFactor;
+  document.getElementById('loadTotals').innerHTML = demandFactor < 1
+    ? `Instalada: <b>${fmt(totalVA,0)} VA</b> &times; factor demanda ${fmt(demandFactor,2)} = <b>${fmt(totalVAdemanda,0)} VA</b> de demanda &middot; FP combinado: <b>${fmt(weightedFP,3)}</b>`
+    : `Total: <b>${fmt(totalVA,0)} VA</b> &middot; Continua: ${fmt(contVA,0)} VA &middot; No continua: ${fmt(noContVA,0)} VA &middot; FP combinado: <b>${fmt(weightedFP,3)}</b>`;
+  return { totalVA, contVA, noContVA, weightedFP, demandFactor, totalVAdemanda, contVAdemanda, noContVAdemanda };
+}
+document.getElementById('addLoad').addEventListener('click', () => addLoadRow());
+document.getElementById('demandFactor').addEventListener('input', updateLoadTotals);
+addLoadRow("Carga 1", 1000, 0.9, false);
+
+document.getElementById('isMotor').addEventListener('change', (e) => {
+  document.getElementById('motorPanel').style.display = e.target.checked ? 'block' : 'none';
+  document.getElementById('loadListHint').textContent = e.target.checked
+    ? '(modo motor: agrega UNA fila con la potencia (W) y FP del motor — se usará como corriente a plena carga, FLC)'
+    : '(agrega todas las cargas de este circuito: potencia en W, FP y si son continuas)';
+});
+
+/* =========================================================================
+   HELPERS
+   ========================================================================= */
+function lookupTempFactor(ambient, col) {
+  for (const row of TEMP_CORRECTION) if (ambient <= row.max) return row[col];
+  return null;
+}
+function lookupGroupingPct(n) {
+  for (const row of GROUPING_ADJUSTMENT) if (n <= row.max) return row.pct;
+  return 35;
+}
+function nextStandardBreaker(amps) {
+  for (const b of BREAKER_SIZES) if (b >= amps) return b;
+  return BREAKER_SIZES[BREAKER_SIZES.length - 1];
+}
+function fmt(n, d=2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toLocaleString('es-MX', { minimumFractionDigits:0, maximumFractionDigits:d });
+}
+
+/* =========================================================================
+   PASO A: CALIBRE DEL CONDUCTOR  (Art. 310-15)
+   ========================================================================= */
+function calcularCalibre(requiredAmpacity, material, insulTemp, ambient, currentCarrying) {
+  const tempFactor = lookupTempFactor(ambient, "f" + insulTemp);
+  const groupPct = lookupGroupingPct(currentCarrying);
+  const groupFactor = groupPct / 100;
+  const matCol = (material === "cu" ? "cu" : "al") + insulTemp;
+
+  for (const row of AMPACITY_TABLE) {
+    const baseAmp = row[matCol];
+    if (baseAmp === null || baseAmp === undefined) continue;
+    const correctedAmp = baseAmp * (tempFactor ?? 1) * groupFactor;
+    if (correctedAmp >= requiredAmpacity) {
+      return { awg: row.awg, mm2: row.mm2, baseAmp, tempFactor: tempFactor ?? 1, groupFactor, groupPct, correctedAmp, requiredAmpacity };
+    }
+  }
+  return null;
+}
+
+/* =========================================================================
+   PASO B: CAIDA DE TENSION  (Tabla 9, Art. 210-19 Nota 4 / 215-2 Nota 2)
+   ========================================================================= */
+function calcularCaidaTension(awg, current, lengthM, voltage, vdFactor, fp) {
+  const t9 = TABLE9_PVC_CU[awg];
+  if (!t9) return null;
+  const angle = Math.acos(fp);
+  const ze = t9.r * fp + t9.xl * Math.sin(angle);
+  const lengthKm = lengthM / 1000;
+  const dropV = vdFactor * current * lengthKm * ze;
+  const dropPct = (dropV / voltage) * 100;
+  return { r:t9.r, xl:t9.xl, ze, dropV, dropPct, lengthKm, vdFactor };
+}
+
+/* =========================================================================
+   PASO C: CAPACIDAD DEL INTERRUPTOR
+   ========================================================================= */
+function calcularInterruptorGeneral(protectionCurrent, conductorCorrectedAmp, awg, material) {
+  let breaker = nextStandardBreaker(protectionCurrent);
+  let cap = null;
+  if (material === "cu" && SMALL_CONDUCTOR_MAX_CU[awg]) {
+    cap = SMALL_CONDUCTOR_MAX_CU[awg];
+    if (breaker > cap) breaker = cap;
+  }
+  const maxByConductor = nextStandardBreaker(conductorCorrectedAmp);
+  let note = "";
+  if (breaker > maxByConductor && maxByConductor <= 800) {
+    breaker = maxByConductor;
+    note = "Limitado por la ampacidad del conductor (Art. 240-4b): se usa el valor estándar inmediato superior a la ampacidad corregida.";
+  }
+  return { breaker, maxByConductor, cap, note };
+}
+function calcularInterruptorMotor(flc, pct) {
+  const maxCurrent = flc * (pct / 100);
+  const breaker = nextStandardBreaker(maxCurrent);
+  return { breaker, maxCurrent, pct };
+}
+
+/* =========================================================================
+   PASO D: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
+   ========================================================================= */
+function calcularTuberia(awg, totalConductors, conduitType) {
+  const areaPerConductor = CONDUCTOR_AREA_THHN[awg];
+  if (!areaPerConductor) return null;
+  const totalArea = areaPerConductor * totalConductors;
+  let fillPct, col;
+  if (totalConductors === 1) { fillPct = 53; col = "one"; }
+  else if (totalConductors === 2) { fillPct = 31; col = "two"; }
+  else { fillPct = 40; col = "over2"; }
+  const table = CONDUIT_TABLES[conduitType];
+  for (const row of table.rows) {
+    if (row[col] >= totalArea) return { areaPerConductor, totalArea, fillPct, col, trade: row.trade, available: row[col], conduitName: table.name };
+  }
+  return { areaPerConductor, totalArea, fillPct, col, trade: null, available: null, conduitName: table.name };
+}
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a la memoria
+
+function render(data) {
+  const el = document.getElementById('resultsWrap');
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tuberia, motor } = data;
+
+  const vdBadge = vd.dropPct <= 3
+    ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
+    : `<span class="badge warn">Excede 3% recomendado</span>`;
+
+  const summaryHtml = `
+      ${header.proj || 'Proyecto sin nombre'} &mdash; Tablero: ${header.board || '—'} &mdash; Circuito: ${header.circ || '—'}
+      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg} &middot; Interruptor ${breaker.breaker} A &middot; Tubería ${tuberia.trade ?? '—'}</span>`;
+
+  const stepA = `
+    <div class="result-block">
+      <h3>A. Calibre del conductor <span class="badge ok">${calibreFinal.awg} AWG/kcmil</span></h3>
+      <div class="headline">${calibreFinal.awg} <span class="unit">AWG o kcmil &middot; ${fmt(calibreFinal.mm2,2)} mm&sup2;</span></div>
+      <div class="memoria">
+        ${input.demandFactor < 1 ? `Carga instalada: <b>${fmt(input.totalVA,0)} VA</b> &times; factor de demanda ${fmt(input.demandFactor,2)} = carga de demanda <b>${fmt(input.totalVAdemanda,0)} VA</b> (criterio simplificado, ver Art. 220 para tablas de demanda por tipo de carga).<br>` : ""}
+        ${motor
+          ? `Corriente a plena carga (FLC) estimada de la lista de cargas: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
+          : `Corriente total del circuito (lista de cargas${input.demandFactor < 1 ? ', ya con demanda aplicada' : ''}): <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = no continua + 125% &times; continua = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 210-19).`}
+        <br>
+        Calibre mínimo por ampacidad: <b>${calibreIni.awg}</b> (ampacidad base 310-15(b)(16) = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor agrupamiento ${calibreIni.groupPct}% (310-15(b)(3)(a), ${input.currentCarrying} cond.) = ampacidad corregida ${fmt(calibreIni.correctedAmp,2)} A).
+        ${calibreFinal.awg !== calibreIni.awg ? `<br><b>Se incrementó a ${calibreFinal.awg}</b> porque el calibre por ampacidad no cumplía el límite de caída de tensión de 3% &mdash; ver sección B.` : ""}
+        <details><summary>Ver tabla de verificación</summary>
+        <table><tr><th>Dato</th><th>Valor</th><th>Fuente NOM-001</th></tr>
+        <tr><td>Ampacidad base (${input.material==='cu'?'Cu':'Al'}, ${input.insulTemp}°C)</td><td>${fmt(calibreFinal.baseAmp,0)} A</td><td class="cite">Tabla 310-15(b)(16)</td></tr>
+        <tr><td>Factor corrección por temp. ambiente (${input.ambient}°C)</td><td>${fmt(calibreFinal.tempFactor,2)}</td><td class="cite">Tabla 310-15(b)(2)(a)</td></tr>
+        <tr><td>Factor de ajuste por agrupamiento (${input.currentCarrying} cond. con corriente)</td><td>${calibreFinal.groupPct}%</td><td class="cite">Tabla 310-15(b)(3)(a)</td></tr>
+        <tr><td>Ampacidad corregida final</td><td>${fmt(calibreFinal.correctedAmp,2)} A</td><td class="cite">310-15(a)</td></tr>
+        </table></details>
+      </div>
+    </div>`;
+
+  const stepB = `
+    <div class="result-block">
+      <h3>B. Caída de tensión ${vdBadge}</h3>
+      <div class="headline">${fmt(vd.dropPct,2)}<span class="unit">% (${fmt(vd.dropV,2)} V) en ${input.length} m</span></div>
+      <div class="memoria">
+        Usando calibre final <b>${calibreFinal.awg}</b>: R = ${fmt(vd.r,3)} &Omega;/km, X<sub>L</sub> = ${fmt(vd.xl,3)} &Omega;/km (Tabla 9, conduit PVC, cobre).
+        Impedancia efectiva a FP=${fmt(input.fpVD,3)}: Z<sub>e</sub> = R&times;FP + X<sub>L</sub>&times;sen(&angle;FP) = <b>${fmt(vd.ze,3)} &Omega;/km</b>.
+        Caída = ${input.systemFases===3?'&radic;3':'2'} &times; I &times; L(km) &times; Z<sub>e</sub> = <b>${fmt(vd.dropV,2)} V</b> = <b>${fmt(vd.dropPct,2)}%</b> de ${input.voltage} V.
+        <br><span class="cite">${input.circuitCite}. Límite orientativo: 3% en el circuito, 5% combinado alimentador+derivado.</span>
+      </div>
+    </div>`;
+
+  const stepC = motor ? `
+    <div class="result-block">
+      <h3>C. Capacidad del interruptor (motor) <span class="badge ok">${breaker.breaker} A</span></h3>
+      <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
+      <div class="memoria">
+        FLC = ${fmt(input.current,2)} A &times; ${breaker.pct}% (Tabla 430-52, dispositivo seleccionado) = máximo ${fmt(breaker.maxCurrent,2)} A &rarr; valor estándar inmediato: <b>${breaker.breaker} A</b>.
+        <br>Nota: esta es la protección contra cortocircuito/falla a tierra del circuito derivado del motor (puede exceder la ampacidad del conductor, es normal en circuitos de motor). La protección de sobrecarga térmica (Parte III, Art. 430) es independiente y no se calcula en esta herramienta.
+        <br><span class="cite">Art. 430-52, Tabla 430-52, Art. 430-22.</span>
+      </div>
+    </div>` : `
+    <div class="result-block">
+      <h3>C. Capacidad del interruptor <span class="badge ok">${breaker.breaker} A</span></h3>
+      <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
+      <div class="memoria">
+        Corriente mínima de protección requerida: <b>${fmt(input.requiredAmpacity,2)} A</b> &rarr; siguiente valor estándar: <b>${breaker.breaker} A</b>.
+        ${breaker.cap ? `<br>Tope aplicado por conductor pequeño de cobre (Art. 240-4d): máximo ${breaker.cap} A para calibre ${calibreFinal.awg} AWG.` : ""}
+        ${breaker.note ? `<br>${breaker.note}` : `<br>Verificado contra la ampacidad corregida del conductor (${fmt(calibreFinal.correctedAmp,2)} A): cumple sin necesitar excepción de 240-4(b).`}
+        <br><span class="cite">Art. 240-6(a) capacidades estándar; Art. 240-4 protección de conductores; Art. 210-19/210-20 dimensionamiento por carga continua.</span>
+      </div>
+    </div>`;
+
+  const stepD = `
+    <div class="result-block">
+      <h3>D. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
+      <div class="headline">${tuberia.trade ?? '—'}<span class="unit"> ${tuberia.conduitName}</span></div>
+      <div class="memoria">
+        Sistema ${input.systemKey}: ${input.totalConductors} conductor(es) físicos (fases${SYSTEM_TYPES[input.systemKey].neutro?' + neutro':''}${SYSTEM_TYPES[input.systemKey].tierra?' + tierra':''}) calibre ${calibreFinal.awg} AWG THHN &times; ${fmt(tuberia.areaPerConductor,2)} mm&sup2; c/u = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
+        Con ${input.totalConductors} conductor(es) el llenado máximo permitido es <b>${tuberia.fillPct}%</b> del área del tubo (Tabla 1).
+        Tubería mínima que cumple: <b>${tuberia.trade ?? 'ninguna del rango calculado'}</b> (${tuberia.available ? fmt(tuberia.available,0)+" mm² disponibles a "+tuberia.fillPct+"%" : ""}).
+        <br><span class="cite">Tabla 1, Tabla 4 y Tabla 5, Capítulo 10, NOM-001-SEDE-2018.</span>
+      </div>
+    </div>`;
+
+  const bodyHtml = stepA + stepB + stepC + stepD;
+
+  el.innerHTML = `
+    <details class="circuitSheet" open>
+      <summary>${summaryHtml}</summary>
+      <div class="sheetBody">
+        ${bodyHtml}
+        <button id="addToMemoria" type="button">+ Agregar este circuito a la memoria del proyecto</button>
+      </div>
+    </details>`;
+
+  lastCalc = {
+    id: Date.now(),
+    proj: header.proj, board: header.board, circ: header.circ,
+    circuitKindLabel: input.circuitKindLabel, motor, systemKey: input.systemKey, voltage: input.voltage,
+    awg: calibreFinal.awg, breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
+    dropPct: vd.dropPct, current: input.current,
+    summaryHtml, bodyHtml,
+  };
+  document.getElementById('addToMemoria').addEventListener('click', addToMemoria);
+}
+
+/* =========================================================================
+   MAIN
+   ========================================================================= */
+document.getElementById('calc').addEventListener('click', () => {
+  const projName = document.getElementById('projName').value;
+  const boardName = document.getElementById('boardName').value;
+  const circName = document.getElementById('circName').value;
+  const circuitKind = document.getElementById('circuitKind').value; // derivado | alimentador
+  const isMotor = document.getElementById('isMotor').checked;
+  const motorPct = parseFloat(document.getElementById('motorDevice').value);
+
+  const systemKey = document.getElementById('systemType').value;
+  const sys = systemMeta(systemKey);
+  const voltage = parseFloat(document.getElementById('voltage').value);
+
+  const material = document.getElementById('material').value;
+  const insulTemp = document.getElementById('insulTemp').value;
+  const ambient = parseFloat(document.getElementById('ambient').value);
+  const length = parseFloat(document.getElementById('length').value);
+  const conduitType = document.getElementById('conduitType').value;
+
+  const totals = updateLoadTotals();
+  if (totals.totalVA <= 0) { alert('Agrega al menos una carga con VA mayor a cero.'); return; }
+
+  // Corriente total del circuito a partir de la lista de cargas, aplicando factor de demanda
+  const current = totals.totalVAdemanda / (sys.vDenom * voltage);
+  const currentCont = totals.contVAdemanda / (sys.vDenom * voltage);
+  const currentNoCont = totals.noContVAdemanda / (sys.vDenom * voltage);
+  const fpVD = totals.weightedFP;
+
+  const circuitKindLabel = circuitKind === 'alimentador' ? 'Alimentador' : 'Circuito derivado';
+  const circuitCite = circuitKind === 'alimentador' ? 'Art. 215-2, Nota 2' : 'Art. 210-19, Nota 4';
+
+  // Ampacidad requerida
+  let requiredAmpacity;
+  if (isMotor) {
+    requiredAmpacity = current * 1.25; // Art. 430-22, FLC = current (de la lista de cargas)
+  } else {
+    requiredAmpacity = currentNoCont + 1.25 * currentCont; // Art. 210-19(a)(1)
+  }
+
+  // A: calibre inicial
+  const calibreIni = calcularCalibre(requiredAmpacity, material, insulTemp, ambient, sys.currentCarrying);
+  if (!calibreIni) { alert('La corriente solicitada excede el rango de la tabla (máx. 1000 kcmil). Revisa los datos.'); return; }
+
+  // B: caida de tension, sube de calibre si excede 3% (solo cobre, rango de Tabla 9)
+  let calibreFinal = calibreIni;
+  let vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD);
+  if (vd && material === 'cu') {
+    let idx = AWG_ORDER.indexOf(calibreFinal.awg);
+    while (vd && vd.dropPct > 3 && idx < AWG_ORDER.length - 1) {
+      idx++;
+      const nextAwg = AWG_ORDER[idx];
+      const row = AMPACITY_TABLE.find(r => r.awg === nextAwg);
+      const matCol = "cu" + insulTemp;
+      const baseAmp = row[matCol];
+      if (baseAmp === null || baseAmp === undefined) continue;
+      const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
+      const groupPct = lookupGroupingPct(sys.currentCarrying);
+      calibreFinal = { awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct, correctedAmp: baseAmp*tempFactor*(groupPct/100), requiredAmpacity };
+      vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD);
+    }
+  }
+  if (!vd) vd = { r:0, xl:0, ze:0, dropV:0, dropPct:0 };
+
+  // C: interruptor
+  const breaker = isMotor
+    ? calcularInterruptorMotor(current, motorPct)
+    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.correctedAmp, calibreFinal.awg, material);
+
+  // D: tuberia (conductores fisicos totales segun tipo de sistema)
+  const tuberia = calcularTuberia(calibreFinal.awg, sys.totalConductors, conduitType);
+
+  render({
+    header: { proj: projName, board: boardName, circ: circName },
+    motor: isMotor,
+    input: {
+      current, requiredAmpacity, material, insulTemp, ambient, length, fpVD,
+      systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
+      voltage, circuitKindLabel, circuitCite,
+      totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
+    },
+    calibreIni, calibreFinal, vd, breaker, tuberia,
+  });
+});
+
+/* =========================================================================
+   MEMORIA DE CIRCUITOS CALCULADOS (registro del proyecto, persistente)
+   ========================================================================= */
+const REGISTRY_KEY = "nomica_registry_v1";
+
+function loadRegistry() {
+  try { return JSON.parse(localStorage.getItem(REGISTRY_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveRegistry(reg) {
+  localStorage.setItem(REGISTRY_KEY, JSON.stringify(reg));
+}
+
+function addToMemoria() {
+  if (!lastCalc) return;
+  const reg = loadRegistry();
+  reg.push(lastCalc);
+  saveRegistry(reg);
+  renderRegistry();
+  const btn = document.getElementById('addToMemoria');
+  btn.textContent = "✓ Agregado a la memoria del proyecto";
+  btn.disabled = true;
+}
+
+function renderRegistry() {
+  const reg = loadRegistry();
+  const wrap = document.getElementById('registryTableWrap');
+  if (reg.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Aún no has agregado ningún circuito a la memoria. Calcula un circuito y presiona "Agregar a la memoria" para empezar a construir el registro del proyecto.</div>`;
+    return;
+  }
+  const rows = reg.map((r, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${r.board || '—'}</td>
+      <td>${r.circ || '—'}</td>
+      <td>${r.circuitKindLabel}${r.motor ? ' (motor)' : ''}</td>
+      <td>${r.systemKey}</td>
+      <td>${r.awg}</td>
+      <td>${r.breakerA} A</td>
+      <td>${r.conduitTrade ?? '—'}</td>
+      <td>${fmt(r.dropPct,2)}%</td>
+      <td><button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button></td>
+    </tr>`).join("");
+  wrap.innerHTML = `
+    <table id="registryTable">
+      <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="hint" style="margin-top:8px">${reg.length} circuito(s) en la memoria de este proyecto (se guarda en este navegador).</p>`;
+}
+function removeFromRegistry(id) {
+  const reg = loadRegistry().filter(r => r.id !== id);
+  saveRegistry(reg);
+  renderRegistry();
+}
+
+document.getElementById('clearRegistry').addEventListener('click', () => {
+  if (loadRegistry().length === 0) return;
+  if (confirm('¿Vaciar toda la memoria de circuitos calculados de este proyecto? Esta acción no se puede deshacer.')) {
+    saveRegistry([]);
+    renderRegistry();
+  }
+});
+
+document.getElementById('generateMemoria').addEventListener('click', () => {
+  const reg = loadRegistry();
+  if (reg.length === 0) { alert('Agrega al menos un circuito a la memoria antes de generar el documento.'); return; }
+
+  const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto sin nombre';
+  const today = new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
+
+  const summaryRows = reg.map((r, i) => `
+    <tr>
+      <td>${i+1}</td><td>${r.board||'—'}</td><td>${r.circ||'—'}</td><td>${r.circuitKindLabel}${r.motor?' (motor)':''}</td>
+      <td>${r.systemKey}</td><td>${r.voltage} V</td><td>${r.awg}</td><td>${r.breakerA} A</td>
+      <td>${r.conduitTrade??'—'}</td><td>${fmt(r.dropPct,2)}%</td>
+    </tr>`).join("");
+
+  const detailSections = reg.map((r, i) => `
+    <details class="circuitSheet" open>
+      <summary>${i+1}. ${r.summaryHtml}</summary>
+      <div class="sheetBody">${r.bodyHtml}</div>
+    </details>`).join("");
+
+  document.getElementById('printArea').innerHTML = `
+    <div class="resultsHead">
+      <div class="proj">Memoria de Cálculo &mdash; ${proj}</div>
+      <div class="sub">Generada el ${today} &middot; ${reg.length} circuito(s) &middot; NOM-001-SEDE-2018</div>
+    </div>
+    <div class="card">
+      <h2>Resumen de circuitos</h2>
+      <table id="registryTable">
+        <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th></tr></thead>
+        <tbody>${summaryRows}</tbody>
+      </table>
+    </div>
+    ${detailSections}
+    <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
+  `;
+
+  window.print();
+});
+
+renderRegistry();
+</script>
+
+</body>
+</html>
