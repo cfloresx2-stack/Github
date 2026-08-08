@@ -516,6 +516,30 @@ const BREAKER_SIZES = [15,20,25,30,35,40,45,50,60,70,80,90,100,110,125,150,175,2
 // 240-4(d): protección máxima para conductores pequeños de cobre, independiente de ampacidad de tabla
 const SMALL_CONDUCTOR_MAX_CU = { "14":15, "12":20, "10":30 };
 
+// Tabla 250-122: tamaño mínimo del conductor de puesta a tierra de equipos,
+// segun la capacidad del dispositivo de proteccion (NO segun la corriente)
+const GROUND_TABLE_250_122 = [
+  { maxBreaker:15,   cu:"14",  al:"12"   },
+  { maxBreaker:20,   cu:"12",  al:"10"   },
+  { maxBreaker:60,   cu:"10",  al:"8"    },
+  { maxBreaker:100,  cu:"8",   al:"6"    },
+  { maxBreaker:200,  cu:"6",   al:"4"    },
+  { maxBreaker:300,  cu:"4",   al:"2"    },
+  { maxBreaker:400,  cu:"3",   al:"1"    },
+  { maxBreaker:500,  cu:"2",   al:"1/0"  },
+  { maxBreaker:600,  cu:"1",   al:"2/0"  },
+  { maxBreaker:800,  cu:"1/0", al:"3/0"  },
+  { maxBreaker:1000, cu:"2/0", al:"4/0"  },
+  { maxBreaker:1200, cu:"3/0", al:"250"  },
+  { maxBreaker:1600, cu:"4/0", al:"350"  },
+  { maxBreaker:2000, cu:"250", al:"400"  },
+  { maxBreaker:2500, cu:"350", al:"600"  },
+  { maxBreaker:3000, cu:"400", al:"600"  },
+  { maxBreaker:4000, cu:"500", al:"750"  },
+  { maxBreaker:5000, cu:"700", al:"1000" },
+  { maxBreaker:6000, cu:"800", al:"1000" },
+];
+
 // Tabla 430-52: porcentaje máximo de FLC según dispositivo de protección
 // (valores para motores polifásicos/monofásicos de jaula de ardilla, el caso general)
 
@@ -882,21 +906,74 @@ function calcularInterruptorMotor(flc, pct) {
 }
 
 /* =========================================================================
-   PASO D: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
+   PASO D: CONDUCTOR DE PUESTA A TIERRA DE EQUIPOS  (Art. 250-122)
    ========================================================================= */
-function calcularTuberia(awg, totalConductors, conduitType) {
-  const areaPerConductor = CONDUCTOR_AREA_THHN[awg];
-  if (!areaPerConductor) return null;
-  const totalArea = areaPerConductor * totalConductors;
+function mm2DeAwg(awg) {
+  const row = AMPACITY_TABLE.find(r => r.awg === awg);
+  return row ? row.mm2 : null;
+}
+function awgPorArea(areaMm2) {
+  // Menor calibre de la tabla cuya area sea >= la requerida
+  for (const row of AMPACITY_TABLE) {
+    if (row.mm2 >= areaMm2) return row.awg;
+  }
+  return AMPACITY_TABLE[AMPACITY_TABLE.length - 1].awg;
+}
+function calcularTierraFisica(breakerA, material, awgFaseMinima, awgFaseFinal) {
+  // 250-122(a): base de tabla segun la capacidad del dispositivo de proteccion
+  const fila = GROUND_TABLE_250_122.find(r => breakerA <= r.maxBreaker)
+            || GROUND_TABLE_250_122[GROUND_TABLE_250_122.length - 1];
+  const awgBase = material === "cu" ? fila.cu : fila.al;
+
+  const areaFaseMin  = mm2DeAwg(awgFaseMinima);
+  const areaFaseFin  = mm2DeAwg(awgFaseFinal);
+  const areaBase     = mm2DeAwg(awgBase);
+
+  // 250-122(b): si la fase se aumento por encima del minimo por ampacidad,
+  // la tierra se aumenta proporcionalmente al area
+  let factor = 1, awgTierra = awgBase, areaRequerida = areaBase, aumentado = false;
+  if (areaFaseMin && areaFaseFin && areaFaseFin > areaFaseMin) {
+    factor = areaFaseFin / areaFaseMin;
+    areaRequerida = areaBase * factor;
+    awgTierra = awgPorArea(areaRequerida);
+    aumentado = awgTierra !== awgBase;
+  }
+
+  // 250-122(a): la tierra nunca se exige mayor que los conductores de fase
+  const awgProporcional = awgTierra; // valor antes de aplicar el tope
+  let limitadoPorFase = false;
+  if (mm2DeAwg(awgTierra) > areaFaseFin) {
+    awgTierra = awgFaseFinal;
+    limitadoPorFase = true;
+  }
+
+  return { awgTierra, awgBase, awgProporcional, breakerA, factor, areaBase, areaRequerida, aumentado, limitadoPorFase };
+}
+
+/* =========================================================================
+   PASO E: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
+   ========================================================================= */
+// Los conductores de fase y neutro van al calibre calculado; el de tierra
+// suele ser menor, asi que su area se cuenta por separado (Nota 3 de Tabla 1:
+// el conductor de puesta a tierra si cuenta para el porcentaje de ocupacion).
+function calcularTuberia(awgFase, nFaseNeutro, awgTierra, conduitType) {
+  const areaFase = CONDUCTOR_AREA_THHN[awgFase];
+  if (!areaFase) return null;
+  const areaTierra = awgTierra ? (CONDUCTOR_AREA_THHN[awgTierra] || 0) : 0;
+  const totalConductors = nFaseNeutro + (awgTierra ? 1 : 0);
+  const totalArea = areaFase * nFaseNeutro + areaTierra;
+
   let fillPct, col;
   if (totalConductors === 1) { fillPct = 53; col = "one"; }
   else if (totalConductors === 2) { fillPct = 31; col = "two"; }
   else { fillPct = 40; col = "over2"; }
+
   const table = CONDUIT_TABLES[conduitType];
+  const base = { areaFase, areaTierra, nFaseNeutro, totalConductors, totalArea, fillPct, col, conduitName: table.name };
   for (const row of table.rows) {
-    if (row[col] >= totalArea) return { areaPerConductor, totalArea, fillPct, col, trade: row.trade, available: row[col], conduitName: table.name };
+    if (row[col] >= totalArea) return { ...base, trade: row.trade, available: row[col] };
   }
-  return { areaPerConductor, totalArea, fillPct, col, trade: null, available: null, conduitName: table.name };
+  return { ...base, trade: null, available: null };
 }
 
 /* =========================================================================
@@ -906,7 +983,7 @@ let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a l
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tuberia, motor } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, motor } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -914,7 +991,7 @@ function render(data) {
 
   const summaryHtml = `
       ${header.proj || 'Proyecto sin nombre'} &mdash; Tablero: ${header.board || '—'} &mdash; Circuito: ${header.circ || '—'}
-      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg} &middot; Interruptor ${breaker.breaker} A &middot; Tubería ${tuberia.trade ?? '—'}</span>`;
+      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; Tubería ${tuberia.trade ?? '—'}</span>`;
 
   const stepA = `
     <div class="result-block">
@@ -971,19 +1048,33 @@ function render(data) {
       </div>
     </div>`;
 
-  const stepD = `
+  const stepD = tierra ? `
     <div class="result-block">
-      <h3>D. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
+      <h3>D. Conductor de puesta a tierra <span class="badge ok">${tierra.awgTierra} AWG</span></h3>
+      <div class="headline">${tierra.awgTierra} <span class="unit">AWG &middot; ${fmt(mm2DeAwg(tierra.awgTierra),2)} mm&sup2;</span></div>
+      <div class="memoria">
+        Base por Tabla 250-122, entrando con la capacidad del interruptor (<b>${tierra.breakerA} A</b>): <b>${tierra.awgBase} AWG</b> (${fmt(tierra.areaBase,2)} mm&sup2;).
+        ${tierra.factor > 1
+          ? `<br>El calibre de fase se aumentó de ${calibreIni.awg} a ${calibreFinal.awg} (por caída de tensión), así que la tierra <b>debe aumentarse proporcionalmente</b> (Art. 250-122b): factor = ${fmt(mm2DeAwg(calibreFinal.awg),2)} ÷ ${fmt(mm2DeAwg(calibreIni.awg),2)} = <b>${fmt(tierra.factor,3)}</b> &rarr; área mínima de tierra = ${fmt(tierra.areaBase,2)} &times; ${fmt(tierra.factor,3)} = <b>${fmt(tierra.areaRequerida,2)} mm&sup2;</b> &rarr; calibre <b>${tierra.awgProporcional}</b>.`
+          : `<br>El calibre de fase no se aumentó por encima del mínimo por ampacidad, así que no aplica el aumento proporcional de 250-122(b).`}
+        ${tierra.limitadoPorFase ? `<br>Limitado al calibre de fase (${calibreFinal.awg} AWG): la norma no exige que la tierra sea mayor que los conductores del circuito (Art. 250-122a).` : ""}
+        <br><span class="cite">Art. 250-122(a) y (b), Tabla 250-122, NOM-001-SEDE-2018.</span>
+      </div>
+    </div>` : "";
+
+  const stepE = `
+    <div class="result-block">
+      <h3>${tierra ? 'E' : 'D'}. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
       <div class="headline">${tuberia.trade ?? '—'}<span class="unit"> ${tuberia.conduitName}</span></div>
       <div class="memoria">
-        Sistema ${input.systemKey}: ${input.totalConductors} conductor(es) físicos (fases${SYSTEM_TYPES[input.systemKey].neutro?' + neutro':''}${SYSTEM_TYPES[input.systemKey].tierra?' + tierra':''}) calibre ${calibreFinal.awg} AWG THHN &times; ${fmt(tuberia.areaPerConductor,2)} mm&sup2; c/u = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
-        Con ${input.totalConductors} conductor(es) el llenado máximo permitido es <b>${tuberia.fillPct}%</b> del área del tubo (Tabla 1).
+        Sistema ${input.systemKey}: ${tuberia.nFaseNeutro} conductor(es) de fase${SYSTEM_TYPES[input.systemKey].neutro?'/neutro':''} calibre ${calibreFinal.awg} &times; ${fmt(tuberia.areaFase,2)} mm&sup2;${tierra ? ` + 1 tierra ${tierra.awgTierra} &times; ${fmt(tuberia.areaTierra,2)} mm&sup2;` : ''} = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
+        Con ${tuberia.totalConductors} conductor(es) el llenado máximo permitido es <b>${tuberia.fillPct}%</b> del área del tubo (Tabla 1).
         Tubería mínima que cumple: <b>${tuberia.trade ?? 'ninguna del rango calculado'}</b> (${tuberia.available ? fmt(tuberia.available,0)+" mm² disponibles a "+tuberia.fillPct+"%" : ""}).
-        <br><span class="cite">Tabla 1, Tabla 4 y Tabla 5, Capítulo 10, NOM-001-SEDE-2018.</span>
+        <br><span class="cite">Tabla 1, Tabla 4 y Tabla 5, Capítulo 10, NOM-001-SEDE-2018. El conductor de puesta a tierra sí cuenta para el porcentaje de ocupación (Nota 3 de la Tabla 1).</span>
       </div>
     </div>`;
 
-  const bodyHtml = stepA + stepB + stepC + stepD;
+  const bodyHtml = stepA + stepB + stepC + stepD + stepE;
 
   el.innerHTML = `
     <details class="circuitSheet" open>
@@ -998,7 +1089,8 @@ function render(data) {
     id: Date.now(),
     proj: header.proj, board: header.board, circ: header.circ,
     circuitKindLabel: input.circuitKindLabel, motor, systemKey: input.systemKey, voltage: input.voltage,
-    awg: calibreFinal.awg, breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
+    awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
+    breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
     dropPct: vd.dropPct, current: input.current,
     summaryHtml, bodyHtml,
   };
@@ -1075,8 +1167,13 @@ document.getElementById('calc').addEventListener('click', () => {
     ? calcularInterruptorMotor(current, motorPct)
     : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.correctedAmp, calibreFinal.awg, material);
 
-  // D: tuberia (conductores fisicos totales segun tipo de sistema)
-  const tuberia = calcularTuberia(calibreFinal.awg, sys.totalConductors, conduitType);
+  // D: conductor de puesta a tierra de equipos (solo si el sistema lo incluye)
+  const tierra = sys.tierra
+    ? calcularTierraFisica(breaker.breaker, material, calibreIni.awg, calibreFinal.awg)
+    : null;
+
+  // E: tuberia — fases/neutro al calibre calculado + la tierra a su propio calibre
+  const tuberia = calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType);
 
   render({
     header: { proj: projName, board: boardName, circ: circName },
@@ -1087,7 +1184,7 @@ document.getElementById('calc').addEventListener('click', () => {
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
     },
-    calibreIni, calibreFinal, vd, breaker, tuberia,
+    calibreIni, calibreFinal, vd, breaker, tierra, tuberia,
   });
 });
 
@@ -1130,6 +1227,7 @@ function renderRegistry() {
       <td>${r.circuitKindLabel}${r.motor ? ' (motor)' : ''}</td>
       <td>${r.systemKey}</td>
       <td>${r.awg}</td>
+      <td>${r.awgTierra ?? '—'}</td>
       <td>${r.breakerA} A</td>
       <td>${r.conduitTrade ?? '—'}</td>
       <td>${fmt(r.dropPct,2)}%</td>
@@ -1137,7 +1235,7 @@ function renderRegistry() {
     </tr>`).join("");
   wrap.innerHTML = `
     <table id="registryTable">
-      <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p class="hint" style="margin-top:8px">${reg.length} circuito(s) en la memoria de este proyecto (se guarda en este navegador).</p>`;
@@ -1166,7 +1264,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
   const summaryRows = reg.map((r, i) => `
     <tr>
       <td>${i+1}</td><td>${r.board||'—'}</td><td>${r.circ||'—'}</td><td>${r.circuitKindLabel}${r.motor?' (motor)':''}</td>
-      <td>${r.systemKey}</td><td>${r.voltage} V</td><td>${r.awg}</td><td>${r.breakerA} A</td>
+      <td>${r.systemKey}</td><td>${r.voltage} V</td><td>${r.awg}</td><td>${r.awgTierra ?? '—'}</td><td>${r.breakerA} A</td>
       <td>${r.conduitTrade??'—'}</td><td>${fmt(r.dropPct,2)}%</td>
     </tr>`).join("");
 
@@ -1184,7 +1282,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     <div class="card">
       <h2>Resumen de circuitos</h2>
       <table id="registryTable">
-        <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th></tr></thead>
+        <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th></tr></thead>
         <tbody>${summaryRows}</tbody>
       </table>
     </div>
