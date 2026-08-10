@@ -414,6 +414,41 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>5. Cortocircuito <span class="hint">(opcional)</span></h2>
+
+      <div class="checkline" style="margin-top:0">
+        <input type="checkbox" id="scEnabled">
+        <label for="scEnabled">Calcular corriente de cortocircuito y verificar capacidad interruptiva (Art. 110-9)</label>
+      </div>
+
+      <div id="scPanel" style="display:none">
+        <div class="row2">
+          <div>
+            <label>Transformador <span class="hint">(kVA)</span></label>
+            <input type="number" id="scKva" value="500" step="1" min="1">
+          </div>
+          <div>
+            <label>Impedancia %Z <span class="hint">(placa)</span></label>
+            <input type="number" id="scZ" value="5" step="0.05" min="0.5" max="20">
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Cap. interruptiva del interruptor <span class="hint">(kA)</span></label>
+            <select id="scIcu"></select>
+          </div>
+          <div>
+            <label>Impedancia de la fuente <span class="hint">(pu, 0 = conservador)</span></label>
+            <input type="number" id="scZsource" value="0" step="0.001" min="0">
+          </div>
+        </div>
+
+        <p class="hint" style="margin-top:10px">Se calcula la falla trifásica simétrica por el método por unidad. Se asume que el circuito arranca en el secundario del transformador (o en un tablero alimentado directamente por él); si hay un alimentador intermedio la falla real es menor, así que el resultado queda del lado conservador.</p>
+      </div>
+    </div>
+
     <button id="calc">Calcular circuito</button>
   </div>
 
@@ -515,6 +550,10 @@ const BREAKER_SIZES = [15,20,25,30,35,40,45,50,60,70,80,90,100,110,125,150,175,2
 
 // 240-4(d): protección máxima para conductores pequeños de cobre, independiente de ampacidad de tabla
 const SMALL_CONDUCTOR_MAX_CU = { "14":15, "12":20, "10":30 };
+
+// Capacidades interruptivas (Icu) comerciales tipicas de interruptores
+// termomagneticos en baja tension, en kA simetricos.
+const INTERRUPTING_CAPACITIES_KA = [5, 10, 14, 18, 22, 25, 35, 42, 65, 100, 200];
 
 // Tabla 250-122: tamaño mínimo del conductor de puesta a tierra de equipos,
 // segun la capacidad del dispositivo de proteccion (NO segun la corriente)
@@ -732,6 +771,14 @@ const AWG_ORDER = AMPACITY_TABLE.map(r => r.awg);
   });
   voltSel.value = "127";
 
+  const icuSel = document.getElementById('scIcu');
+  INTERRUPTING_CAPACITIES_KA.forEach(ka => {
+    const o = document.createElement('option');
+    o.value = ka; o.textContent = ka + " kA";
+    icuSel.appendChild(o);
+  });
+  icuSel.value = "10";
+
   updatePhaseOptions();
   updateSystemOptions();
 })();
@@ -819,6 +866,10 @@ function updateLoadTotals() {
 document.getElementById('addLoad').addEventListener('click', () => addLoadRow());
 document.getElementById('demandFactor').addEventListener('input', updateLoadTotals);
 addLoadRow("Carga 1", 1000, 0.9, false);
+
+document.getElementById('scEnabled').addEventListener('change', (e) => {
+  document.getElementById('scPanel').style.display = e.target.checked ? 'block' : 'none';
+});
 
 document.getElementById('isMotor').addEventListener('change', (e) => {
   document.getElementById('motorPanel').style.display = e.target.checked ? 'block' : 'none';
@@ -951,6 +1002,41 @@ function calcularTierraFisica(breakerA, material, awgFaseMinima, awgFaseFinal) {
 }
 
 /* =========================================================================
+   CORTOCIRCUITO: falla trifasica simetrica por el metodo por unidad
+   -------------------------------------------------------------------------
+   Alcance y limitaciones (declaradas a proposito):
+   - Solo sistema radial en serie: fuente -> transformador -> conductor.
+     No resuelve redes en malla ni fuentes en paralelo.
+   - Solo magnitud de falla trifasica simetrica; las impedancias se suman por
+     magnitud, sin angulo X/R. Mismo nivel de aproximacion que el resto del motor.
+   - No calcula falla linea-tierra (requiere impedancias de secuencia Z0/Z1/Z2).
+   - Impedancia de fuente en 0 sobreestima la falla: es conservador para elegir
+     capacidad interruptiva, nunca en contra.
+   - Se toma la base en los propios datos del transformador, por lo que
+     Z_transformador_pu = %Z / 100 directamente.
+   ========================================================================= */
+function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM }) {
+  const sBase = kva * 1000;                 // VA
+  const iBase = sBase / (Math.sqrt(3) * voltage);
+  const zBase = (voltage * voltage) / sBase;
+
+  const zTrafoPu = zPct / 100;
+  const zTotalTrafoPu = zSourcePu + zTrafoPu;
+  const iccTrafo = (1 / zTotalTrafoPu) * iBase;   // falla en el secundario
+
+  // Impedancia del conductor de este circuito, con R y X reales de la Tabla 9
+  let zCondOhms = null, zCondPu = null, iccCarga = null;
+  const t9 = TABLE9_PVC_CU[awg];
+  if (t9 && lengthM > 0) {
+    zCondOhms = Math.sqrt(t9.r * t9.r + t9.xl * t9.xl) * (lengthM / 1000);
+    zCondPu = zCondOhms / zBase;
+    iccCarga = (1 / (zTotalTrafoPu + zCondPu)) * iBase;
+  }
+
+  return { sBase, iBase, zBase, zTrafoPu, zSourcePu, iccTrafo, zCondOhms, zCondPu, iccCarga };
+}
+
+/* =========================================================================
    PASO E: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
    ========================================================================= */
 // Los conductores de fase y neutro van al calibre calculado; el de tierra
@@ -983,7 +1069,7 @@ let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a l
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, motor } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, motor } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -1074,7 +1160,29 @@ function render(data) {
       </div>
     </div>`;
 
-  const bodyHtml = stepA + stepB + stepC + stepD + stepE;
+  const stepF = cc ? (() => {
+    const icuA = cc.icuKa * 1000;
+    const cumple = icuA >= cc.iccTrafo;
+    const badge = cumple
+      ? `<span class="badge ok">Cumple Art. 110-9</span>`
+      : `<span class="badge warn">NO CUMPLE — interruptor insuficiente</span>`;
+    return `
+    <div class="result-block">
+      <h3>${tierra ? 'F' : 'E'}. Cortocircuito y capacidad interruptiva ${badge}</h3>
+      <div class="headline">${fmt(cc.iccTrafo/1000,2)} <span class="unit">kA simétricos en el secundario del transformador</span></div>
+      <div class="memoria">
+        Base: transformador de ${fmt(cc.kva,0)} kVA a ${input.voltage} V &rarr; I<sub>base</sub> = ${fmt(cc.iBase,1)} A, Z<sub>base</sub> = ${fmt(cc.zBase,4)} &Omega;.
+        <br>Impedancias en por unidad: fuente ${fmt(cc.zSourcePu,4)} + transformador ${fmt(cc.zTrafoPu,4)} (%Z = ${fmt(cc.zPct,2)}%) = <b>${fmt(cc.zSourcePu + cc.zTrafoPu,4)} pu</b>.
+        <br>I<sub>cc</sub> = (1 ÷ Z<sub>total</sub>) &times; I<sub>base</sub> = <b>${fmt(cc.iccTrafo,0)} A</b> = <b>${fmt(cc.iccTrafo/1000,2)} kA</b>.
+        ${cc.iccCarga !== null ? `<br>Agregando el conductor de este circuito (${calibreFinal.awg}, ${input.length} m, Z = ${fmt(cc.zCondOhms,4)} &Omega; = ${fmt(cc.zCondPu,4)} pu), la falla en el extremo de la carga baja a <b>${fmt(cc.iccCarga/1000,2)} kA</b>.` : ""}
+        <br><br><b>Verificación:</b> capacidad interruptiva del interruptor = ${cc.icuKa} kA (${fmt(icuA,0)} A) ${cumple ? '&ge;' : '&lt;'} corriente de falla ${fmt(cc.iccTrafo/1000,2)} kA &rarr; <b>${cumple ? 'CUMPLE' : 'NO CUMPLE'}</b>.
+        ${!cumple ? `<br><span style="color:var(--warn)"><b>Acción requerida:</b> seleccionar un interruptor con capacidad interruptiva de al menos ${INTERRUPTING_CAPACITIES_KA.find(k => k*1000 >= cc.iccTrafo) ?? '>200'} kA.</span>` : ""}
+        <br><span class="cite">Art. 110-9: el dispositivo debe tener capacidad de interrupción suficiente para la corriente de falla disponible en sus terminales. Método por unidad, falla trifásica simétrica, sistema radial. No incluye falla línea a tierra.</span>
+      </div>
+    </div>`;
+  })() : "";
+
+  const bodyHtml = stepA + stepB + stepC + stepD + stepE + stepF;
 
   el.innerHTML = `
     <details class="circuitSheet" open>
@@ -1175,6 +1283,21 @@ document.getElementById('calc').addEventListener('click', () => {
   // E: tuberia — fases/neutro al calibre calculado + la tierra a su propio calibre
   const tuberia = calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType);
 
+  // F: cortocircuito y capacidad interruptiva (opcional)
+  let cc = null;
+  if (document.getElementById('scEnabled').checked) {
+    const kva = parseFloat(document.getElementById('scKva').value) || 0;
+    const zPct = parseFloat(document.getElementById('scZ').value) || 0;
+    const zSourcePu = parseFloat(document.getElementById('scZsource').value) || 0;
+    const icuKa = parseFloat(document.getElementById('scIcu').value);
+    if (kva > 0 && zPct > 0) {
+      cc = { ...calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg: calibreFinal.awg, lengthM: length }), kva, zPct, icuKa };
+    } else {
+      alert('Para el cálculo de cortocircuito, la capacidad del transformador (kVA) y su %Z deben ser mayores a cero.');
+      return;
+    }
+  }
+
   render({
     header: { proj: projName, board: boardName, circ: circName },
     motor: isMotor,
@@ -1184,7 +1307,7 @@ document.getElementById('calc').addEventListener('click', () => {
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
     },
-    calibreIni, calibreFinal, vd, breaker, tierra, tuberia,
+    calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc,
   });
 });
 
