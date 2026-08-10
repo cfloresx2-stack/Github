@@ -475,6 +475,38 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>6. Electrodo de puesta a tierra <span class="hint">(opcional)</span></h2>
+
+      <div class="checkline" style="margin-top:0">
+        <input type="checkbox" id="elEnabled">
+        <label for="elEnabled">Calcular resistencia del electrodo y verificar el criterio de 25 &Omega; (Art. 250-53)</label>
+      </div>
+
+      <div id="elPanel" style="display:none">
+        <label>Resistividad del terreno <span class="hint">(&rho;, en &Omega;&middot;m — medir en sitio; orientativo: arcilla húmeda 20-50, tierra vegetal 50-150, arena seca 200-500, roca &gt;1000)</span></label>
+        <input type="number" id="elRho" value="100" step="1" min="1">
+
+        <div class="row2">
+          <div>
+            <label>Longitud enterrada <span class="hint">(m)</span></label>
+            <input type="number" id="elLargo" value="2.44" step="0.01" min="0.5">
+          </div>
+          <div>
+            <label>Diámetro de la varilla <span class="hint">(mm)</span></label>
+            <input type="number" id="elDiam" value="16" step="0.5" min="5">
+          </div>
+        </div>
+
+        <div class="checkline">
+          <input type="checkbox" id="elComplementario">
+          <label for="elComplementario">Se instalará un electrodo complementario (Art. 250-53(a)(2))</label>
+        </div>
+
+        <p class="hint" style="margin-top:10px">Fórmula de Dwight para un electrodo vertical simple (también en IEEE Std 142 y Ugly's). Es una estimación de diseño: la resistividad varía con la humedad y la temporada, por lo que el valor definitivo debe medirse en sitio con telurómetro. No calcula arreglos de varias varillas ni mallas — eso requiere IEEE Std 80/142.</p>
+      </div>
+    </div>
+
     <button id="calc">Calcular circuito</button>
   </div>
 
@@ -897,6 +929,10 @@ document.getElementById('scEnabled').addEventListener('change', (e) => {
   document.getElementById('scPanel').style.display = e.target.checked ? 'block' : 'none';
 });
 
+document.getElementById('elEnabled').addEventListener('change', (e) => {
+  document.getElementById('elPanel').style.display = e.target.checked ? 'block' : 'none';
+});
+
 document.getElementById('isMotor').addEventListener('change', (e) => {
   document.getElementById('motorPanel').style.display = e.target.checked ? 'block' : 'none';
   document.getElementById('loadListHint').textContent = e.target.checked
@@ -1063,6 +1099,34 @@ function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM }) 
 }
 
 /* =========================================================================
+   ELECTRODO DE PUESTA A TIERRA: resistencia de una varilla vertical simple
+   -------------------------------------------------------------------------
+   Formula de Dwight (IEEE Std 142, tambien en Ugly's):
+       R = (rho / (2*PI*L)) * [ ln(4L/d) - 1 ]
+   No proviene de una tabla de la NOM: es la formula general de ingenieria.
+   Lo que si es normativo es el criterio de 25 ohms del Art. 250-53(a)(2).
+
+   No implementado: arreglos de varias varillas en paralelo ni mallas de
+   tierra — la resistencia combinada depende de la resistencia mutua entre
+   electrodos y requiere IEEE Std 80 / 142.
+   ========================================================================= */
+function calcularElectrodo({ rho, largoM, diamMm, complementario }) {
+  const d = diamMm / 1000;                       // a metros
+  const R = (rho / (2 * Math.PI * largoM)) * (Math.log(4 * largoM / d) - 1);
+
+  // Art. 250-52(a)(5): dimensiones minimas del electrodo
+  const cumpleLargo = largoM >= 2.44;
+  const cumpleDiam = diamMm >= 16;
+
+  // Art. 250-53(a)(2): un electrodo unico debe complementarse, salvo R <= 25 ohms
+  const cumple25 = R <= 25;
+  const requiereComplementario = !cumple25;
+  const resuelto = cumple25 || complementario;
+
+  return { R, rho, largoM, diamMm, complementario, cumpleLargo, cumpleDiam, cumple25, requiereComplementario, resuelto };
+}
+
+/* =========================================================================
    PASO E: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
    ========================================================================= */
 // Los conductores de fase y neutro van al calibre calculado; el de tierra
@@ -1119,7 +1183,7 @@ function hallazgo(reglaId, estado, articulo, observacion) {
   return { reglaId, estado, articulo, observacion };
 }
 
-function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, motor }) {
+function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0, motor }) {
   const h = [];
 
   // R-002 / 310-15(a)(3): ampacidad corregida suficiente para la carga
@@ -1195,6 +1259,34 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
       `Capacidad interruptiva ${cc.icuKa} kA es MENOR que la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA. El dispositivo puede destruirse al intentar interrumpir la falla.`));
   }
 
+  // R-029 / 250-52(a)(5) y R-030 / 250-53(a)(2): electrodo de puesta a tierra
+  if (!el0) {
+    h.push(hallazgo("R-030", ESTADO.NO_EVALUABLE, "Art. 250-53",
+      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario.`));
+  } else {
+    if (!el0.cumpleLargo || !el0.cumpleDiam) {
+      const faltas = [];
+      if (!el0.cumpleLargo) faltas.push(`longitud ${fmt(el0.largoM,2)} m (mínimo 2.44 m)`);
+      if (!el0.cumpleDiam) faltas.push(`diámetro ${fmt(el0.diamMm,1)} mm (mínimo 16 mm)`);
+      h.push(hallazgo("R-029", ESTADO.NO_CUMPLE, "Art. 250-52(a)(5)",
+        `Dimensiones del electrodo fuera de norma: ${faltas.join(' y ')}.`));
+    } else {
+      h.push(hallazgo("R-029", ESTADO.CUMPLE, "Art. 250-52(a)(5)",
+        `Electrodo de ${fmt(el0.largoM,2)} m y ${fmt(el0.diamMm,1)} mm cumple las dimensiones mínimas.`));
+    }
+
+    if (el0.cumple25) {
+      h.push(hallazgo("R-030", ESTADO.ADVERTENCIA, "Art. 250-53(a)(2)",
+        `Resistencia estimada ${fmt(el0.R,2)} Ω ≤ 25 Ω, por lo que no se exige electrodo complementario. Es un valor CALCULADO: debe confirmarse con medición en sitio (telurómetro) antes de omitir el segundo electrodo.`));
+    } else if (el0.complementario) {
+      h.push(hallazgo("R-030", ESTADO.CUMPLE, "Art. 250-53(a)(2)",
+        `Resistencia estimada ${fmt(el0.R,2)} Ω > 25 Ω, y se declara electrodo complementario, como exige la norma.`));
+    } else {
+      h.push(hallazgo("R-030", ESTADO.NO_CUMPLE, "Art. 250-53(a)(2)",
+        `Resistencia estimada ${fmt(el0.R,2)} Ω > 25 Ω y no se declaró electrodo complementario. Se debe instalar un electrodo adicional (separado al menos 1.80 m, Art. 250-53(a)(3)) o demostrar por medición que se cumplen los 25 Ω.`));
+    }
+  }
+
   return h;
 }
 
@@ -1236,7 +1328,7 @@ let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a l
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, motor } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0, motor } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -1252,7 +1344,7 @@ function render(data) {
 
   const stepA = `
     <div class="result-block">
-      <h3>A. Calibre del conductor <span class="badge ok">${calibreFinal.awg} AWG/kcmil</span></h3>
+      <h3>{{L}}. Calibre del conductor <span class="badge ok">${calibreFinal.awg} AWG/kcmil</span></h3>
       <div class="headline">${calibreFinal.awg} <span class="unit">AWG o kcmil &middot; ${fmt(calibreFinal.mm2,2)} mm&sup2;</span></div>
       <div class="memoria">
         ${input.demandFactor < 1 ? `Carga instalada: <b>${fmt(input.totalVA,0)} VA</b> &times; factor de demanda ${fmt(input.demandFactor,2)} = carga de demanda <b>${fmt(input.totalVAdemanda,0)} VA</b> (criterio simplificado, ver Art. 220 para tablas de demanda por tipo de carga).<br>` : ""}
@@ -1274,7 +1366,7 @@ function render(data) {
 
   const stepB = `
     <div class="result-block">
-      <h3>B. Caída de tensión ${vdBadge}</h3>
+      <h3>{{L}}. Caída de tensión ${vdBadge}</h3>
       <div class="headline">${fmt(vd.dropPct,2)}<span class="unit">% (${fmt(vd.dropV,2)} V) en ${input.length} m</span></div>
       <div class="memoria">
         Usando calibre final <b>${calibreFinal.awg}</b>: R = ${fmt(vd.r,3)} &Omega;/km, X<sub>L</sub> = ${fmt(vd.xl,3)} &Omega;/km (Tabla 9, conduit PVC, cobre).
@@ -1286,7 +1378,7 @@ function render(data) {
 
   const stepC = motor ? `
     <div class="result-block">
-      <h3>C. Capacidad del interruptor (motor) <span class="badge ok">${breaker.breaker} A</span></h3>
+      <h3>{{L}}. Capacidad del interruptor (motor) <span class="badge ok">${breaker.breaker} A</span></h3>
       <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
       <div class="memoria">
         FLC = ${fmt(input.current,2)} A &times; ${breaker.pct}% (Tabla 430-52, dispositivo seleccionado) = máximo ${fmt(breaker.maxCurrent,2)} A &rarr; valor estándar inmediato: <b>${breaker.breaker} A</b>.
@@ -1295,7 +1387,7 @@ function render(data) {
       </div>
     </div>` : `
     <div class="result-block">
-      <h3>C. Capacidad del interruptor <span class="badge ok">${breaker.breaker} A</span></h3>
+      <h3>{{L}}. Capacidad del interruptor <span class="badge ok">${breaker.breaker} A</span></h3>
       <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
       <div class="memoria">
         Corriente mínima de protección requerida: <b>${fmt(input.requiredAmpacity,2)} A</b> &rarr; siguiente valor estándar: <b>${breaker.breaker} A</b>.
@@ -1307,7 +1399,7 @@ function render(data) {
 
   const stepD = tierra ? `
     <div class="result-block">
-      <h3>D. Conductor de puesta a tierra <span class="badge ok">${tierra.awgTierra} AWG</span></h3>
+      <h3>{{L}}. Conductor de puesta a tierra <span class="badge ok">${tierra.awgTierra} AWG</span></h3>
       <div class="headline">${tierra.awgTierra} <span class="unit">AWG &middot; ${fmt(mm2DeAwg(tierra.awgTierra),2)} mm&sup2;</span></div>
       <div class="memoria">
         Base por Tabla 250-122, entrando con la capacidad del interruptor (<b>${tierra.breakerA} A</b>): <b>${tierra.awgBase} AWG</b> (${fmt(tierra.areaBase,2)} mm&sup2;).
@@ -1321,7 +1413,7 @@ function render(data) {
 
   const stepE = `
     <div class="result-block">
-      <h3>${tierra ? 'E' : 'D'}. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
+      <h3>{{L}}. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
       <div class="headline">${tuberia.trade ?? '—'}<span class="unit"> ${tuberia.conduitName}</span></div>
       <div class="memoria">
         Sistema ${input.systemKey}: ${tuberia.nFaseNeutro} conductor(es) de fase${SYSTEM_TYPES[input.systemKey].neutro?'/neutro':''} calibre ${calibreFinal.awg} &times; ${fmt(tuberia.areaFase,2)} mm&sup2;${tierra ? ` + 1 tierra ${tierra.awgTierra} &times; ${fmt(tuberia.areaTierra,2)} mm&sup2;` : ''} = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
@@ -1339,7 +1431,7 @@ function render(data) {
       : `<span class="badge warn">NO CUMPLE — interruptor insuficiente</span>`;
     return `
     <div class="result-block">
-      <h3>${tierra ? 'F' : 'E'}. Cortocircuito y capacidad interruptiva ${badge}</h3>
+      <h3>{{L}}. Cortocircuito y capacidad interruptiva ${badge}</h3>
       <div class="headline">${fmt(cc.iccTrafo/1000,2)} <span class="unit">kA simétricos en el secundario del transformador</span></div>
       <div class="memoria">
         Base: transformador de ${fmt(cc.kva,0)} kVA a ${input.voltage} V &rarr; I<sub>base</sub> = ${fmt(cc.iBase,1)} A, Z<sub>base</sub> = ${fmt(cc.zBase,4)} &Omega;.
@@ -1353,7 +1445,29 @@ function render(data) {
     </div>`;
   })() : "";
 
-  const bodyHtml = renderDictamen(hallazgos) + stepA + stepB + stepC + stepD + stepE + stepF;
+  const stepG = el0 ? (() => {
+    const badge = el0.resuelto
+      ? `<span class="badge ok">Cumple Art. 250-53</span>`
+      : `<span class="badge warn">NO CUMPLE — falta electrodo complementario</span>`;
+    return `
+    <div class="result-block">
+      <h3>{{L}}. Electrodo de puesta a tierra ${badge}</h3>
+      <div class="headline">${fmt(el0.R,2)} <span class="unit">&Omega; estimados (varilla única)</span></div>
+      <div class="memoria">
+        Fórmula de Dwight: R = (&rho; ÷ 2&pi;L) &times; [ln(4L÷d) − 1], con &rho; = ${fmt(el0.rho,0)} &Omega;&middot;m, L = ${fmt(el0.largoM,2)} m, d = ${fmt(el0.diamMm,1)} mm.
+        <br>R = <b>${fmt(el0.R,2)} &Omega;</b>.
+        <br><br><b>Criterio de 25 &Omega; (Art. 250-53(a)(2)):</b> ${el0.cumple25
+          ? `la resistencia es &le; 25 &Omega;, por lo que <b>no se exige</b> un electrodo complementario.`
+          : `la resistencia es &gt; 25 &Omega;, por lo que <b>sí se exige</b> un electrodo complementario. ${el0.complementario ? 'Se declaró que se instalará: <b>cumple</b>.' : '<b style="color:var(--warn)">No se declaró electrodo complementario.</b>'}`}
+        ${(!el0.cumpleLargo || !el0.cumpleDiam) ? `<br><br><span style="color:var(--warn)"><b>Dimensiones fuera de norma (Art. 250-52(a)(5)):</b> ${!el0.cumpleLargo ? `la longitud (${fmt(el0.largoM,2)} m) es menor a los 2.44 m mínimos. ` : ''}${!el0.cumpleDiam ? `el diámetro (${fmt(el0.diamMm,1)} mm) es menor a los 16 mm mínimos.` : ''}</span>` : ''}
+        <br><span class="cite">La fórmula de Dwight es de ingeniería general (IEEE Std 142), no una tabla de la NOM; el criterio de 25 &Omega; sí es normativo. Valor estimado: la resistividad varía con humedad y temporada — el valor definitivo debe medirse en sitio con telurómetro. No aplica a arreglos de varias varillas ni mallas.</span>
+      </div>
+    </div>`;
+  })() : "";
+
+  const secciones = [stepA, stepB, stepC, stepD, stepE, stepF, stepG].filter(Boolean);
+  const bodyHtml = renderDictamen(hallazgos) +
+    secciones.map((s, i) => s.replace('{{L}}', String.fromCharCode(65 + i))).join('');
 
   el.innerHTML = `
     <details class="circuitSheet" open>
@@ -1470,6 +1584,21 @@ document.getElementById('calc').addEventListener('click', () => {
     }
   }
 
+  // G: electrodo de puesta a tierra (opcional)
+  let el0 = null;
+  if (document.getElementById('elEnabled').checked) {
+    const rho = parseFloat(document.getElementById('elRho').value) || 0;
+    const largoM = parseFloat(document.getElementById('elLargo').value) || 0;
+    const diamMm = parseFloat(document.getElementById('elDiam').value) || 0;
+    const complementario = document.getElementById('elComplementario').checked;
+    if (rho > 0 && largoM > 0 && diamMm > 0) {
+      el0 = calcularElectrodo({ rho, largoM, diamMm, complementario });
+    } else {
+      alert('Para el cálculo del electrodo, la resistividad, la longitud y el diámetro deben ser mayores a cero.');
+      return;
+    }
+  }
+
   render({
     header: { proj: projName, board: boardName, circ: circName },
     motor: isMotor,
@@ -1479,7 +1608,7 @@ document.getElementById('calc').addEventListener('click', () => {
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
     },
-    calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc,
+    calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0,
   });
 });
 
