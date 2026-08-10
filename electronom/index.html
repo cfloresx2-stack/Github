@@ -171,6 +171,32 @@
   }
   .badge.ok { background: #e3f5e8; color: var(--ok); }
   .badge.warn { background: #fbe7e4; color: var(--warn); }
+  .badge.adv { background: #fdf3e2; color: #9a6400; }
+  .badge.na  { background: #eef0f4; color: var(--muted); }
+
+  /* Dictamen de cumplimiento */
+  .dictamen {
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--navy);
+    border-radius: 0 8px 8px 0;
+    background: var(--white);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+  }
+  .dictamen h3 { margin: 0 0 10px; font-size: 14px; color: var(--navy); }
+  .dictamenResumen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .hallazgo {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 7px 0;
+    border-top: 1px solid #eef0f4;
+    font-size: 12.5px;
+  }
+  .hallazgo .regla { font-weight: bold; color: var(--navy); font-size: 11.5px; }
+  .hallazgo .obs { color: var(--muted); line-height: 1.5; }
+  .hallazgo .obs .art { color: #8a8fae; font-style: italic; }
   .headline {
     font-size: 26px;
     font-weight: bold;
@@ -1063,6 +1089,147 @@ function calcularTuberia(awgFase, nFaseNeutro, awgTierra, conduitType) {
 }
 
 /* =========================================================================
+   MOTOR NORMATIVO: dictamen de cumplimiento
+   -------------------------------------------------------------------------
+   Cada regla evaluada produce un hallazgo con estado, cita normativa y
+   observacion. El rule_id corresponde al catalogo de reglas normativas del
+   archivo reglas_normativas.xlsx, para trazabilidad entre app y catalogo.
+
+   Estados (mismo criterio que el compliance-engine del motor Rust):
+   - Cumple:       dentro de umbrales, con evidencia.
+   - Advertencia:  margen bajo, o criterio que la NOM plantea como
+                   recomendacion (NOTA) y no como disposicion obligatoria.
+   - No cumple:    violacion de una disposicion obligatoria.
+   - No evaluable: falta informacion para emitir dictamen.
+   ========================================================================= */
+const ESTADO = {
+  CUMPLE: "Cumple",
+  ADVERTENCIA: "Advertencia",
+  NO_CUMPLE: "No cumple",
+  NO_EVALUABLE: "No evaluable",
+};
+const ESTADO_BADGE = {
+  [ESTADO.CUMPLE]: "ok",
+  [ESTADO.ADVERTENCIA]: "adv",
+  [ESTADO.NO_CUMPLE]: "warn",
+  [ESTADO.NO_EVALUABLE]: "na",
+};
+
+function hallazgo(reglaId, estado, articulo, observacion) {
+  return { reglaId, estado, articulo, observacion };
+}
+
+function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, motor }) {
+  const h = [];
+
+  // R-002 / 310-15(a)(3): ampacidad corregida suficiente para la carga
+  h.push(hallazgo("R-002", ESTADO.CUMPLE, "Art. 310-15",
+    `Ampacidad corregida del conductor ${calibreFinal.awg} = ${fmt(calibreFinal.correctedAmp,2)} A, contra ${fmt(input.requiredAmpacity,2)} A requeridos (margen ${fmt(calibreFinal.correctedAmp - input.requiredAmpacity,2)} A).`));
+
+  // Caida de tension: la NOM la plantea como NOTA (recomendacion), no como
+  // disposicion obligatoria -> excederla es Advertencia, no No cumple.
+  if (vd.dropPct === 0 && !TABLE9_PVC_CU[calibreFinal.awg]) {
+    h.push(hallazgo("R-VD", ESTADO.NO_EVALUABLE, input.circuitCite,
+      `No hay datos de impedancia en la Tabla 9 para el calibre ${calibreFinal.awg}; no se pudo verificar la caída de tensión.`));
+  } else if (vd.dropPct <= 3) {
+    h.push(hallazgo("R-VD", ESTADO.CUMPLE, input.circuitCite,
+      `Caída de tensión ${fmt(vd.dropPct,2)}%, dentro del 3% recomendado.`));
+  } else {
+    h.push(hallazgo("R-VD", ESTADO.ADVERTENCIA, input.circuitCite,
+      `Caída de tensión ${fmt(vd.dropPct,2)}%, por encima del 3% recomendado. La NOM lo establece como NOTA (criterio de eficiencia de funcionamiento), no como disposición obligatoria, pero conviene aumentar calibre o reducir longitud.`));
+  }
+
+  // R-009 / 240-4: la proteccion no debe exceder la ampacidad del conductor
+  if (motor) {
+    h.push(hallazgo("R-009", ESTADO.ADVERTENCIA, "Art. 430-52",
+      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
+  } else if (breaker.breaker <= calibreFinal.correctedAmp) {
+    h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4",
+      `Protección de ${breaker.breaker} A no excede la ampacidad corregida del conductor (${fmt(calibreFinal.correctedAmp,2)} A).`));
+  } else if (breaker.breaker <= 800) {
+    h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4(b)",
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A), pero se acoge a la excepción de 240-4(b): es el valor estándar inmediato superior y no rebasa 800 A. No aplica si el circuito alimenta más de un contacto para cargas portátiles.`));
+  } else {
+    h.push(hallazgo("R-009", ESTADO.NO_CUMPLE, "Art. 240-4(c)",
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
+  }
+
+  // R-010 / 240-6(a): valor comercial estandarizado
+  h.push(hallazgo("R-010", ESTADO.CUMPLE, "Tabla 240-6(a)",
+    `${breaker.breaker} A es una capacidad estandarizada.`));
+
+  // R-034 / R-035 / 250-122: conductor de puesta a tierra
+  if (!tierra) {
+    h.push(hallazgo("R-034", ESTADO.NO_EVALUABLE, "Art. 250-122",
+      `El sistema seleccionado (${input.systemKey}) no incluye conductor de puesta a tierra, por lo que no se dimensionó. Verificar si la canalización metálica actúa como medio de puesta a tierra (Art. 250-118).`));
+  } else {
+    h.push(hallazgo("R-034", ESTADO.CUMPLE, "Tabla 250-122",
+      `Conductor de tierra ${tierra.awgTierra} para una protección de ${tierra.breakerA} A.`));
+    if (tierra.factor > 1) {
+      h.push(hallazgo("R-035", ESTADO.CUMPLE, "Art. 250-122(b)",
+        tierra.limitadoPorFase
+          ? `El calibre de fase se aumentó (factor ${fmt(tierra.factor,3)}); la tierra se limitó al calibre de fase ${calibreFinal.awg}, como permite 250-122(a).`
+          : `El calibre de fase se aumentó (factor ${fmt(tierra.factor,3)}), y la tierra se aumentó proporcionalmente de ${tierra.awgBase} a ${tierra.awgTierra}.`));
+    }
+  }
+
+  // Llenado de canalizacion (Tabla 1, Cap. 10)
+  if (tuberia.trade) {
+    const ocupacionPct = (tuberia.totalArea / tuberia.available) * tuberia.fillPct;
+    h.push(hallazgo("R-TUB", ESTADO.CUMPLE, "Tabla 1, Cap. 10",
+      `Tubería ${tuberia.trade}: ${fmt(tuberia.totalArea,2)} mm² de conductores contra ${fmt(tuberia.available,0)} mm² disponibles al ${tuberia.fillPct}% (ocupación real ${fmt(ocupacionPct,1)}%).`));
+  } else {
+    h.push(hallazgo("R-TUB", ESTADO.NO_CUMPLE, "Tabla 1, Cap. 10",
+      `Ninguna tubería del tipo seleccionado aloja ${fmt(tuberia.totalArea,2)} mm² sin exceder el ${tuberia.fillPct}% de ocupación. Dividir en varias canalizaciones o cambiar de tipo.`));
+  }
+
+  // Art. 110-9: capacidad interruptiva
+  if (!cc) {
+    h.push(hallazgo("R-CC", ESTADO.NO_EVALUABLE, "Art. 110-9",
+      `No se calculó la corriente de cortocircuito, por lo que no puede verificarse la capacidad interruptiva del dispositivo. Activar la sección de cortocircuito para evaluarlo.`));
+  } else if (cc.icuKa * 1000 >= cc.iccTrafo) {
+    h.push(hallazgo("R-CC", ESTADO.CUMPLE, "Art. 110-9",
+      `Capacidad interruptiva ${cc.icuKa} kA cubre la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA.`));
+  } else {
+    h.push(hallazgo("R-CC", ESTADO.NO_CUMPLE, "Art. 110-9",
+      `Capacidad interruptiva ${cc.icuKa} kA es MENOR que la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA. El dispositivo puede destruirse al intentar interrumpir la falla.`));
+  }
+
+  return h;
+}
+
+// Veredicto global del circuito: manda el estado mas severo presente.
+function veredictoGlobal(hallazgos) {
+  if (hallazgos.some(h => h.estado === ESTADO.NO_CUMPLE)) return ESTADO.NO_CUMPLE;
+  if (hallazgos.some(h => h.estado === ESTADO.ADVERTENCIA)) return ESTADO.ADVERTENCIA;
+  if (hallazgos.some(h => h.estado === ESTADO.NO_EVALUABLE)) return ESTADO.NO_EVALUABLE;
+  return ESTADO.CUMPLE;
+}
+
+function renderDictamen(hallazgos) {
+  const conteo = {};
+  Object.values(ESTADO).forEach(e => { conteo[e] = hallazgos.filter(x => x.estado === e).length; });
+
+  const resumen = Object.values(ESTADO)
+    .filter(e => conteo[e] > 0)
+    .map(e => `<span class="badge ${ESTADO_BADGE[e]}">${conteo[e]} ${e}</span>`)
+    .join("");
+
+  const filas = hallazgos.map(x => `
+    <div class="hallazgo">
+      <div><span class="badge ${ESTADO_BADGE[x.estado]}">${x.estado}</span></div>
+      <div><span class="regla">${x.reglaId}</span> <span class="obs"><span class="art">${x.articulo}</span> &mdash; ${x.observacion}</span></div>
+    </div>`).join("");
+
+  return `
+    <div class="dictamen">
+      <h3>Dictamen de cumplimiento</h3>
+      <div class="dictamenResumen">${resumen}</div>
+      ${filas}
+    </div>`;
+}
+
+/* =========================================================================
    RENDER
    ========================================================================= */
 let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a la memoria
@@ -1073,10 +1240,14 @@ function render(data) {
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
-    : `<span class="badge warn">Excede 3% recomendado</span>`;
+    : `<span class="badge adv">Advertencia: excede 3% recomendado</span>`;
+
+  const hallazgos = evaluarCumplimiento(data);
+  const veredicto = veredictoGlobal(hallazgos);
 
   const summaryHtml = `
       ${header.proj || 'Proyecto sin nombre'} &mdash; Tablero: ${header.board || '—'} &mdash; Circuito: ${header.circ || '—'}
+      <span class="badge ${ESTADO_BADGE[veredicto]}" style="margin-left:8px">${veredicto}</span>
       <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; Tubería ${tuberia.trade ?? '—'}</span>`;
 
   const stepA = `
@@ -1182,7 +1353,7 @@ function render(data) {
     </div>`;
   })() : "";
 
-  const bodyHtml = stepA + stepB + stepC + stepD + stepE + stepF;
+  const bodyHtml = renderDictamen(hallazgos) + stepA + stepB + stepC + stepD + stepE + stepF;
 
   el.innerHTML = `
     <details class="circuitSheet" open>
@@ -1200,6 +1371,7 @@ function render(data) {
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
     breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
     dropPct: vd.dropPct, current: input.current,
+    dictamen: veredicto, hallazgos,
     summaryHtml, bodyHtml,
   };
   document.getElementById('addToMemoria').addEventListener('click', addToMemoria);
@@ -1354,11 +1526,12 @@ function renderRegistry() {
       <td>${r.breakerA} A</td>
       <td>${r.conduitTrade ?? '—'}</td>
       <td>${fmt(r.dropPct,2)}%</td>
+      <td>${r.dictamen ? `<span class="badge ${ESTADO_BADGE[r.dictamen]}">${r.dictamen}</span>` : '—'}</td>
       <td><button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button></td>
     </tr>`).join("");
   wrap.innerHTML = `
     <table id="registryTable">
-      <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p class="hint" style="margin-top:8px">${reg.length} circuito(s) en la memoria de este proyecto (se guarda en este navegador).</p>`;
@@ -1388,7 +1561,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     <tr>
       <td>${i+1}</td><td>${r.board||'—'}</td><td>${r.circ||'—'}</td><td>${r.circuitKindLabel}${r.motor?' (motor)':''}</td>
       <td>${r.systemKey}</td><td>${r.voltage} V</td><td>${r.awg}</td><td>${r.awgTierra ?? '—'}</td><td>${r.breakerA} A</td>
-      <td>${r.conduitTrade??'—'}</td><td>${fmt(r.dropPct,2)}%</td>
+      <td>${r.conduitTrade??'—'}</td><td>${fmt(r.dropPct,2)}%</td><td>${r.dictamen ?? '—'}</td>
     </tr>`).join("");
 
   const detailSections = reg.map((r, i) => `
@@ -1405,7 +1578,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     <div class="card">
       <h2>Resumen de circuitos</h2>
       <table id="registryTable">
-        <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th></tr></thead>
+        <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th></tr></thead>
         <tbody>${summaryRows}</tbody>
       </table>
     </div>
