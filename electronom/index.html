@@ -529,6 +529,14 @@
     </div>
   </div>
 
+  <!-- ============ CUADRO DE CARGAS ============ -->
+  <div class="card memoriaSection">
+    <h2>Cuadro de cargas por tablero <span class="hint">(reparto de fases y balanceo)</span></h2>
+    <div id="cuadroCargasWrap">
+      <div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el cuadro de cargas.</div>
+    </div>
+  </div>
+
 </div>
 
 <div id="printArea"></div>
@@ -860,6 +868,7 @@ function render(data) {
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
     breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
     dropPct: vd.dropPct, current: input.current,
+    va: input.totalVAdemanda, fases: input.systemFases,
     dictamen: veredicto, hallazgos,
     summaryHtml, bodyHtml,
   };
@@ -1006,6 +1015,7 @@ function addToMemoria() {
   reg.push(lastCalc);
   saveRegistry(reg);
   renderRegistry();
+  renderCuadroCargas();
   const btn = document.getElementById('addToMemoria');
   btn.textContent = "✓ Agregado a la memoria del proyecto";
   btn.disabled = true;
@@ -1040,10 +1050,81 @@ function renderRegistry() {
     </table>
     <p class="hint" style="margin-top:8px">${reg.length} circuito(s) en la memoria de este proyecto (se guarda en este navegador).</p>`;
 }
+function renderCuadroCargas() {
+  const reg = loadRegistry();
+  const wrap = document.getElementById('cuadroCargasWrap');
+  if (reg.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el cuadro de cargas.</div>`;
+    return;
+  }
+
+  const cuadros = generarCuadroDeCargas(reg);
+
+  wrap.innerHTML = cuadros.map(q => {
+    const primero = q.filas[0]?.circuito;
+    const voltaje = primero?.voltage || 0;
+    const vFN = tensionFaseNeutro(voltaje, primero?.fases || 1);
+    const iAlim = corrienteAlimentador(q.maxFase, vFN);
+    const intAlim = nextStandardBreaker(iAlim);
+
+    const balanceBadge = q.fasesUsadas < 2
+      ? `<span class="badge na">Una sola fase</span>`
+      : q.desbalancePct <= 5
+        ? `<span class="badge ok">Balance ${fmt(q.desbalancePct,1)}%</span>`
+        : q.desbalancePct <= 15
+          ? `<span class="badge adv">Desbalance ${fmt(q.desbalancePct,1)}%</span>`
+          : `<span class="badge warn">Desbalance alto ${fmt(q.desbalancePct,1)}%</span>`;
+
+    const filas = q.filas.map((f, i) => {
+      const c = f.circuito;
+      return `<tr>
+        <td>${i+1}</td>
+        <td>${c.circ || '—'}</td>
+        <td>${c.fases || 1}</td>
+        <td>${c.breakerA} A</td>
+        <td>${c.awg}</td>
+        <td>${fmt(c.va,0)}</td>
+        <td>${f.fases.includes('A') ? fmt(f.vaPorFase,0) : ''}</td>
+        <td>${f.fases.includes('B') ? fmt(f.vaPorFase,0) : ''}</td>
+        <td>${f.fases.includes('C') ? fmt(f.vaPorFase,0) : ''}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;color:var(--navy);margin:0 0 8px">Tablero ${q.tablero} ${balanceBadge}</h3>
+        <table id="registryTable">
+          <thead><tr>
+            <th>#</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
+            <th>Carga (VA)</th><th>Fase A</th><th>Fase B</th><th>Fase C</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+          <tfoot>
+            <tr style="font-weight:bold;background:#fafbff">
+              <td colspan="5">Carga por fase (VA)</td>
+              <td>${fmt(q.totalVA,0)}</td>
+              <td>${fmt(q.cargaPorFase.A,0)}</td>
+              <td>${fmt(q.cargaPorFase.B,0)}</td>
+              <td>${fmt(q.cargaPorFase.C,0)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <p class="hint" style="margin-top:8px">
+          Carga total del tablero: <b>${fmt(q.totalVA,0)} VA</b> repartidos en ${q.fasesUsadas} fase(s).
+          ${q.fasesUsadas > 1 ? `Fase más cargada <b>${fmt(q.maxFase,0)} VA</b>, menos cargada ${fmt(q.minFase,0)} VA. ` : ''}
+          El alimentador se dimensiona por la fase más cargada: ${fmt(q.maxFase,0)} VA ÷ ${fmt(vFN,0)} V (fase-neutro) =
+          <b>${fmt(iAlim,1)} A</b> &rarr; interruptor principal sugerido <b>${intAlim} A</b> (Tabla 240-6(a)).
+          <br>El reparto de fases lo asigna la herramienta buscando el mejor balance. El porcentaje de desbalance es un indicador de buena práctica: la NOM no fija un máximo. Lo que sí es normativo es dimensionar el neutro por el máximo desequilibrio (Art. 220-61).
+        </p>
+      </div>`;
+  }).join('');
+}
+
 function removeFromRegistry(id) {
   const reg = loadRegistry().filter(r => r.id !== id);
   saveRegistry(reg);
   renderRegistry();
+  renderCuadroCargas();
 }
 
 document.getElementById('clearRegistry').addEventListener('click', () => {
@@ -1051,6 +1132,7 @@ document.getElementById('clearRegistry').addEventListener('click', () => {
   if (confirm('¿Vaciar toda la memoria de circuitos calculados de este proyecto? Esta acción no se puede deshacer.')) {
     saveRegistry([]);
     renderRegistry();
+    renderCuadroCargas();
   }
 });
 
@@ -1086,6 +1168,10 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
         <tbody>${summaryRows}</tbody>
       </table>
     </div>
+    <div class="card">
+      <h2>Cuadro de cargas por tablero</h2>
+      ${document.getElementById('cuadroCargasWrap').innerHTML}
+    </div>
     ${detailSections}
     <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
   `;
@@ -1094,6 +1180,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
 });
 
 renderRegistry();
+renderCuadroCargas();
 </script>
 
 </body>

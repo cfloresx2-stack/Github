@@ -356,6 +356,81 @@ grupo("Dictamen de cumplimiento", () => {
 });
 
 /* =========================================================================
+   11. Cuadro de cargas
+   ========================================================================= */
+grupo("Cuadro de cargas y balanceo de fases", () => {
+  const c = (id, board, circ, va, fases, voltage) => ({ id, board, circ, va, fases, voltage, breakerA:20, awg:"12" });
+
+  // Agrupación por tablero
+  const dos = generarCuadroDeCargas([
+    c(1,"TAB-1","C-1",1000,1,127), c(2,"TAB-2","C-1",1000,1,127), c(3,"TAB-1","C-2",1000,1,127),
+  ]);
+  esIgual(dos.length, 2, "Los circuitos se agrupan por tablero");
+  esIgual(dos.find(q=>q.tablero==="TAB-1").filas.length, 2, "TAB-1 tiene 2 circuitos");
+  esIgual(dos.find(q=>q.tablero==="TAB-2").filas.length, 1, "TAB-2 tiene 1 circuito");
+
+  // Balanceo: tres cargas iguales de 1 fase deben quedar una por fase
+  const balanceado = generarCuadroDeCargas([
+    c(1,"T","C-1",1000,1,127), c(2,"T","C-2",1000,1,127), c(3,"T","C-3",1000,1,127),
+  ])[0];
+  esCerca(balanceado.cargaPorFase.A, 1000, 1e-9, "Fase A recibe 1000 VA");
+  esCerca(balanceado.cargaPorFase.B, 1000, 1e-9, "Fase B recibe 1000 VA");
+  esCerca(balanceado.cargaPorFase.C, 1000, 1e-9, "Fase C recibe 1000 VA");
+  esCerca(balanceado.desbalancePct, 0, 1e-9, "Tres cargas iguales dan 0% de desbalance");
+  esCerca(balanceado.totalVA, 3000, 1e-9, "El total es la suma de las cargas");
+
+  // Un circuito trifásico reparte su carga entre las tres fases
+  const tri = generarCuadroDeCargas([ c(1,"T","C-1",3000,3,220) ])[0];
+  esCerca(tri.cargaPorFase.A, 1000, 1e-9, "Un circuito trifásico de 3000 VA carga 1000 por fase");
+  esCerca(tri.cargaPorFase.B, 1000, 1e-9, "…en la fase B también");
+  esCerca(tri.cargaPorFase.C, 1000, 1e-9, "…y en la C");
+  esIgual(tri.filas[0].fases.length, 3, "Ocupa las tres fases");
+
+  // Un circuito bifásico ocupa dos fases
+  const bi = generarCuadroDeCargas([ c(1,"T","C-1",2000,2,220) ])[0];
+  esIgual(bi.filas[0].fases.length, 2, "Un circuito de 2 fases ocupa dos");
+  esCerca(bi.filas[0].vaPorFase, 1000, 1e-9, "Reparte 1000 VA en cada una");
+
+  // El reparto voraz mejora el balance: cargas dispares
+  const dispar = generarCuadroDeCargas([
+    c(1,"T","C-1",3000,1,127), c(2,"T","C-2",1000,1,127),
+    c(3,"T","C-3",1000,1,127), c(4,"T","C-4",1000,1,127),
+  ])[0];
+  esCerca(dispar.maxFase, 3000, 1e-9, "La carga mayor define la fase más cargada");
+  esCierto(dispar.desbalancePct < 100, "El reparto reparte el resto en las otras fases",
+    `desbalance ${Math.round(dispar.desbalancePct)}%`);
+  esCerca(dispar.totalVA, 6000, 1e-9, "El total no cambia con el reparto");
+
+  // Una sola carga: no hay balance que evaluar
+  const uno = generarCuadroDeCargas([ c(1,"T","C-1",1000,1,127) ])[0];
+  esIgual(uno.fasesUsadas, 1, "Con un solo circuito monofásico se usa una fase");
+
+  // Las filas se devuelven en el orden de captura, no en el de reparto
+  const orden = generarCuadroDeCargas([
+    c(1,"T","C-1",500,1,127), c(2,"T","C-2",5000,1,127), c(3,"T","C-3",100,1,127),
+  ])[0];
+  esIgual(orden.filas.map(f=>f.circuito.circ).join(","), "C-1,C-2,C-3",
+    "Las filas conservan el orden en que se capturaron los circuitos");
+
+  // Tensión de fase a neutro
+  esIgual(tensionFaseNeutro(127, 1), 127, "Un circuito de 1 fase: los 127 V ya son de fase a neutro");
+  esCerca(tensionFaseNeutro(220, 3), 127.0, 0.1, "Un circuito de 3 fases a 220 V entre fases da 127 V a neutro");
+  esCerca(tensionFaseNeutro(440, 3), 254.0, 0.5, "440 V entre fases da 254 V a neutro");
+
+  // Corriente del alimentador: la define la fase más cargada, no la carga total
+  esCerca(corrienteAlimentador(2540, 127), 20, 1e-9,
+    "Fase más cargada de 2540 VA a 127 V → 20 A");
+  esIgual(corrienteAlimentador(1000, 0), 0, "Tensión cero no revienta el cálculo");
+
+  // Coherencia: una carga trifásica pura debe dar el mismo resultado que la
+  // fórmula clásica I = VA / (√3 × V_entre_fases)
+  const triCoherente = generarCuadroDeCargas([ c(1,"T","C-1",6600,3,220) ])[0];
+  esCerca(corrienteAlimentador(triCoherente.maxFase, tensionFaseNeutro(220, 3)),
+          6600 / (Math.sqrt(3) * 220), 1e-6,
+    "Para carga trifásica pura coincide con I = VA ÷ (√3 × V entre fases)");
+});
+
+/* =========================================================================
    Pintar resultados
    ========================================================================= */
 document.getElementById('resultados').innerHTML = grupos.map(g => `

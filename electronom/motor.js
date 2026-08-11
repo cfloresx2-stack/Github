@@ -633,6 +633,97 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   return h;
 }
 
+/* =========================================================================
+   CUADRO DE CARGAS
+   -------------------------------------------------------------------------
+   Agrupa los circuitos por tablero, los reparte entre fases buscando el
+   mejor balance posible, y calcula la carga por fase y el total del tablero.
+
+   Criterio de reparto: cada circuito se asigna a la(s) fase(s) con menor
+   carga acumulada al momento (algoritmo voraz, procesando de mayor a menor
+   carga — es el orden que da mejores balances). Un circuito de 1 fase carga
+   una sola; uno de 2 fases reparte su carga entre dos; uno de 3 fases se
+   reparte entre las tres.
+
+   NOTA sobre el desbalance: la NOM-001-SEDE-2018 no fija un porcentaje
+   maximo de desbalance entre fases para tableros. El valor que se reporta
+   aqui es un indicador de buena practica de diseno, no un requisito
+   normativo. Lo que si es normativo es dimensionar el neutro por el maximo
+   desequilibrio (Art. 220-61, ver regla R-028).
+   ========================================================================= */
+const FASES = ["A", "B", "C"];
+
+function generarCuadroDeCargas(circuitos) {
+  const tableros = {};
+
+  circuitos.forEach(c => {
+    const nombre = c.board || "(sin tablero)";
+    if (!tableros[nombre]) {
+      tableros[nombre] = { tablero: nombre, circuitos: [], cargaPorFase: { A:0, B:0, C:0 } };
+    }
+    tableros[nombre].circuitos.push(c);
+  });
+
+  return Object.values(tableros).map(t => {
+    // De mayor a menor carga: mejora el balance del reparto voraz
+    const ordenados = [...t.circuitos].sort((a, b) => (b.va || 0) - (a.va || 0));
+
+    const asignaciones = ordenados.map(c => {
+      const nFases = Math.min(c.fases || 1, 3);
+      const vaPorFase = (c.va || 0) / nFases;
+
+      // Elegir las nFases fases con menor carga acumulada
+      const elegidas = FASES
+        .slice()
+        .sort((x, y) => t.cargaPorFase[x] - t.cargaPorFase[y])
+        .slice(0, nFases)
+        .sort(); // dejarlas en orden alfabetico para mostrarlas
+
+      elegidas.forEach(f => { t.cargaPorFase[f] += vaPorFase; });
+
+      return { circuito: c, fases: elegidas, vaPorFase };
+    });
+
+    // Devolver los circuitos en el orden en que se capturaron, no en el de reparto
+    const porId = {};
+    asignaciones.forEach(a => { porId[a.circuito.id] = a; });
+    const filas = t.circuitos.map(c => porId[c.id]);
+
+    const cargas = FASES.map(f => t.cargaPorFase[f]);
+    const usadas = cargas.filter(v => v > 0);
+    const maxFase = Math.max(...cargas);
+    const minFase = usadas.length ? Math.min(...usadas) : 0;
+    const totalVA = cargas.reduce((s, v) => s + v, 0);
+    const desbalancePct = maxFase > 0 ? ((maxFase - minFase) / maxFase) * 100 : 0;
+
+    return {
+      tablero: t.tablero,
+      filas,
+      cargaPorFase: t.cargaPorFase,
+      totalVA,
+      maxFase,
+      minFase,
+      desbalancePct,
+      fasesUsadas: usadas.length,
+    };
+  });
+}
+
+// Tension de fase a neutro de un circuito, a partir de su tension nominal.
+// En sistemas en estrella (127/220, 254/440, 277/480) la tension nominal de un
+// circuito de 2 o 3 fases se da ENTRE FASES, asi que la de fase a neutro es
+// V / raiz(3). En uno de 1 fase la tension nominal ya es de fase a neutro.
+function tensionFaseNeutro(voltage, fases) {
+  return fases === 1 ? voltage : voltage / Math.sqrt(3);
+}
+
+// Corriente del alimentador del tablero. La define la FASE MAS CARGADA, no la
+// carga total: cada conductor de fase del alimentador solo lleva la carga de su
+// propia fase. Se calcula sobre la tension de fase a neutro.
+function corrienteAlimentador(maxFaseVA, vFaseNeutro) {
+  return vFaseNeutro > 0 ? maxFaseVA / vFaseNeutro : 0;
+}
+
 // Veredicto global del circuito: manda el estado mas severo presente.
 function veredictoGlobal(hallazgos) {
   if (hallazgos.some(h => h.estado === ESTADO.NO_CUMPLE)) return ESTADO.NO_CUMPLE;
