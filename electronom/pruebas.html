@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ElectroNOM — Pruebas del motor de cálculo</title>
+<style>
+  :root { --navy:#1E2761; --ice:#CADCFC; --ok:#1a7f37; --warn:#b42318; --bg:#f4f6fb; --muted:#5a5f7a; --border:#d8dee9; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Calibri, "Segoe UI", sans-serif; background: var(--bg); color:#1a1a2e; margin:0; }
+  header { background: var(--navy); color:#fff; padding: 22px 28px; }
+  header h1 { margin:0; font-size: 21px; }
+  header p { margin:6px 0 0; color: var(--ice); font-size: 13px; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  #marcador { border-radius: 10px; padding: 18px 20px; margin-bottom: 22px; font-size: 17px; font-weight: bold; }
+  #marcador.verde { background:#e3f5e8; color: var(--ok); border:1px solid #b7e2c4; }
+  #marcador.rojo  { background:#fbe7e4; color: var(--warn); border:1px solid #f0c3bb; }
+  .grupo { background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+  .grupo h2 { font-size:14px; color:var(--navy); margin:0 0 12px; border-bottom:2px solid var(--ice); padding-bottom:8px; }
+  .caso { display:grid; grid-template-columns: 74px 1fr; gap:10px; padding:6px 0; border-top:1px solid #eef0f4; font-size:13px; align-items:start; }
+  .caso:first-of-type { border-top:none; }
+  .et { font-size:11px; font-weight:bold; padding:3px 8px; border-radius:20px; text-align:center; }
+  .et.pasa { background:#e3f5e8; color:var(--ok); }
+  .et.falla { background:#fbe7e4; color:var(--warn); }
+  .detalle { color:var(--muted); font-size:12px; margin-top:3px; }
+  .detalle b { color: var(--warn); }
+  footer { text-align:center; color:var(--muted); font-size:11.5px; padding:20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ElectroNOM &mdash; Pruebas del motor de cálculo</h1>
+  <p>Verifica automáticamente las tablas normativas y las fórmulas contra valores conocidos de la NOM-001-SEDE-2018. Ábrelo con doble clic; las pruebas corren solas.</p>
+</header>
+
+<div class="wrap">
+  <div id="marcador">Ejecutando…</div>
+  <div id="resultados"></div>
+</div>
+
+<footer>
+  Si alguna prueba falla, el motor cambió de comportamiento: revisa el cálculo antes de usar la herramienta en un proyecto real.
+</footer>
+
+<script src="motor.js"></script>
+<script>
+/* =========================================================================
+   Arnés de pruebas mínimo
+   ========================================================================= */
+const grupos = [];
+let grupoActual = null;
+let totalPasa = 0, totalFalla = 0;
+
+function grupo(nombre, fn) {
+  grupoActual = { nombre, casos: [] };
+  grupos.push(grupoActual);
+  fn();
+}
+function registrar(ok, descripcion, detalle) {
+  grupoActual.casos.push({ ok, descripcion, detalle });
+  ok ? totalPasa++ : totalFalla++;
+}
+function esIgual(obtenido, esperado, descripcion) {
+  const ok = obtenido === esperado;
+  registrar(ok, descripcion, ok ? `= ${obtenido}` : `esperado <b>${esperado}</b>, obtenido <b>${obtenido}</b>`);
+}
+function esCerca(obtenido, esperado, tolerancia, descripcion) {
+  const ok = Math.abs(obtenido - esperado) <= tolerancia;
+  const o = Math.round(obtenido * 10000) / 10000;
+  registrar(ok, descripcion, ok ? `= ${o}` : `esperado <b>${esperado} ±${tolerancia}</b>, obtenido <b>${o}</b>`);
+}
+function esCierto(condicion, descripcion, detalle) {
+  registrar(!!condicion, descripcion, condicion ? (detalle || "cumple") : `<b>${detalle || "no se cumplió la condición"}</b>`);
+}
+
+/* =========================================================================
+   1. Tablas normativas — protegen contra errores de transcripción
+   ========================================================================= */
+grupo("Tabla 310-15(b)(16) — Ampacidad", () => {
+  const fila = awg => AMPACITY_TABLE.find(r => r.awg === awg);
+  esIgual(fila("3").cu90, 115, "3 AWG a 90 °C = 115 A (valor donde el motor Rust detectó un error)");
+  esIgual(fila("12").cu60, 20, "12 AWG a 60 °C = 20 A");
+  esIgual(fila("12").cu75, 25, "12 AWG a 75 °C = 25 A");
+  esIgual(fila("12").cu90, 30, "12 AWG a 90 °C = 30 A");
+  esIgual(fila("4/0").cu75, 230, "4/0 AWG a 75 °C = 230 A");
+  esIgual(fila("14").al60, null, "14 AWG no existe en aluminio");
+  esCierto(AMPACITY_TABLE.every((r,i,a) => i === 0 || r.mm2 > a[i-1].mm2), "La tabla está ordenada de menor a mayor sección");
+});
+
+grupo("Tabla 310-15(b)(2)(a) — Corrección por temperatura", () => {
+  esIgual(lookupTempFactor(40, "f60"), 0.82, "40 °C, columna 60 °C = 0.82");
+  esIgual(lookupTempFactor(40, "f75"), 0.88, "40 °C, columna 75 °C = 0.88");
+  esIgual(lookupTempFactor(40, "f90"), 0.91, "40 °C, columna 90 °C = 0.91");
+  esIgual(lookupTempFactor(30, "f75"), 1.00, "30 °C = sin corrección (1.00)");
+  esIgual(lookupTempFactor(55, "f60"), 0.41, "55 °C, columna 60 °C = 0.41");
+});
+
+grupo("Tabla 310-15(b)(3)(a) — Ajuste por agrupamiento", () => {
+  esIgual(lookupGroupingPct(3), 100, "3 conductores = sin ajuste");
+  esIgual(lookupGroupingPct(4), 80, "4 conductores = 80%");
+  esIgual(lookupGroupingPct(6), 80, "6 conductores = 80%");
+  esIgual(lookupGroupingPct(7), 70, "7 conductores = 70%");
+  esIgual(lookupGroupingPct(20), 50, "20 conductores = 50%");
+  esIgual(lookupGroupingPct(45), 35, "41 o más = 35%");
+});
+
+grupo("Tabla 240-6(a) — Capacidades estándar", () => {
+  esIgual(nextStandardBreaker(22.7), 25, "22.7 A → 25 A");
+  esIgual(nextStandardBreaker(15), 15, "15 A exacto → 15 A");
+  esIgual(nextStandardBreaker(101), 110, "101 A → 110 A");
+  esCierto(!BREAKER_SIZES.includes(55), "55 A no es un valor estándar");
+});
+
+grupo("Tabla 250-122 — Conductor de puesta a tierra", () => {
+  const t = a => GROUND_TABLE_250_122.find(r => a <= r.maxBreaker).cu;
+  esIgual(t(15), "14", "15 A → 14 AWG");
+  esIgual(t(20), "12", "20 A → 12 AWG");
+  esIgual(t(100), "8", "100 A → 8 AWG");
+  esIgual(t(150), "6", "150 A cae entre niveles → usa el de 200 A (6 AWG)");
+  esIgual(t(600), "1", "600 A → 1 AWG");
+});
+
+/* =========================================================================
+   2. Selección de calibre
+   ========================================================================= */
+grupo("Selección de calibre (Art. 310-15)", () => {
+  const sinCorreccion = calcularCalibre(25, "cu", "75", 30, 3);
+  esIgual(sinCorreccion.awg, "12", "25 A a 30 °C con 3 conductores → 12 AWG (25 A de tabla, justo alcanza)");
+  esIgual(calcularCalibre(25.1, "cu", "75", 30, 3).awg, "10", "25.1 A ya no cabe en 12 AWG → sube a 10 AWG");
+
+  const conCorreccion = calcularCalibre(25, "cu", "75", 40, 4);
+  esCierto(mm2DeAwg(conCorreccion.awg) > mm2DeAwg("10"),
+    "A 40 °C y con 4 conductores el mismo caso exige más calibre",
+    `subió a ${conCorreccion.awg} AWG`);
+  esCerca(conCorreccion.correctedAmp, conCorreccion.baseAmp * 0.88 * 0.8, 0.01,
+    "La ampacidad corregida = base × factor temp × factor agrupamiento");
+
+  esCierto(calcularCalibre(25, "cu", "75", 30, 3).correctedAmp >= 25,
+    "El calibre elegido siempre cubre la ampacidad requerida");
+});
+
+/* =========================================================================
+   3. Caída de tensión
+   ========================================================================= */
+grupo("Caída de tensión (Tabla 9)", () => {
+  const mono = calcularCaidaTension("12", 15, 20, 127, 2, 0.9);
+  const tri  = calcularCaidaTension("12", 15, 20, 220, Math.sqrt(3), 0.9);
+  esCierto(mono !== null && tri !== null, "Hay datos de impedancia para 12 AWG");
+
+  const t9 = TABLE9_PVC_CU["12"];
+  const zeEsperada = t9.r * 0.9 + t9.xl * Math.sin(Math.acos(0.9));
+  esCerca(mono.ze, zeEsperada, 1e-9, "Ze = R×FP + X×sen(arccos FP)");
+
+  esCerca(mono.dropV, 2 * 15 * 0.020 * mono.ze, 1e-9, "Monofásico usa factor 2");
+  esCerca(tri.dropV, Math.sqrt(3) * 15 * 0.020 * tri.ze, 1e-9, "Trifásico usa factor √3");
+
+  const corto = calcularCaidaTension("12", 15, 10, 127, 2, 0.9);
+  const largo = calcularCaidaTension("12", 15, 100, 127, 2, 0.9);
+  esCierto(largo.dropPct > corto.dropPct, "A mayor longitud, mayor caída");
+
+  const grueso = calcularCaidaTension("2", 15, 100, 127, 2, 0.9);
+  esCierto(grueso.dropPct < largo.dropPct, "A mayor calibre, menor caída");
+
+  esIgual(calcularCaidaTension("16", 15, 20, 127, 2, 0.9), null,
+    "Calibres fuera de la Tabla 9 devuelven null (no un número inventado)");
+});
+
+/* =========================================================================
+   4. Capacidad del interruptor
+   ========================================================================= */
+grupo("Interruptor (Art. 240-4 y 240-6)", () => {
+  const normal = calcularInterruptorGeneral(22.7, 35, "8", "cu");
+  esIgual(normal.breaker, 25, "22.7 A con conductor de 35 A → 25 A");
+
+  const pequeno = calcularInterruptorGeneral(25, 30, "12", "cu");
+  esIgual(pequeno.breaker, 20, "12 AWG topa en 20 A aunque la corriente pida más (Art. 240-4d)");
+  esIgual(pequeno.cap, 20, "Se reporta el tope aplicado");
+
+  const p14 = calcularInterruptorGeneral(20, 25, "14", "cu");
+  esIgual(p14.breaker, 15, "14 AWG topa en 15 A");
+
+  const motor = calcularInterruptorMotor(13.12, 250);
+  esIgual(motor.breaker, 35, "Motor de 13.12 A al 250% (Tabla 430-52) → 35 A");
+  esCerca(motor.maxCurrent, 32.8, 0.01, "El máximo permitido son 32.8 A");
+});
+
+/* =========================================================================
+   5. Conductor de puesta a tierra — Art. 250-122(a) y (b)
+   ========================================================================= */
+grupo("Puesta a tierra de equipos (Art. 250-122)", () => {
+  const sinAumento = calcularTierraFisica(100, "cu", "3", "3");
+  esIgual(sinAumento.awgTierra, "8", "100 A sin aumento de fase → 8 AWG de tabla");
+  esIgual(sinAumento.factor, 1, "Sin aumento de fase, el factor es 1");
+
+  // Caso real: fase sube de 2 AWG a 3/0 por caída de tensión, protección de 90 A
+  const conAumento = calcularTierraFisica(90, "cu", "2", "3/0");
+  esIgual(conAumento.awgBase, "8", "Base de tabla para 90 A = 8 AWG");
+  esCerca(conAumento.factor, 85.01 / 33.6, 1e-9, "Factor = área final ÷ área mínima");
+  esIgual(conAumento.awgTierra, "4", "Con el aumento proporcional del 250-122(b) → 4 AWG");
+  esCierto(conAumento.aumentado, "Se marca que hubo aumento");
+
+  // Tope: la tierra nunca mayor que la fase
+  const topada = calcularTierraFisica(20, "cu", "14", "12");
+  esCierto(mm2DeAwg(topada.awgTierra) <= mm2DeAwg("12"),
+    "La tierra nunca excede el calibre de fase (Art. 250-122a)",
+    `quedó en ${topada.awgTierra} AWG`);
+  esCierto(topada.limitadoPorFase, "Se marca que quedó limitada por la fase");
+});
+
+/* =========================================================================
+   6. Cortocircuito — verificación cruzada contra la fórmula directa
+   ========================================================================= */
+grupo("Cortocircuito (método por unidad)", () => {
+  const r = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0, awg:"2", lengthM:0 });
+  const iNominal = 500000 / (Math.sqrt(3) * 220);
+  const directo = iNominal / 0.05;
+  esCerca(r.iccTrafo, directo, directo * 0.001,
+    "El método por unidad coincide con I_nominal ÷ %Z");
+  esCerca(r.iBase, iNominal, 0.1, "La corriente base es la nominal del transformador");
+
+  const conFuente = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0.02, awg:"2", lengthM:0 });
+  esCierto(conFuente.iccTrafo < r.iccTrafo,
+    "Agregar impedancia de fuente reduce la falla (por eso 0 es conservador)");
+
+  const conCable = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0, awg:"6", lengthM:30 });
+  esCierto(conCable.iccCarga < conCable.iccTrafo,
+    "La falla en el extremo de la carga es menor que en el transformador");
+
+  const mayorZ = calcularCortocircuito({ kva:500, zPct:10, voltage:220, zSourcePu:0, awg:"2", lengthM:0 });
+  esCierto(mayorZ.iccTrafo < r.iccTrafo, "Mayor %Z del transformador reduce la falla");
+});
+
+/* =========================================================================
+   7. Electrodo de puesta a tierra — fórmula de Dwight
+   ========================================================================= */
+grupo("Electrodo de tierra (fórmula de Dwight)", () => {
+  const ref = calcularElectrodo({ rho:100, largoM:3.0, diamMm:15.875, complementario:false });
+  esCierto(ref.R > 20 && ref.R < 40,
+    "Varilla de 3 m en suelo de 100 Ω·m cae en el rango 20-40 Ω (caso de referencia del motor Rust)",
+    `= ${Math.round(ref.R*100)/100} Ω`);
+
+  const menosResistivo = calcularElectrodo({ rho:50, largoM:3.0, diamMm:15.875, complementario:false });
+  esCierto(menosResistivo.R < ref.R, "Suelo menos resistivo → menor resistencia");
+
+  const masLarga = calcularElectrodo({ rho:100, largoM:6.0, diamMm:15.875, complementario:false });
+  esCierto(masLarga.R < ref.R, "Varilla más larga → menor resistencia");
+
+  const corta = calcularElectrodo({ rho:100, largoM:1.5, diamMm:12, complementario:false });
+  esCierto(!corta.cumpleLargo, "Detecta longitud menor a 2.44 m (Art. 250-52(a)(5))");
+  esCierto(!corta.cumpleDiam, "Detecta diámetro menor a 16 mm");
+
+  const buena = calcularElectrodo({ rho:30, largoM:3.0, diamMm:16, complementario:false });
+  esCierto(buena.cumple25, "Suelo de 30 Ω·m cumple el criterio de 25 Ω");
+  esCierto(buena.resuelto, "Cumpliendo 25 Ω no se exige electrodo complementario");
+
+  const mala = calcularElectrodo({ rho:300, largoM:2.44, diamMm:16, complementario:false });
+  esCierto(!mala.resuelto, "Suelo de 300 Ω·m sin complementario NO queda resuelto");
+  const malaConComp = calcularElectrodo({ rho:300, largoM:2.44, diamMm:16, complementario:true });
+  esCierto(malaConComp.resuelto, "El electrodo complementario resuelve el caso");
+});
+
+/* =========================================================================
+   8. Tubería
+   ========================================================================= */
+grupo("Diámetro de tubería (Tablas 1, 4 y 5, Cap. 10)", () => {
+  const tres = calcularTuberia("8", 2, "10", "pvc40");
+  esIgual(tres.fillPct, 40, "Con más de 2 conductores el llenado máximo es 40%");
+  esCerca(tres.totalArea, CONDUCTOR_AREA_THHN["8"] * 2 + CONDUCTOR_AREA_THHN["10"], 1e-9,
+    "El área suma fases/neutro al calibre de fase + la tierra a su propio calibre");
+  esCierto(tres.available >= tres.totalArea, "La tubería elegida sí aloja el área requerida");
+
+  const uno = calcularTuberia("8", 1, null, "pvc40");
+  esIgual(uno.fillPct, 53, "Un solo conductor permite 53%");
+  const dos = calcularTuberia("8", 2, null, "pvc40");
+  esIgual(dos.fillPct, 31, "Dos conductores permiten 31%");
+
+  const chico = calcularTuberia("12", 3, "12", "emt");
+  const grande = calcularTuberia("2", 3, "8", "emt");
+  esCierto(CONDUIT_TABLES.emt.rows.findIndex(r => r.trade === grande.trade) >
+           CONDUIT_TABLES.emt.rows.findIndex(r => r.trade === chico.trade),
+    "Conductores más gruesos exigen tubería mayor");
+});
+
+/* =========================================================================
+   9. Suma vectorial de cargas (P y Q)
+   ========================================================================= */
+grupo("Combinación de cargas con distinto FP", () => {
+  const cargas = [
+    { watts:1000, fp:1.0, q:1000 * Math.tan(Math.acos(1.0)) },
+    { watts:1000, fp:0.8, q:1000 * Math.tan(Math.acos(0.8)) },
+  ];
+  const c = combinePQ(cargas);
+  esCerca(c.p, 2000, 1e-9, "La potencia real se suma directamente");
+  esCerca(c.va, Math.sqrt(2000*2000 + 750*750), 0.5, "VA = √(P² + Q²), no la suma de los VA");
+  esCerca(c.fp, 2000 / c.va, 1e-9, "FP combinado = P ÷ VA");
+  esCierto(c.va < 1000 + 1250,
+    "La suma vectorial da menos que la suma aritmética de los VA individuales",
+    `${Math.round(c.va)} VA contra 2250 VA`);
+
+  const iguales = combinePQ([
+    { watts:1000, fp:0.9, q:1000 * Math.tan(Math.acos(0.9)) },
+    { watts:1000, fp:0.9, q:1000 * Math.tan(Math.acos(0.9)) },
+  ]);
+  esCerca(iguales.fp, 0.9, 1e-9, "Con FP iguales, el FP combinado es el mismo");
+});
+
+/* =========================================================================
+   10. Dictamen de cumplimiento
+   ========================================================================= */
+grupo("Dictamen de cumplimiento", () => {
+  const base = {
+    input: { requiredAmpacity:20, circuitCite:"Art. 210-19, Nota 4", systemKey:"1F-1N-1T", length:20 },
+    calibreIni: { awg:"12" },
+    calibreFinal: { awg:"12", correctedAmp:25 },
+    vd: { dropPct:1.5 },
+    breaker: { breaker:20 },
+    tierra: { awgTierra:"12", awgBase:"12", breakerA:20, factor:1, limitadoPorFase:false },
+    tuberia: { trade:'1/2"', totalArea:30, available:56, fillPct:40 },
+    cc: null, el0: null, motor: false,
+  };
+  const busca = (hs, id) => hs.find(x => x.reglaId === id);
+
+  const sano = evaluarCumplimiento(base);
+  esIgual(busca(sano, "R-VD").estado, ESTADO.CUMPLE, "Caída de 1.5% → Cumple");
+  esIgual(busca(sano, "R-CC").estado, ESTADO.NO_EVALUABLE, "Sin cortocircuito calculado → No evaluable");
+  esIgual(busca(sano, "R-030").estado, ESTADO.NO_EVALUABLE, "Sin electrodo calculado → No evaluable");
+
+  // La caída de tensión es una NOTA de la NOM: excederla es Advertencia, no incumplimiento
+  const excedida = evaluarCumplimiento({ ...base, vd: { dropPct: 5.2 } });
+  esIgual(busca(excedida, "R-VD").estado, ESTADO.ADVERTENCIA,
+    "Caída de 5.2% → Advertencia (la NOM lo plantea como NOTA, no como obligación)");
+
+  // Protección mayor que la ampacidad, por arriba de 800 A: incumplimiento
+  const excedeProteccion = evaluarCumplimiento({
+    ...base,
+    calibreFinal: { awg:"1000", correctedAmp:500 },
+    breaker: { breaker:1000 },
+  });
+  esIgual(busca(excedeProteccion, "R-009").estado, ESTADO.NO_CUMPLE,
+    "Protección de 1000 A sobre conductor de 500 A → No cumple (Art. 240-4c)");
+
+  // Capacidad interruptiva insuficiente
+  const ccMala = evaluarCumplimiento({ ...base, cc: { icuKa:10, iccTrafo:26000 } });
+  esIgual(busca(ccMala, "R-CC").estado, ESTADO.NO_CUMPLE, "10 kA contra falla de 26 kA → No cumple");
+  const ccBuena = evaluarCumplimiento({ ...base, cc: { icuKa:35, iccTrafo:26000 } });
+  esIgual(busca(ccBuena, "R-CC").estado, ESTADO.CUMPLE, "35 kA contra falla de 26 kA → Cumple");
+
+  // Veredicto global: manda el estado más severo
+  esIgual(veredictoGlobal([{estado:ESTADO.CUMPLE},{estado:ESTADO.ADVERTENCIA}]), ESTADO.ADVERTENCIA,
+    "Una advertencia degrada el veredicto global");
+  esIgual(veredictoGlobal([{estado:ESTADO.ADVERTENCIA},{estado:ESTADO.NO_CUMPLE}]), ESTADO.NO_CUMPLE,
+    "Un incumplimiento manda sobre una advertencia");
+  esIgual(veredictoGlobal([{estado:ESTADO.CUMPLE},{estado:ESTADO.CUMPLE}]), ESTADO.CUMPLE,
+    "Todo cumpliendo → Cumple");
+});
+
+/* =========================================================================
+   Pintar resultados
+   ========================================================================= */
+document.getElementById('resultados').innerHTML = grupos.map(g => `
+  <div class="grupo">
+    <h2>${g.nombre} <span style="font-weight:normal;color:var(--muted)">— ${g.casos.filter(c=>c.ok).length}/${g.casos.length}</span></h2>
+    ${g.casos.map(c => `
+      <div class="caso">
+        <div><span class="et ${c.ok ? 'pasa' : 'falla'}">${c.ok ? 'PASA' : 'FALLA'}</span></div>
+        <div>${c.descripcion}<div class="detalle">${c.detalle}</div></div>
+      </div>`).join('')}
+  </div>`).join('');
+
+const marcador = document.getElementById('marcador');
+marcador.className = totalFalla === 0 ? 'verde' : 'rojo';
+marcador.textContent = totalFalla === 0
+  ? `✓ ${totalPasa} pruebas pasaron. El motor de cálculo se comporta como se espera.`
+  : `✗ ${totalFalla} de ${totalPasa + totalFalla} pruebas FALLARON. Revisa los casos marcados en rojo antes de usar la herramienta.`;
+document.title = (totalFalla === 0 ? '✓ ' : '✗ ') + `${totalPasa}/${totalPasa+totalFalla} — Pruebas ElectroNOM`;
+</script>
+
+</body>
+</html>
