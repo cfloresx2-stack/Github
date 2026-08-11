@@ -345,6 +345,9 @@
         </div>
       </div>
 
+      <label>Posición en el tablero <span class="hint">(el número de espacio, columna "CT." del cuadro de cargas; define en qué fase cae. Vacío = se asigna en orden)</span></label>
+      <input type="number" id="circPos" min="1" step="1" placeholder="Ej. 3">
+
       <label>Tipo de circuito</label>
       <select id="circuitKind">
         <option value="derivado">Circuito derivado (Art. 210)</option>
@@ -869,6 +872,7 @@ function render(data) {
     breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
     dropPct: vd.dropPct, current: input.current,
     va: input.totalVAdemanda, fases: input.systemFases,
+    posicion: parseInt(document.getElementById('circPos').value) || null,
     dictamen: veredicto, hallazgos,
     summaryHtml, bodyHtml,
   };
@@ -1075,10 +1079,10 @@ function renderCuadroCargas() {
           ? `<span class="badge adv">Desbalance ${fmt(q.desbalancePct,1)}%</span>`
           : `<span class="badge warn">Desbalance alto ${fmt(q.desbalancePct,1)}%</span>`;
 
-    const filas = q.filas.map((f, i) => {
+    const filas = q.filas.map((f) => {
       const c = f.circuito;
       return `<tr>
-        <td>${i+1}</td>
+        <td>${f.posicion}${c.posicion ? '' : '<span class="hint"> auto</span>'}</td>
         <td>${c.circ || '—'}</td>
         <td>${c.fases || 1}</td>
         <td>${c.breakerA} A</td>
@@ -1095,7 +1099,7 @@ function renderCuadroCargas() {
         <h3 style="font-size:14px;color:var(--navy);margin:0 0 8px">Tablero ${q.tablero} ${balanceBadge}</h3>
         <table id="registryTable">
           <thead><tr>
-            <th>#</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
+            <th>CT.</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
             <th>Carga (VA)</th><th>Fase A</th><th>Fase B</th><th>Fase C</th>
           </tr></thead>
           <tbody>${filas}</tbody>
@@ -1114,7 +1118,8 @@ function renderCuadroCargas() {
           ${q.fasesUsadas > 1 ? `Fase más cargada <b>${fmt(q.maxFase,0)} VA</b>, menos cargada ${fmt(q.minFase,0)} VA. ` : ''}
           El alimentador se dimensiona por la fase más cargada: ${fmt(q.maxFase,0)} VA ÷ ${fmt(vFN,0)} V (fase-neutro) =
           <b>${fmt(iAlim,1)} A</b> &rarr; interruptor principal sugerido <b>${intAlim} A</b> (Tabla 240-6(a)).
-          <br>El reparto de fases lo asigna la herramienta buscando el mejor balance. El porcentaje de desbalance es un indicador de buena práctica: la NOM no fija un máximo. Lo que sí es normativo es dimensionar el neutro por el máximo desequilibrio (Art. 220-61).
+          <br>La fase de cada circuito la define su <b>posición física</b> en el tablero: las barras alternan por pares de espacios (1 y 2 → A, 3 y 4 → B, 5 y 6 → C, 7 y 8 → A…), así que un interruptor de varios polos cae en fases consecutivas. Si no capturaste la posición, se asignan espacios impares en orden.
+          <br>El porcentaje de desbalance es un indicador de buena práctica: la NOM no fija un máximo. Lo que sí es normativo es dimensionar el neutro por el máximo desequilibrio (Art. 220-61).
         </p>
       </div>`;
   }).join('');

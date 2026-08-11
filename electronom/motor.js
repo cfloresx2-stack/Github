@@ -636,14 +636,27 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
 /* =========================================================================
    CUADRO DE CARGAS
    -------------------------------------------------------------------------
-   Agrupa los circuitos por tablero, los reparte entre fases buscando el
-   mejor balance posible, y calcula la carga por fase y el total del tablero.
+   Agrupa los circuitos por tablero, determina en que fase(s) cae cada uno
+   segun su POSICION FISICA en el tablero, y calcula la carga por fase y el
+   total del tablero.
 
-   Criterio de reparto: cada circuito se asigna a la(s) fase(s) con menor
-   carga acumulada al momento (algoritmo voraz, procesando de mayor a menor
-   carga — es el orden que da mejores balances). Un circuito de 1 fase carga
-   una sola; uno de 2 fases reparte su carga entre dos; uno de 3 fases se
-   reparte entre las tres.
+   Criterio de reparto: por posicion, que es como se construyen los tableros
+   reales y como se elaboran los cuadros de carga en la practica. Las barras
+   del tablero alternan fases por pares de espacios:
+
+       espacios 1 y 2  -> fase A
+       espacios 3 y 4  -> fase B
+       espacios 5 y 6  -> fase C
+       espacios 7 y 8  -> fase A ... y asi sucesivamente
+
+   es decir, fase = FASES[ floor((posicion - 1) / 2) % 3 ]. Un interruptor de
+   varios polos ocupa espacios alternados del mismo lado (p. ej. 1, 3, 5), por
+   lo que cae naturalmente en fases consecutivas A, B, C.
+
+   Esta convencion se verifico contra el cuadro de cargas real del proyecto
+   Jardin de Eventos CENTURA (tablero principal TP): los circuitos 1,3,5 /
+   7,9,11 / 2,4,6 caen en A,B,C / A,B,C / A,B,C, y la formula los reproduce
+   todos. Ver prueba "posiciones reales del tablero TP de CENTURA".
 
    NOTA sobre el desbalance: la NOM-001-SEDE-2018 no fija un porcentaje
    maximo de desbalance entre fases para tableros. El valor que se reporta
@@ -652,6 +665,22 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
    desequilibrio (Art. 220-61, ver regla R-028).
    ========================================================================= */
 const FASES = ["A", "B", "C"];
+
+// Fase que corresponde a un espacio del tablero, por la alternancia de barras.
+function faseDePosicion(posicion) {
+  return FASES[Math.floor((posicion - 1) / 2) % 3];
+}
+
+// Fases que ocupa un interruptor de n polos que arranca en `posicion`.
+// Los polos toman espacios alternados del mismo lado: pos, pos+2, pos+4.
+function fasesDeInterruptor(posicion, nPolos) {
+  const fases = [];
+  for (let i = 0; i < nPolos; i++) {
+    const f = faseDePosicion(posicion + i * 2);
+    if (!fases.includes(f)) fases.push(f);
+  }
+  return fases;
+}
 
 function generarCuadroDeCargas(circuitos) {
   const tableros = {};
@@ -665,29 +694,21 @@ function generarCuadroDeCargas(circuitos) {
   });
 
   return Object.values(tableros).map(t => {
-    // De mayor a menor carga: mejora el balance del reparto voraz
-    const ordenados = [...t.circuitos].sort((a, b) => (b.va || 0) - (a.va || 0));
+    // Posicion: la que traiga el circuito; si no trae, se asignan espacios
+    // consecutivos impares (1, 3, 5...) en el orden en que se capturaron,
+    // que es como se va llenando una columna del tablero.
+    let siguienteLibre = 1;
+    const filas = t.circuitos.map(c => {
+      const nPolos = Math.min(c.fases || 1, 3);
+      const posicion = c.posicion || siguienteLibre;
+      if (!c.posicion) siguienteLibre += nPolos * 2;
 
-    const asignaciones = ordenados.map(c => {
-      const nFases = Math.min(c.fases || 1, 3);
-      const vaPorFase = (c.va || 0) / nFases;
+      const fases = fasesDeInterruptor(posicion, nPolos);
+      const vaPorFase = (c.va || 0) / fases.length;
+      fases.forEach(f => { t.cargaPorFase[f] += vaPorFase; });
 
-      // Elegir las nFases fases con menor carga acumulada
-      const elegidas = FASES
-        .slice()
-        .sort((x, y) => t.cargaPorFase[x] - t.cargaPorFase[y])
-        .slice(0, nFases)
-        .sort(); // dejarlas en orden alfabetico para mostrarlas
-
-      elegidas.forEach(f => { t.cargaPorFase[f] += vaPorFase; });
-
-      return { circuito: c, fases: elegidas, vaPorFase };
+      return { circuito: c, posicion, fases, vaPorFase };
     });
-
-    // Devolver los circuitos en el orden en que se capturaron, no en el de reparto
-    const porId = {};
-    asignaciones.forEach(a => { porId[a.circuito.id] = a; });
-    const filas = t.circuitos.map(c => porId[c.id]);
 
     const cargas = FASES.map(f => t.cargaPorFase[f]);
     const usadas = cargas.filter(v => v > 0);

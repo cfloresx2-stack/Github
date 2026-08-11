@@ -358,8 +358,32 @@ grupo("Dictamen de cumplimiento", () => {
 /* =========================================================================
    11. Cuadro de cargas
    ========================================================================= */
-grupo("Cuadro de cargas y balanceo de fases", () => {
-  const c = (id, board, circ, va, fases, voltage) => ({ id, board, circ, va, fases, voltage, breakerA:20, awg:"12" });
+grupo("Cuadro de cargas — asignación de fases por posición", () => {
+  const c = (id, board, circ, va, fases, voltage, posicion) =>
+    ({ id, board, circ, va, fases, voltage, posicion, breakerA:20, awg:"12" });
+
+  // La alternancia de barras: pares de espacios comparten fase
+  esIgual(faseDePosicion(1), "A", "Espacio 1 → fase A");
+  esIgual(faseDePosicion(2), "A", "Espacio 2 → fase A (comparte barra con el 1)");
+  esIgual(faseDePosicion(3), "B", "Espacio 3 → fase B");
+  esIgual(faseDePosicion(4), "B", "Espacio 4 → fase B");
+  esIgual(faseDePosicion(5), "C", "Espacio 5 → fase C");
+  esIgual(faseDePosicion(6), "C", "Espacio 6 → fase C");
+  esIgual(faseDePosicion(7), "A", "Espacio 7 → vuelve a fase A");
+
+  // Un interruptor de varios polos toma espacios alternados del mismo lado
+  esIgual(fasesDeInterruptor(1, 3).join(""), "ABC", "3 polos desde el espacio 1 → A, B, C");
+  esIgual(fasesDeInterruptor(2, 3).join(""), "ABC", "3 polos desde el espacio 2 → A, B, C");
+  esIgual(fasesDeInterruptor(3, 2).join(""), "BC", "2 polos desde el espacio 3 → B, C");
+  esIgual(fasesDeInterruptor(5, 1).join(""), "C", "1 polo en el espacio 5 → C");
+
+  // Caso real: posiciones del tablero principal TP del proyecto CENTURA.
+  // Sus circuitos 1,3,5 (C.C. B), 7,9,11 (C.C. C) y 2,4,6 (C.C. D) son
+  // interruptores de 3 polos, y el cuadro real los muestra en A, B y C.
+  [[1,'C.C. B'], [7,'C.C. C'], [2,'C.C. D']].forEach(([pos, nombre]) => {
+    esIgual(fasesDeInterruptor(pos, 3).join(""), "ABC",
+      `posiciones reales del tablero TP de CENTURA: ${nombre} desde el espacio ${pos} → A, B, C`);
+  });
 
   // Agrupación por tablero
   const dos = generarCuadroDeCargas([
@@ -391,21 +415,43 @@ grupo("Cuadro de cargas y balanceo de fases", () => {
   esIgual(bi.filas[0].fases.length, 2, "Un circuito de 2 fases ocupa dos");
   esCerca(bi.filas[0].vaPorFase, 1000, 1e-9, "Reparte 1000 VA en cada una");
 
-  // El reparto voraz mejora el balance: cargas dispares
+  // La posición capturada manda sobre el orden de captura
+  const conPos = generarCuadroDeCargas([
+    c(1,"T","C-1",1000,1,127,5), c(2,"T","C-2",1000,1,127,1),
+  ])[0];
+  esIgual(conPos.filas[0].fases[0], "C", "El circuito en el espacio 5 cae en fase C, aunque se capturó primero");
+  esIgual(conPos.filas[1].fases[0], "A", "El circuito en el espacio 1 cae en fase A");
+
+  // Sin posición capturada: espacios impares consecutivos en orden de captura
+  const auto = generarCuadroDeCargas([
+    c(1,"T","C-1",1000,1,127), c(2,"T","C-2",1000,1,127), c(3,"T","C-3",1000,1,127),
+  ])[0];
+  esIgual(auto.filas.map(f=>f.posicion).join(","), "1,3,5", "Sin posición se asignan los espacios 1, 3, 5");
+  esIgual(auto.filas.map(f=>f.fases[0]).join(""), "ABC", "…que caen en A, B, C");
+
+  // Un interruptor de varios polos consume los espacios de sus polos
+  const multi = generarCuadroDeCargas([
+    c(1,"T","C-1",3000,3,220), c(2,"T","C-2",1000,1,127),
+  ])[0];
+  esIgual(multi.filas[0].posicion, 1, "El de 3 polos arranca en el espacio 1");
+  esIgual(multi.filas[1].posicion, 7, "El siguiente arranca en el 7 (el de 3 polos ocupó 1, 3 y 5)");
+
+  // El desbalance ahora es una consecuencia del reparto, no un objetivo
   const dispar = generarCuadroDeCargas([
     c(1,"T","C-1",3000,1,127), c(2,"T","C-2",1000,1,127),
     c(3,"T","C-3",1000,1,127), c(4,"T","C-4",1000,1,127),
   ])[0];
-  esCerca(dispar.maxFase, 3000, 1e-9, "La carga mayor define la fase más cargada");
-  esCierto(dispar.desbalancePct < 100, "El reparto reparte el resto en las otras fases",
+  esCerca(dispar.totalVA, 6000, 1e-9, "El total es la suma de las cargas");
+  esCerca(dispar.cargaPorFase.A, 4000, 1e-9,
+    "Los espacios 1 y 7 caen ambos en fase A, así que se acumulan ahí");
+  esCierto(dispar.desbalancePct > 0, "Con cargas dispares por posición aparece desbalance",
     `desbalance ${Math.round(dispar.desbalancePct)}%`);
-  esCerca(dispar.totalVA, 6000, 1e-9, "El total no cambia con el reparto");
 
   // Una sola carga: no hay balance que evaluar
   const uno = generarCuadroDeCargas([ c(1,"T","C-1",1000,1,127) ])[0];
   esIgual(uno.fasesUsadas, 1, "Con un solo circuito monofásico se usa una fase");
 
-  // Las filas se devuelven en el orden de captura, no en el de reparto
+  // Las filas conservan el orden de captura
   const orden = generarCuadroDeCargas([
     c(1,"T","C-1",500,1,127), c(2,"T","C-2",5000,1,127), c(3,"T","C-3",100,1,127),
   ])[0];
