@@ -415,14 +415,21 @@
           </select>
         </div>
         <div>
-          <label>Temp. aislamiento <span class="hint">(THHN=90°C)</span></label>
-          <select id="insulTemp">
-            <option value="60">60 °C</option>
-            <option value="75" selected>75 °C</option>
-            <option value="90">90 °C</option>
-          </select>
+          <label>Tipo de aislamiento <span class="hint">(define columna de ampacidad y área)</span></label>
+          <select id="insulType"></select>
         </div>
       </div>
+
+      <div class="checkline">
+        <input type="checkbox" id="lugarMojado">
+        <label for="lugarMojado">El circuito pasa por un <b>lugar mojado</b> <span class="hint">(intemperie, enterrado, contacto directo con agua)</span></label>
+      </div>
+
+      <div class="checkline">
+        <input type="checkbox" id="terminalMarcada">
+        <label for="terminalMarcada">El equipo está aprobado y marcado para conductores de 75 °C <span class="hint">(revisar la placa del tablero/interruptor)</span></label>
+      </div>
+      <p class="hint" style="margin-top:8px">Art. 110-14(c): si no está marcado, la ampacidad de un circuito de <b>100 A o menos</b> se debe basar en la columna de <b>60 °C</b>, y la de uno mayor a 100 A en la de <b>75 °C</b>, sin importar que el conductor sea de 90 °C. El aislamiento de arriba solo determina sobre qué columna se aplican los factores de corrección.</p>
 
       <label>Temp. ambiente <span class="hint">(°C)</span></label>
       <input type="number" id="ambient" value="30" step="1">
@@ -579,6 +586,14 @@
     voltSel.appendChild(o);
   });
   voltSel.value = "127";
+
+  const aislSel = document.getElementById('insulType');
+  Object.entries(INSULATION_TYPES).forEach(([key, t]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = t.label;
+    aislSel.appendChild(o);
+  });
+  aislSel.value = "THWN-2";
 
   const icuSel = document.getElementById('scIcu');
   INTERRUPTING_CAPACITIES_KA.forEach(ka => {
@@ -738,14 +753,22 @@ function render(data) {
           ? `Corriente a plena carga (FLC) estimada de la lista de cargas: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
           : `Corriente total del circuito (lista de cargas${input.demandFactor < 1 ? ', ya con demanda aplicada' : ''}): <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = no continua + 125% &times; continua = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 210-19).`}
         <br>
-        Calibre mínimo por ampacidad: <b>${calibreIni.awg}</b> (ampacidad base 310-15(b)(16) = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor agrupamiento ${calibreIni.groupPct}% (310-15(b)(3)(a), ${input.currentCarrying} cond.) = ampacidad corregida ${fmt(calibreIni.correctedAmp,2)} A).
+        Aislamiento <b>${input.insulType}</b> en lugar ${input.lugarMojado ? 'mojado' : 'seco'} &rarr; columna de <b>${input.insulTemp} °C</b> (Tabla 310-104(a)).
+        <br>Calibre mínimo por ampacidad: <b>${calibreIni.awg}</b> (ampacidad base 310-15(b)(16) a ${input.insulTemp} °C = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor agrupamiento ${calibreIni.groupPct}% (310-15(b)(3)(a), ${input.currentCarrying} cond.) = ${fmt(calibreIni.correctedAmp,2)} A).
+        ${calibreIni.terminalTemp ? `<br><b>Límite de terminal (Art. 110-14(c)):</b> ${input.equipoMarcado75
+            ? `el equipo está marcado para 75 °C, así que la ampacidad se limita a la columna de 75 °C`
+            : `el circuito es de ${input.circuitRating} A (${input.circuitRating <= 100 ? '100 A o menos' : 'más de 100 A'}) y el equipo no está marcado, así que la ampacidad se debe basar en la columna de ${calibreIni.terminalTemp} °C`}: ${fmt(calibreIni.limitAmp,0)} A. ${calibreIni.limitadaPorTerminal
+            ? `<b>Manda el límite de terminal</b>, así que la ampacidad utilizable es ${fmt(calibreIni.usableAmp,2)} A.`
+            : `La ampacidad corregida (${fmt(calibreIni.correctedAmp,2)} A) no lo excede, así que manda ella.`}` : ''}
         ${calibreFinal.awg !== calibreIni.awg ? `<br><b>Se incrementó a ${calibreFinal.awg}</b> porque el calibre por ampacidad no cumplía el límite de caída de tensión de 3% &mdash; ver sección B.` : ""}
         <details><summary>Ver tabla de verificación</summary>
         <table><tr><th>Dato</th><th>Valor</th><th>Fuente NOM-001</th></tr>
         <tr><td>Ampacidad base (${input.material==='cu'?'Cu':'Al'}, ${input.insulTemp}°C)</td><td>${fmt(calibreFinal.baseAmp,0)} A</td><td class="cite">Tabla 310-15(b)(16)</td></tr>
         <tr><td>Factor corrección por temp. ambiente (${input.ambient}°C)</td><td>${fmt(calibreFinal.tempFactor,2)}</td><td class="cite">Tabla 310-15(b)(2)(a)</td></tr>
         <tr><td>Factor de ajuste por agrupamiento (${input.currentCarrying} cond. con corriente)</td><td>${calibreFinal.groupPct}%</td><td class="cite">Tabla 310-15(b)(3)(a)</td></tr>
-        <tr><td>Ampacidad corregida final</td><td>${fmt(calibreFinal.correctedAmp,2)} A</td><td class="cite">310-15(a)</td></tr>
+        <tr><td>Ampacidad corregida (columna ${input.insulTemp} °C)</td><td>${fmt(calibreFinal.correctedAmp,2)} A</td><td class="cite">310-15(a)</td></tr>
+        ${calibreFinal.terminalTemp ? `<tr><td>Límite por terminal (columna ${calibreFinal.terminalTemp} °C)</td><td>${fmt(calibreFinal.limitAmp,0)} A</td><td class="cite">Art. 110-14(c)</td></tr>
+        <tr><td><b>Ampacidad utilizable</b> (la menor de las dos)</td><td><b>${fmt(calibreFinal.usableAmp,2)} A</b></td><td class="cite">310-15(b) + 110-14(c)</td></tr>` : ''}
         </table></details>
       </div>
     </div>`;
@@ -778,7 +801,7 @@ function render(data) {
       <div class="memoria">
         Corriente mínima de protección requerida: <b>${fmt(input.requiredAmpacity,2)} A</b> &rarr; siguiente valor estándar: <b>${breaker.breaker} A</b>.
         ${breaker.cap ? `<br>Tope aplicado por conductor pequeño de cobre (Art. 240-4d): máximo ${breaker.cap} A para calibre ${calibreFinal.awg} AWG.` : ""}
-        ${breaker.note ? `<br>${breaker.note}` : `<br>Verificado contra la ampacidad corregida del conductor (${fmt(calibreFinal.correctedAmp,2)} A): cumple sin necesitar excepción de 240-4(b).`}
+        ${breaker.note ? `<br>${breaker.note}` : `<br>Verificado contra la ampacidad utilizable del conductor (${fmt(calibreFinal.usableAmp ?? calibreFinal.correctedAmp,2)} A): cumple sin necesitar excepción de 240-4(b).`}
         <br><span class="cite">Art. 240-6(a) capacidades estándar; Art. 240-4 protección de conductores; Art. 210-19/210-20 dimensionamiento por carga continua.</span>
       </div>
     </div>`;
@@ -802,7 +825,7 @@ function render(data) {
       <h3>{{L}}. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
       <div class="headline">${tuberia.trade ?? '—'}<span class="unit"> ${tuberia.conduitName}</span></div>
       <div class="memoria">
-        Sistema ${input.systemKey}: ${tuberia.nFaseNeutro} conductor(es) de fase${SYSTEM_TYPES[input.systemKey].neutro?'/neutro':''} calibre ${calibreFinal.awg} &times; ${fmt(tuberia.areaFase,2)} mm&sup2;${tierra ? ` + 1 tierra ${tierra.awgTierra} &times; ${fmt(tuberia.areaTierra,2)} mm&sup2;` : ''} = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
+        Sistema ${input.systemKey}, aislamiento ${tuberia.tipoAislamiento}: ${tuberia.nFaseNeutro} conductor(es) de fase${SYSTEM_TYPES[input.systemKey].neutro?'/neutro':''} calibre ${calibreFinal.awg} &times; ${fmt(tuberia.areaFase,2)} mm&sup2;${tierra ? ` + 1 tierra ${tierra.awgTierra} &times; ${fmt(tuberia.areaTierra,2)} mm&sup2;` : ''} = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b> (Tabla 5).
         Con ${tuberia.totalConductors} conductor(es) el llenado máximo permitido es <b>${tuberia.fillPct}%</b> del área del tubo (Tabla 1).
         Tubería mínima que cumple: <b>${tuberia.trade ?? 'ninguna del rango calculado'}</b> (${tuberia.available ? fmt(tuberia.available,0)+" mm² disponibles a "+tuberia.fillPct+"%" : ""}).
         <br><span class="cite">Tabla 1, Tabla 4 y Tabla 5, Capítulo 10, NOM-001-SEDE-2018. El conductor de puesta a tierra sí cuenta para el porcentaje de ocupación (Nota 3 de la Tabla 1).</span>
@@ -895,7 +918,14 @@ document.getElementById('calc').addEventListener('click', () => {
   const voltage = parseFloat(document.getElementById('voltage').value);
 
   const material = document.getElementById('material').value;
-  const insulTemp = document.getElementById('insulTemp').value;
+  const insulType = document.getElementById('insulType').value;
+  const lugarMojado = document.getElementById('lugarMojado').checked;
+  // La temperatura nominal sale del tipo de aislamiento y del tipo de lugar
+  const insulTemp = tempDeAislamiento(insulType, lugarMojado);
+  if (!insulTemp) {
+    alert(`El aislamiento ${insulType} no está permitido en lugares mojados (Art. 310-10c). Elige un tipo apto, por ejemplo THWN-2 o XHHW-2.`);
+    return;
+  }
   const ambient = parseFloat(document.getElementById('ambient').value);
   const length = parseFloat(document.getElementById('length').value);
   const conduitType = document.getElementById('conduitType').value;
@@ -920,8 +950,14 @@ document.getElementById('calc').addEventListener('click', () => {
     requiredAmpacity = currentNoCont + 1.25 * currentCont; // Art. 210-19(a)(1)
   }
 
+  // Art. 110-14(c): limite de temperatura de las terminales. Depende del tamaño
+  // del circuito (la protección) y de si el equipo está marcado para 75 °C.
+  const equipoMarcado75 = document.getElementById('terminalMarcada').checked;
+  const circuitRating = nextStandardBreaker(requiredAmpacity);
+  const terminalTemp = limiteTerminal(circuitRating, equipoMarcado75);
+
   // A: calibre inicial
-  const calibreIni = calcularCalibre(requiredAmpacity, material, insulTemp, ambient, sys.currentCarrying);
+  const calibreIni = calcularCalibre(requiredAmpacity, material, insulTemp, ambient, sys.currentCarrying, terminalTemp);
   if (!calibreIni) { alert('La corriente solicitada excede el rango de la tabla (máx. 1000 kcmil). Revisa los datos.'); return; }
 
   // B: caida de tension, sube de calibre si excede 3% (solo cobre, rango de Tabla 9)
@@ -932,13 +968,20 @@ document.getElementById('calc').addEventListener('click', () => {
     while (vd && vd.dropPct > 3 && idx < AWG_ORDER.length - 1) {
       idx++;
       const nextAwg = AWG_ORDER[idx];
+      // Se recalcula con la misma regla de dos pasos que calcularCalibre
       const row = AMPACITY_TABLE.find(r => r.awg === nextAwg);
-      const matCol = "cu" + insulTemp;
-      const baseAmp = row[matCol];
+      const baseAmp = row[(material === 'cu' ? 'cu' : 'al') + insulTemp];
       if (baseAmp === null || baseAmp === undefined) continue;
+      const limitAmp = row[(material === 'cu' ? 'cu' : 'al') + terminalTemp];
       const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
       const groupPct = lookupGroupingPct(sys.currentCarrying);
-      calibreFinal = { awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct, correctedAmp: baseAmp*tempFactor*(groupPct/100), requiredAmpacity };
+      const correctedAmp = baseAmp * tempFactor * (groupPct/100);
+      const limitadaPorTerminal = limitAmp != null && limitAmp < correctedAmp;
+      calibreFinal = {
+        awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct,
+        correctedAmp, limitAmp, usableAmp: limitadaPorTerminal ? limitAmp : correctedAmp,
+        limitadaPorTerminal, terminalTemp, requiredAmpacity,
+      };
       vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD);
     }
   }
@@ -947,7 +990,7 @@ document.getElementById('calc').addEventListener('click', () => {
   // C: interruptor
   const breaker = isMotor
     ? calcularInterruptorMotor(current, motorPct)
-    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.correctedAmp, calibreFinal.awg, material);
+    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.usableAmp, calibreFinal.awg, material);
 
   // D: conductor de puesta a tierra de equipos (solo si el sistema lo incluye)
   const tierra = sys.tierra
@@ -955,7 +998,7 @@ document.getElementById('calc').addEventListener('click', () => {
     : null;
 
   // E: tuberia — fases/neutro al calibre calculado + la tierra a su propio calibre
-  const tuberia = calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType);
+  const tuberia = calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType, insulType);
 
   // F: cortocircuito y capacidad interruptiva (opcional)
   let cc = null;
@@ -991,10 +1034,11 @@ document.getElementById('calc').addEventListener('click', () => {
     header: { proj: projName, board: boardName, circ: circName },
     motor: isMotor,
     input: {
-      current, requiredAmpacity, material, insulTemp, ambient, length, fpVD,
+      current, requiredAmpacity, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
       systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
+      equipoMarcado75, circuitRating, terminalTemp,
     },
     calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0,
   });

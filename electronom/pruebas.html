@@ -141,6 +141,80 @@ grupo("Selección de calibre (Art. 310-15)", () => {
 });
 
 /* =========================================================================
+   2a. Tipo de aislamiento (Tablas 310-104(a) y 5, Art. 310-10(c))
+   ========================================================================= */
+grupo("Tipo de aislamiento", () => {
+  // Temperatura nominal segun tipo y lugar
+  esIgual(tempDeAislamiento("THHN", false), "90", "THHN en lugar seco → 90 °C");
+  esIgual(tempDeAislamiento("THHN", true), null, "THHN NO se permite en lugar mojado (Art. 310-10c)");
+  esIgual(tempDeAislamiento("THWN-2", true), "90", "THWN-2 sí se permite en mojado, y conserva 90 °C");
+  esIgual(tempDeAislamiento("XHHW", false), "90", "XHHW en seco → 90 °C");
+  esIgual(tempDeAislamiento("XHHW", true), "75", "XHHW en mojado baja a 75 °C");
+  esIgual(tempDeAislamiento("TW", false), "60", "TW → 60 °C");
+
+  // Las areas cambian de forma importante entre familias, para el mismo calibre
+  esIgual(areaConductor("THHN", "8"), 23.61, "8 AWG THHN = 23.61 mm²");
+  esIgual(areaConductor("THW", "8"), 28.19, "8 AWG THW = 28.19 mm²");
+  esIgual(areaConductor("XHHW", "8"), 28.19, "8 AWG XHHW = 28.19 mm²");
+  esIgual(areaConductor("RHW", "8"), 53.87, "8 AWG RHW con cubierta = 53.87 mm² (2.3× el THHN)");
+  esCierto(areaConductor("RHW","8") > areaConductor("THHN","8") * 2,
+    "El RHW más que duplica el área del THHN en el mismo calibre");
+
+  // THWN comparte familia de areas con THHN; THHW la comparte con TW
+  esIgual(areaConductor("THWN", "4"), areaConductor("THHN", "4"), "THWN usa las mismas áreas que THHN");
+  esIgual(areaConductor("THHW", "4"), areaConductor("TW", "4"), "THHW usa las mismas áreas que TW/THW");
+
+  // Caso donde el tipo de aislamiento CAMBIA la tubería resultante:
+  // 4 conductores de 10 AWG + tierra de 10 AWG en EMT
+  const conTHHN = calcularTuberia("10", 4, "10", "emt", "THHN");
+  const conTHW  = calcularTuberia("10", 4, "10", "emt", "THW");
+  esIgual(conTHHN.trade, '1/2"', "5 conductores de 10 AWG THHN caben en EMT 1/2\"");
+  esIgual(conTHW.trade, '3/4"', "…los mismos en THW ya no caben: exigen 3/4\"");
+  esCierto(conTHW.totalArea > conTHHN.totalArea, "El área total en THW es mayor",
+    `${Math.round(conTHW.totalArea*10)/10} contra ${Math.round(conTHHN.totalArea*10)/10} mm²`);
+
+  // Sin especificar tipo se conserva el comportamiento anterior (THHN)
+  esIgual(calcularTuberia("10", 4, "10", "emt").trade, conTHHN.trade,
+    "Sin tipo especificado se usa THHN, como antes");
+});
+
+/* =========================================================================
+   2b. Límite de terminal (Art. 110-14(c))
+   ========================================================================= */
+grupo("Límite de terminal (Art. 110-14(c))", () => {
+  esIgual(limiteTerminal(15, false), "60", "Circuito de 15 A sin equipo marcado → columna de 60 °C");
+  esIgual(limiteTerminal(100, false), "60", "100 A exactos siguen en 60 °C");
+  esIgual(limiteTerminal(110, false), "75", "Más de 100 A → columna de 75 °C");
+  esIgual(limiteTerminal(15, true), "75", "Equipo marcado para 75 °C permite esa columna aunque sea circuito chico");
+
+  // La ampacidad utilizable es la MENOR entre la corregida y el limite de terminal
+  const c = calcularCalibre(20, "cu", "90", 30, 3, "60");
+  esCierto(c.usableAmp <= c.limitAmp, "La ampacidad utilizable nunca excede el límite de terminal");
+  esCierto(c.usableAmp >= 20, "…y aun así cubre la corriente requerida");
+
+  // Con conductor de 90 C pero terminal de 60 C, manda la terminal
+  const limitado = calcularCalibre(25, "cu", "90", 30, 3, "60");
+  esIgual(limitado.awg, "10", "25 A con THHN 90 °C pero terminal de 60 °C → 10 AWG (no 12)");
+  esCierto(limitado.limitadaPorTerminal, "Se marca que mandó el límite de terminal");
+  esIgual(limitado.limitAmp, 30, "El límite es la ampacidad de 10 AWG a 60 °C = 30 A");
+
+  // El mismo caso con equipo marcado para 75 C permite bajar de calibre
+  const marcado = calcularCalibre(25, "cu", "90", 30, 3, "75");
+  esIgual(marcado.awg, "12", "El mismo caso con terminal de 75 °C → 12 AWG (25 A a 75 °C)");
+
+  // Sin pasar limite de terminal se conserva el comportamiento anterior
+  const sinLimite = calcularCalibre(25, "cu", "90", 30, 3);
+  esIgual(sinLimite.limitAmp, null, "Sin límite de terminal no se aplica tope");
+
+  // Caso real: alimentador C.C. D del proyecto CENTURA.
+  // 10.83 A demandados, 40 C, 4 conductores, circuito de 15 A -> terminal de 60 C.
+  const ccd60 = calcularCalibre(10.83, "cu", "60", 40, 4, "60");
+  esIgual(ccd60.awg, "12", "C.C. D de CENTURA: mínimo por ampacidad con base 60 °C → 12 AWG");
+  const ccd75 = calcularCalibre(10.83, "cu", "75", 40, 4, "75");
+  esIgual(ccd75.awg, "14", "…contra 14 AWG si se usara la base de 75 °C");
+});
+
+/* =========================================================================
    3. Caída de tensión
    ========================================================================= */
 grupo("Caída de tensión (Tabla 9)", () => {
