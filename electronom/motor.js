@@ -135,13 +135,86 @@ const TABLE9_PVC_CU = {
   "1000":{ r:0.049,  xl:0.121 },
 };
 
-// Tabla 5: área aproximada del conductor aislado tipo THHN/THWN (mm2)
-const CONDUCTOR_AREA_THHN = {
-  "18":3.548, "16":4.645, "14":6.258, "12":8.581, "10":13.61, "8":23.61, "6":32.71,
-  "4":53.16, "3":62.77, "2":74.71, "1":100.8, "1/0":119.7, "2/0":143.4, "3/0":172.8,
-  "4/0":208.8, "250":256.1, "300":297.3, "350":338.2, "400":378.3, "500":456.3,
-  "600":559.7, "700":637.9, "750":677.2, "800":715.2, "900":794.3, "1000":869.5,
+/* -------------------------------------------------------------------------
+   Tabla 5: area aproximada del conductor AISLADO (mm2), por familia de
+   aislamiento. El area cambia bastante entre tipos para el mismo calibre
+   (un 8 AWG va de 23.61 mm2 en THHN a 53.87 mm2 en RHW con cubierta), asi
+   que usar la de THHN para todo subdimensiona la tuberia.
+   ------------------------------------------------------------------------- */
+const AREAS_AISLAMIENTO = {
+  // THHN, THWN, THWN-2 (y TFN, TFFN en calibres chicos)
+  THHN: {
+    "18":3.548, "16":4.645, "14":6.258, "12":8.581, "10":13.61, "8":23.61, "6":32.71,
+    "4":53.16, "3":62.77, "2":74.71, "1":100.8, "1/0":119.7, "2/0":143.4, "3/0":172.8,
+    "4/0":208.8, "250":256.1, "300":297.3, "350":338.2, "400":378.3, "500":456.3,
+    "600":559.7, "700":637.9, "750":677.2, "800":715.2, "900":794.3, "1000":869.5,
+  },
+  // TW, THW, THHW, THW-2
+  TW: {
+    "14":8.968, "12":11.68, "10":15.68, "8":28.19, "6":46.84,
+    "4":62.77, "3":73.16, "2":86.00, "1":122.60, "1/0":143.40, "2/0":169.30,
+    "3/0":201.10, "4/0":239.90, "250":296.50, "300":340.70, "350":384.40,
+    "400":427.00, "500":509.70, "600":627.7, "700":710.3, "750":751.7,
+    "800":791.7, "900":874.9, "1000":953.8,
+  },
+  // XHHW, XHHW-2, XHH, ZW
+  XHHW: {
+    "14":8.968, "12":11.68, "10":15.68, "8":28.19, "6":38.06,
+    "4":52.52, "3":62.06, "2":73.94, "1":98.97, "1/0":117.7, "2/0":141.3,
+    "3/0":170.5, "4/0":206.3, "250":251.9, "300":292.6, "350":333.3,
+    "400":373, "500":450.6, "600":561.9, "700":640.2, "750":679.5,
+    "800":717.5, "900":796.8, "1000":872.2,
+  },
+  // RHH, RHW, RHW-2 CON cubierta exterior (las de mayor area)
+  RHW: {
+    "14":18.9, "12":22.77, "10":28.19, "8":53.87, "6":67.16,
+    "4":86, "3":98.13, "2":112.9, "1":171.6, "1/0":196.1, "2/0":226.1,
+    "3/0":262.7, "4/0":306.7, "250":405.9, "300":457.3, "350":507.7,
+    "400":556.5, "500":650.5, "600":782.9, "700":874.9, "750":920.8,
+    "800":965, "900":1057, "1000":1143,
+  },
 };
+
+/* -------------------------------------------------------------------------
+   Tipos de aislamiento de uso comun en Mexico.
+
+   - tempSeco / tempMojado: temperatura nominal segun Tabla 310-104(a), que
+     define la columna de ampacidad de la Tabla 310-15(b)(16). Varios tipos
+     tienen doble valor (90 C en seco, 75 C en mojado).
+   - mojado: si el tipo esta en la lista de permitidos para lugares mojados
+     del Art. 310-10(c). Ojo: THHN "puro" NO lo esta (el alambre comercial
+     suele venir con doble marcado THHN/THWN, que si lo permite).
+   - areas: familia de la Tabla 5 para el llenado de tuberia.
+   ------------------------------------------------------------------------- */
+const INSULATION_TYPES = {
+  "THHN":   { label:"THHN — 90 °C, solo lugares secos", tempSeco:"90", tempMojado:null, mojado:false, areas:"THHN" },
+  "THWN":   { label:"THWN — 75 °C",                     tempSeco:"75", tempMojado:"75", mojado:true,  areas:"THHN" },
+  "THWN-2": { label:"THWN-2 — 90 °C",                   tempSeco:"90", tempMojado:"90", mojado:true,  areas:"THHN" },
+  "TW":     { label:"TW — 60 °C",                       tempSeco:"60", tempMojado:"60", mojado:true,  areas:"TW"   },
+  "THW":    { label:"THW — 75 °C",                      tempSeco:"75", tempMojado:"75", mojado:true,  areas:"TW"   },
+  "THHW":   { label:"THHW — 90 °C seco / 75 °C mojado", tempSeco:"90", tempMojado:"75", mojado:true,  areas:"TW"   },
+  "XHHW":   { label:"XHHW — 90 °C seco / 75 °C mojado", tempSeco:"90", tempMojado:"75", mojado:true,  areas:"XHHW" },
+  "XHHW-2": { label:"XHHW-2 — 90 °C",                   tempSeco:"90", tempMojado:"90", mojado:true,  areas:"XHHW" },
+  "RHW":    { label:"RHW — 75 °C, con cubierta",        tempSeco:"75", tempMojado:"75", mojado:true,  areas:"RHW"  },
+};
+
+// Temperatura nominal aplicable segun el tipo y si el lugar es mojado.
+// Devuelve null si el tipo no esta permitido en lugares mojados.
+function tempDeAislamiento(tipo, lugarMojado) {
+  const t = INSULATION_TYPES[tipo];
+  if (!t) return null;
+  return lugarMojado ? t.tempMojado : t.tempSeco;
+}
+
+// Area del conductor aislado, en mm2, para un tipo y calibre dados.
+function areaConductor(tipo, awg) {
+  const t = INSULATION_TYPES[tipo];
+  const familia = t ? t.areas : "THHN";
+  return AREAS_AISLAMIENTO[familia][awg];
+}
+
+// Se conserva el nombre anterior como alias de la familia THHN.
+const CONDUCTOR_AREA_THHN = AREAS_AISLAMIENTO.THHN;
 
 // Tabla 4 (Capitulo 10): dimensiones y area disponible (mm2) por tuberia, columnas 1/2/>2 conductores (fr=53/31/40%)
 const CONDUIT_TABLES = {
@@ -306,18 +379,57 @@ function fmt(n, d=2) {
 /* =========================================================================
    PASO A: CALIBRE DEL CONDUCTOR  (Art. 310-15)
    ========================================================================= */
-function calcularCalibre(requiredAmpacity, material, insulTemp, ambient, currentCarrying) {
+// Art. 110-14(c)(1): limite de temperatura que imponen las TERMINALES del equipo.
+// - Circuitos de 100 A o menos (o terminales marcadas para 14 AWG a 1 AWG):
+//   la ampacidad se debe basar en la columna de 60 C.
+// - Circuitos de mas de 100 A (o marcados para conductores mayores a 1 AWG):
+//   columna de 75 C.
+// En ambos casos se permite subir de columna SI el equipo esta aprobado e
+// identificado para conductores de mayor temperatura (110-14(c)(1)(a)(3) y (b)(2)).
+//
+// Ojo con la direccion del error: usar 75 C cuando la terminal solo admite 60 C
+// da MAS ampacidad por calibre, es decir selecciona conductores mas chicos.
+function limiteTerminal(circuitRatingAmps, equipoMarcado75) {
+  if (equipoMarcado75) return "75";
+  return circuitRatingAmps <= 100 ? "60" : "75";
+}
+
+// Seleccion de calibre en DOS PASOS, como exige la combinacion de
+// 310-15(b) con 110-14(c):
+//   1. Los factores de correccion por temperatura y de ajuste por agrupamiento
+//      se aplican sobre la columna del AISLAMIENTO del conductor (p. ej. 90 C
+//      para THHN).
+//   2. El resultado no puede exceder la ampacidad de ese calibre en la columna
+//      de la TERMINAL (60 o 75 C). La ampacidad utilizable es la menor de las dos.
+function calcularCalibre(requiredAmpacity, material, insulTemp, ambient, currentCarrying, terminalTemp) {
   const tempFactor = lookupTempFactor(ambient, "f" + insulTemp);
   const groupPct = lookupGroupingPct(currentCarrying);
   const groupFactor = groupPct / 100;
-  const matCol = (material === "cu" ? "cu" : "al") + insulTemp;
+  const mat = material === "cu" ? "cu" : "al";
+  const colAislamiento = mat + insulTemp;
+  // Si no se indica limite de terminal, se conserva el comportamiento anterior
+  // (solo la columna del aislamiento), para no romper llamadas existentes.
+  const colTerminal = terminalTemp ? mat + terminalTemp : null;
 
   for (const row of AMPACITY_TABLE) {
-    const baseAmp = row[matCol];
+    const baseAmp = row[colAislamiento];
     if (baseAmp === null || baseAmp === undefined) continue;
+
     const correctedAmp = baseAmp * (tempFactor ?? 1) * groupFactor;
-    if (correctedAmp >= requiredAmpacity) {
-      return { awg: row.awg, mm2: row.mm2, baseAmp, tempFactor: tempFactor ?? 1, groupFactor, groupPct, correctedAmp, requiredAmpacity };
+
+    let limitAmp = null, usableAmp = correctedAmp, limitadaPorTerminal = false;
+    if (colTerminal) {
+      limitAmp = row[colTerminal];
+      if (limitAmp === null || limitAmp === undefined) continue;
+      if (limitAmp < correctedAmp) { usableAmp = limitAmp; limitadaPorTerminal = true; }
+    }
+
+    if (usableAmp >= requiredAmpacity) {
+      return {
+        awg: row.awg, mm2: row.mm2, baseAmp, tempFactor: tempFactor ?? 1, groupFactor, groupPct,
+        correctedAmp, limitAmp, usableAmp, limitadaPorTerminal, terminalTemp: terminalTemp || null,
+        requiredAmpacity,
+      };
     }
   }
   return null;
@@ -475,10 +587,11 @@ function calcularElectrodo({ rho, largoM, diamMm, complementario }) {
 // Los conductores de fase y neutro van al calibre calculado; el de tierra
 // suele ser menor, asi que su area se cuenta por separado (Nota 3 de Tabla 1:
 // el conductor de puesta a tierra si cuenta para el porcentaje de ocupacion).
-function calcularTuberia(awgFase, nFaseNeutro, awgTierra, conduitType) {
-  const areaFase = CONDUCTOR_AREA_THHN[awgFase];
+function calcularTuberia(awgFase, nFaseNeutro, awgTierra, conduitType, tipoAislamiento) {
+  const tipo = tipoAislamiento || "THHN";
+  const areaFase = areaConductor(tipo, awgFase);
   if (!areaFase) return null;
-  const areaTierra = awgTierra ? (CONDUCTOR_AREA_THHN[awgTierra] || 0) : 0;
+  const areaTierra = awgTierra ? (areaConductor(tipo, awgTierra) || 0) : 0;
   const totalConductors = nFaseNeutro + (awgTierra ? 1 : 0);
   const totalArea = areaFase * nFaseNeutro + areaTierra;
 
@@ -488,7 +601,8 @@ function calcularTuberia(awgFase, nFaseNeutro, awgTierra, conduitType) {
   else { fillPct = 40; col = "over2"; }
 
   const table = CONDUIT_TABLES[conduitType];
-  const base = { areaFase, areaTierra, nFaseNeutro, totalConductors, totalArea, fillPct, col, conduitName: table.name };
+  const base = { areaFase, areaTierra, nFaseNeutro, totalConductors, totalArea, fillPct, col,
+                 conduitName: table.name, tipoAislamiento: tipo };
   for (const row of table.rows) {
     if (row[col] >= totalArea) return { ...base, trade: row.trade, available: row[col] };
   }
@@ -529,9 +643,35 @@ function hallazgo(reglaId, estado, articulo, observacion) {
 function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0, motor }) {
   const h = [];
 
-  // R-002 / 310-15(a)(3): ampacidad corregida suficiente para la carga
+  // R-002 / 310-15(a)(3): ampacidad suficiente para la carga
+  const ampUtil = calibreFinal.usableAmp ?? calibreFinal.correctedAmp;
   h.push(hallazgo("R-002", ESTADO.CUMPLE, "Art. 310-15",
-    `Ampacidad corregida del conductor ${calibreFinal.awg} = ${fmt(calibreFinal.correctedAmp,2)} A, contra ${fmt(input.requiredAmpacity,2)} A requeridos (margen ${fmt(calibreFinal.correctedAmp - input.requiredAmpacity,2)} A).`));
+    `Ampacidad utilizable del conductor ${calibreFinal.awg} = ${fmt(ampUtil,2)} A, contra ${fmt(input.requiredAmpacity,2)} A requeridos (margen ${fmt(ampUtil - input.requiredAmpacity,2)} A).`));
+
+  // R-007 / 310-10(c): idoneidad del aislamiento para el lugar
+  const tipoAisl = INSULATION_TYPES[input.insulType];
+  if (tipoAisl) {
+    if (input.lugarMojado) {
+      h.push(hallazgo("R-007", ESTADO.CUMPLE, "Art. 310-10(c)",
+        `El circuito pasa por lugar mojado y el aislamiento ${input.insulType} está entre los permitidos. Su temperatura nominal baja a ${tipoAisl.tempMojado} °C en mojado, y ese es el valor usado.`));
+    } else if (!tipoAisl.mojado) {
+      h.push(hallazgo("R-007", ESTADO.ADVERTENCIA, "Art. 310-10(c)",
+        `El aislamiento ${input.insulType} solo se permite en lugares SECOS. Se declaró lugar seco, así que cumple, pero conviene confirmar que ningún tramo pase por intemperie, canalización enterrada o zona húmeda. El alambre comercial suele venir con doble marcado THHN/THWN, que sí se permite en mojado.`));
+    } else {
+      h.push(hallazgo("R-007", ESTADO.CUMPLE, "Art. 310-10(c)",
+        `Aislamiento ${input.insulType} en lugar seco: apto.`));
+    }
+  }
+
+  // Art. 110-14(c): limite de temperatura de las terminales
+  if (calibreFinal.terminalTemp) {
+    h.push(hallazgo("R-110-14c",
+      input.equipoMarcado75 ? ESTADO.CUMPLE : ESTADO.ADVERTENCIA,
+      "Art. 110-14(c)",
+      input.equipoMarcado75
+        ? `Se declaró que el equipo está aprobado y marcado para 75 °C, así que la ampacidad se basó en esa columna. Verificar la marca en la placa del tablero o interruptor.`
+        : `El circuito es de ${input.circuitRating} A, así que la ampacidad se basó en la columna de ${calibreFinal.terminalTemp} °C, como exige la norma cuando el equipo no está marcado para mayor temperatura. Si el equipo SÍ está marcado para 75 °C, se puede declarar y el calibre podría reducirse.`));
+  }
 
   // Caida de tension: la NOM la plantea como NOTA (recomendacion), no como
   // disposicion obligatoria -> excederla es Advertencia, no No cumple.
@@ -549,16 +689,16 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   // R-009 / 240-4: la proteccion no debe exceder la ampacidad del conductor
   if (motor) {
     h.push(hallazgo("R-009", ESTADO.ADVERTENCIA, "Art. 430-52",
-      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
-  } else if (breaker.breaker <= calibreFinal.correctedAmp) {
+      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(ampUtil,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
+  } else if (breaker.breaker <= ampUtil) {
     h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4",
-      `Protección de ${breaker.breaker} A no excede la ampacidad corregida del conductor (${fmt(calibreFinal.correctedAmp,2)} A).`));
+      `Protección de ${breaker.breaker} A no excede la ampacidad utilizable del conductor (${fmt(ampUtil,2)} A).`));
   } else if (breaker.breaker <= 800) {
     h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4(b)",
-      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A), pero se acoge a la excepción de 240-4(b): es el valor estándar inmediato superior y no rebasa 800 A. No aplica si el circuito alimenta más de un contacto para cargas portátiles.`));
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampUtil,2)} A), pero se acoge a la excepción de 240-4(b): es el valor estándar inmediato superior y no rebasa 800 A. No aplica si el circuito alimenta más de un contacto para cargas portátiles.`));
   } else {
     h.push(hallazgo("R-009", ESTADO.NO_CUMPLE, "Art. 240-4(c)",
-      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(calibreFinal.correctedAmp,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampUtil,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
   }
 
   // R-010 / 240-6(a): valor comercial estandarizado
