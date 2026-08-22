@@ -564,6 +564,53 @@ function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM, nP
 }
 
 /* =========================================================================
+   VERIFICACION TERMICA DEL CONDUCTOR ANTE CORTOCIRCUITO (I²t adiabático)
+   -------------------------------------------------------------------------
+   Formula de Onderdonk / ICEA P-32-382 (tambien en IEEE Std 242): area minima
+   de cobre para que el conductor no exceda la temperatura maxima admisible
+   de su aislamiento durante el tiempo que tarda en despejarse una falla.
+
+       (I/A)^2 * t = 0.0297 * log10[(T2+234)/(T1+234)]
+
+   No proviene de una tabla de la NOM (mismo tratamiento que la formula de
+   Dwight del electrodo): es formula y constantes de ingenieria general.
+   Solo cobre implementado -- la constante de aluminio (T0≈228) y sus limites
+   de temperatura de falla son distintos y no se han agregado.
+
+   T1: temperatura de operacion nominal del aislamiento (60/75/90).
+   T2: temperatura maxima admisible DURANTE la falla (breve, adiabatica),
+       segun la temperatura nominal del aislamiento. Valores de referencia de
+       ICEA P-32-382 / IEEE Std 242, confirmados contra un proyecto real
+       (VERTIV, N-009: aislamiento de 90 °C -> T2 = 250 °C).
+
+   iccA: corriente de falla disponible en el circuito (antes de repartir entre
+   conductores en paralelo). tSeg: tiempo de despeje de la falla, en segundos,
+   segun la curva tiempo-corriente del dispositivo de proteccion -- esta
+   herramienta NO lo calcula, se declara.
+   ========================================================================= */
+const SC_TEMP_LIMIT_CU = { "60": 150, "75": 200, "90": 250 };
+const COPPER_TEMP_CONSTANT = 234;
+const MM2_POR_CMIL = 0.0005067;
+
+function mm2ACmil(mm2) {
+  return mm2 / MM2_POR_CMIL;
+}
+
+function calcularVerificacionTermica({ iccA, tSeg, insulTemp, material, nParalelo }) {
+  if (material !== "cu") return null; // aluminio no implementado
+  const t2 = SC_TEMP_LIMIT_CU[insulTemp];
+  const t1 = parseFloat(insulTemp);
+  if (!t2 || !iccA || !tSeg) return null;
+  const n = nParalelo || 1;
+  const iccPorConductor = iccA / n;
+  const k = 0.0297;
+  const denom = k * Math.log10((t2 + COPPER_TEMP_CONSTANT) / (t1 + COPPER_TEMP_CONSTANT));
+  const areaMinCmil = (iccPorConductor * Math.sqrt(tSeg)) / Math.sqrt(denom);
+  const areaMinMm2 = areaMinCmil * MM2_POR_CMIL;
+  return { iccA, iccPorConductor, tSeg, t1, t2, k, areaMinCmil, areaMinMm2, nParalelo: n };
+}
+
+/* =========================================================================
    ELECTRODO DE PUESTA A TIERRA: resistencia de una varilla vertical simple
    -------------------------------------------------------------------------
    Formula de Dwight (IEEE Std 142, tambien en Ugly's):
@@ -650,7 +697,7 @@ function hallazgo(reglaId, estado, articulo, observacion) {
   return { reglaId, estado, articulo, observacion };
 }
 
-function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0, motor }) {
+function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor }) {
   const h = [];
 
   // R-002 / 310-15(a)(3): ampacidad suficiente para la carga
@@ -756,6 +803,27 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   } else {
     h.push(hallazgo("R-CC", ESTADO.NO_CUMPLE, "Art. 110-9",
       `Capacidad interruptiva ${cc.icuKa} kA es MENOR que la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA. El dispositivo puede destruirse al intentar interrumpir la falla.`));
+  }
+
+  // R-040 / Art. 110-10: verificacion termica del conductor ante cortocircuito (I²t)
+  if (!cc || cc.iccCarga === null) {
+    h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
+      `No hay corriente de falla en el extremo de la carga (activar cortocircuito con longitud y calibre válidos en Tabla 9) para verificar el calentamiento del conductor.`));
+  } else if (input.material !== "cu") {
+    h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
+      `La verificación térmica ante cortocircuito solo está implementada para cobre.`));
+  } else if (!input.scTsc || input.scTsc <= 0) {
+    h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
+      `Falta declarar el tiempo de despeje de la falla (curva tiempo-corriente del dispositivo de protección) para verificar el calentamiento del conductor.`));
+  } else if (vt) {
+    const areaInstaladaMm2 = calibreFinal.mm2;
+    if (areaInstaladaMm2 >= vt.areaMinMm2) {
+      h.push(hallazgo("R-040", ESTADO.CUMPLE, "Art. 110-10",
+        `Con ${fmt(vt.iccPorConductor/1000,2)} kA por conductor durante ${vt.tSeg} s, el área mínima para no exceder ${vt.t2} °C (aislamiento de ${vt.t1} °C) es ${fmt(vt.areaMinMm2,2)} mm², dentro de los ${fmt(areaInstaladaMm2,2)} mm² instalados (${calibreFinal.awg}).`));
+    } else {
+      h.push(hallazgo("R-040", ESTADO.NO_CUMPLE, "Art. 110-10",
+        `Con ${fmt(vt.iccPorConductor/1000,2)} kA por conductor durante ${vt.tSeg} s, el área mínima para no exceder ${vt.t2} °C es ${fmt(vt.areaMinMm2,2)} mm², MAYOR que los ${fmt(areaInstaladaMm2,2)} mm² instalados (${calibreFinal.awg}). El conductor puede dañarse antes de que despeje la falla: aumentar calibre, agregar conductores en paralelo o reducir el tiempo de despeje.`));
+    }
   }
 
   // R-029 / 250-52(a)(5) y R-030 / 250-53(a)(2): electrodo de puesta a tierra
