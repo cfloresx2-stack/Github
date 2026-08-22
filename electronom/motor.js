@@ -438,15 +438,21 @@ function calcularCalibre(requiredAmpacity, material, insulTemp, ambient, current
 /* =========================================================================
    PASO B: CAIDA DE TENSION  (Tabla 9, Art. 210-19 Nota 4 / 215-2 Nota 2)
    ========================================================================= */
-function calcularCaidaTension(awg, current, lengthM, voltage, vdFactor, fp) {
+// nParalelo: conductores en paralelo por fase (Art. 310-10(h)). Cada conductor
+// lleva 1/nParalelo de la corriente total, y su impedancia (R, X de Tabla 9) es
+// la de UN solo conductor -- por eso se divide la corriente, no la impedancia.
+// Validado contra dos proyectos reales (Advanced Energy y VERTIV, ver N-008/N-009).
+function calcularCaidaTension(awg, current, lengthM, voltage, vdFactor, fp, nParalelo) {
   const t9 = TABLE9_PVC_CU[awg];
   if (!t9) return null;
+  const n = nParalelo || 1;
   const angle = Math.acos(fp);
   const ze = t9.r * fp + t9.xl * Math.sin(angle);
   const lengthKm = lengthM / 1000;
-  const dropV = vdFactor * current * lengthKm * ze;
+  const currentPorConductor = current / n;
+  const dropV = vdFactor * currentPorConductor * lengthKm * ze;
   const dropPct = (dropV / voltage) * 100;
-  return { r:t9.r, xl:t9.xl, ze, dropV, dropPct, lengthKm, vdFactor };
+  return { r:t9.r, xl:t9.xl, ze, dropV, dropPct, lengthKm, vdFactor, nParalelo:n };
 }
 
 /* =========================================================================
@@ -532,7 +538,11 @@ function calcularTierraFisica(breakerA, material, awgFaseMinima, awgFaseFinal) {
    - Se toma la base en los propios datos del transformador, por lo que
      Z_transformador_pu = %Z / 100 directamente.
    ========================================================================= */
-function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM }) {
+// nParalelo: conductores en paralelo por fase (Art. 310-10(h)). N conductores
+// identicos en paralelo tienen 1/N de la impedancia de uno solo. Validado
+// contra dos proyectos reales (Advanced Energy y VERTIV, ver N-008/N-009).
+function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM, nParalelo }) {
+  const n = nParalelo || 1;
   const sBase = kva * 1000;                 // VA
   const iBase = sBase / (Math.sqrt(3) * voltage);
   const zBase = (voltage * voltage) / sBase;
@@ -545,12 +555,12 @@ function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM }) 
   let zCondOhms = null, zCondPu = null, iccCarga = null;
   const t9 = TABLE9_PVC_CU[awg];
   if (t9 && lengthM > 0) {
-    zCondOhms = Math.sqrt(t9.r * t9.r + t9.xl * t9.xl) * (lengthM / 1000);
+    zCondOhms = (Math.sqrt(t9.r * t9.r + t9.xl * t9.xl) * (lengthM / 1000)) / n;
     zCondPu = zCondOhms / zBase;
     iccCarga = (1 / (zTotalTrafoPu + zCondPu)) * iBase;
   }
 
-  return { sBase, iBase, zBase, zTrafoPu, zSourcePu, iccTrafo, zCondOhms, zCondPu, iccCarga };
+  return { sBase, iBase, zBase, zTrafoPu, zSourcePu, iccTrafo, zCondOhms, zCondPu, iccCarga, nParalelo:n };
 }
 
 /* =========================================================================
@@ -646,7 +656,13 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   // R-002 / 310-15(a)(3): ampacidad suficiente para la carga
   const ampUtil = calibreFinal.usableAmp ?? calibreFinal.correctedAmp;
   h.push(hallazgo("R-002", ESTADO.CUMPLE, "Art. 310-15",
-    `Ampacidad utilizable del conductor ${calibreFinal.awg} = ${fmt(ampUtil,2)} A, contra ${fmt(input.requiredAmpacity,2)} A requeridos (margen ${fmt(ampUtil - input.requiredAmpacity,2)} A).`));
+    `Ampacidad utilizable del conductor ${calibreFinal.awg} = ${fmt(ampUtil,2)} A, contra ${fmt(input.requiredAmpacityPorConductor ?? input.requiredAmpacity,2)} A requeridos por conductor (margen ${fmt(ampUtil - (input.requiredAmpacityPorConductor ?? input.requiredAmpacity),2)} A).`));
+
+  // R-039 / 310-10(h): requisitos de conductores en paralelo
+  if (input.nParalelo > 1) {
+    h.push(hallazgo("R-039", ESTADO.ADVERTENCIA, "Art. 310-10(h)",
+      `Circuito con ${input.nParalelo} conductores en paralelo por fase. Cada uno debe ser del mismo material, calibre, aislamiento y longitud, y terminar de forma similar. Este requisito no se puede verificar automáticamente: confirmar en campo/planos que los ${input.nParalelo} conjuntos son idénticos.`));
+  }
 
   // R-007 / 310-10(c): idoneidad del aislamiento para el lugar
   const tipoAisl = INSULATION_TYPES[input.insulType];

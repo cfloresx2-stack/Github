@@ -306,6 +306,42 @@ grupo("Cortocircuito (método por unidad)", () => {
 });
 
 /* =========================================================================
+   6.5. Conductores en paralelo (Art. 310-10(h))
+   -------------------------------------------------------------------------
+   El cortocircuito se valida contra un proyecto real (N-008, Advanced
+   Energy). La caída de tensión se valida solo con aritmética: al escribir
+   estas pruebas se detectó que el "match" original contra VERTIV (N-009)
+   usaba por error el R de SU memoria (0.105) en vez del R real de la
+   Tabla 9 de ElectroNOM (0.089, para conduit PVC — VERTIV usa charola, que
+   tiene otro R). Ver la corrección en reglas_normativas.xlsx, nota N-009.
+   ========================================================================= */
+grupo("Conductores en paralelo (Art. 310-10(h))", () => {
+  // Sin nParalelo debe comportarse igual que con nParalelo=1 (compatibilidad)
+  const sinN = calcularCaidaTension("12", 15, 20, 127, 2, 0.9);
+  const conN1 = calcularCaidaTension("12", 15, 20, 127, 2, 0.9, 1);
+  esCerca(conN1.dropPct, sinN.dropPct, 1e-9, "nParalelo=1 da el mismo resultado que sin especificarlo");
+
+  const conN2 = calcularCaidaTension("12", 15, 20, 127, 2, 0.9, 2);
+  esCerca(conN2.dropPct, sinN.dropPct / 2, 1e-9,
+    "2 conductores en paralelo reparten la corriente a la mitad → mitad de caída de tensión");
+
+  const ccSinN = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0, awg:"6", lengthM:30 });
+  const ccConN1 = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0, awg:"6", lengthM:30, nParalelo:1 });
+  esCerca(ccConN1.iccCarga, ccSinN.iccCarga, 0.01, "nParalelo=1 da el mismo resultado que sin especificarlo (cortocircuito)");
+
+  const ccConN2 = calcularCortocircuito({ kva:500, zPct:5, voltage:220, zSourcePu:0, awg:"6", lengthM:30, nParalelo:2 });
+  esCierto(ccConN2.iccCarga > ccSinN.iccCarga,
+    "2 conductores en paralelo reducen la impedancia del circuito → mayor falla en el extremo de la carga");
+
+  // Caso real: Advanced Energy (N-008) — Transformador 03, 8x500 kcmil, 8 m, 480V, %Z 6.61
+  // Memoria real (método punto-a-punto): 44.41 kA. Aquí se valida con el método
+  // por unidad de ElectroNOM más la impedancia de 8 conductores en paralelo.
+  const ae = calcularCortocircuito({ kva:2500, zPct:6.61, voltage:480, zSourcePu:0, awg:"500", lengthM:8, nParalelo:8 });
+  esCerca(ae.iccCarga / 1000, 44.36, 0.1,
+    "Caso real Advanced Energy (N-008): Transformador 03, 8x500 kcmil, 8 m, 480V → memoria real reporta 44.41 kA");
+});
+
+/* =========================================================================
    7. Electrodo de puesta a tierra — fórmula de Dwight
    ========================================================================= */
 grupo("Electrodo de tierra (fórmula de Dwight)", () => {
@@ -419,6 +455,13 @@ grupo("Dictamen de cumplimiento", () => {
   esIgual(busca(ccMala, "R-CC").estado, ESTADO.NO_CUMPLE, "10 kA contra falla de 26 kA → No cumple");
   const ccBuena = evaluarCumplimiento({ ...base, cc: { icuKa:35, iccTrafo:26000 } });
   esIgual(busca(ccBuena, "R-CC").estado, ESTADO.CUMPLE, "35 kA contra falla de 26 kA → Cumple");
+
+  // R-039 / 310-10(h): solo aparece con conductores en paralelo
+  const sinParalelo = evaluarCumplimiento(base);
+  esCierto(!busca(sinParalelo, "R-039"), "Sin conductores en paralelo, no aparece R-039");
+  const conParalelo = evaluarCumplimiento({ ...base, input: { ...base.input, nParalelo: 4 } });
+  esIgual(busca(conParalelo, "R-039").estado, ESTADO.ADVERTENCIA,
+    "Con 4 conductores en paralelo, aparece R-039 como recordatorio (Art. 310-10h)");
 
   // Veredicto global: manda el estado más severo
   esIgual(veredictoGlobal([{estado:ESTADO.CUMPLE},{estado:ESTADO.ADVERTENCIA}]), ESTADO.ADVERTENCIA,
