@@ -491,6 +491,10 @@
         </div>
 
         <p class="hint" style="margin-top:10px">Se calcula la falla trifásica simétrica por el método por unidad. Se asume que el circuito arranca en el secundario del transformador (o en un tablero alimentado directamente por él); si hay un alimentador intermedio la falla real es menor, así que el resultado queda del lado conservador.</p>
+
+        <label style="margin-top:12px">Tiempo de despeje de la falla <span class="hint">(s, de la curva tiempo-corriente del interruptor/fusible; 0 = omitir la verificación térmica del conductor)</span></label>
+        <input type="number" id="scTsc" value="0" step="0.01" min="0">
+        <p class="hint" style="margin-top:6px">Con este dato y la falla en el extremo de la carga se verifica que el conductor (solo cobre, por ahora) no exceda su temperatura máxima admisible durante la falla, con la fórmula de Onderdonk/ICEA P-32-382 — requiere longitud &gt; 0 y calibre dentro del rango de la Tabla 9.</p>
       </div>
     </div>
 
@@ -745,7 +749,7 @@ let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a l
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0, motor } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -872,6 +876,41 @@ function render(data) {
     </div>`;
   })() : "";
 
+  const stepF2 = (cc && cc.iccCarga !== null) ? (() => {
+    if (input.material !== 'cu') {
+      return `
+    <div class="result-block">
+      <h3>{{L}}. Verificación térmica del conductor <span class="badge na">No evaluable</span></h3>
+      <div class="memoria">Solo está implementada para conductores de cobre.<br><span class="cite">Fórmula de Onderdonk / ICEA P-32-382 (no proviene de una tabla de la NOM).</span></div>
+    </div>`;
+    }
+    if (!input.scTsc || input.scTsc <= 0) {
+      return `
+    <div class="result-block">
+      <h3>{{L}}. Verificación térmica del conductor <span class="badge na">No evaluable</span></h3>
+      <div class="memoria">Falta declarar el tiempo de despeje de la falla (sección 5, curva tiempo-corriente del dispositivo de protección).<br><span class="cite">Fórmula de Onderdonk / ICEA P-32-382 (no proviene de una tabla de la NOM).</span></div>
+    </div>`;
+    }
+    if (!vt) return "";
+    const cumple = calibreFinal.mm2 >= vt.areaMinMm2;
+    const badge = cumple
+      ? `<span class="badge ok">Cumple</span>`
+      : `<span class="badge warn">NO CUMPLE — conductor insuficiente</span>`;
+    return `
+    <div class="result-block">
+      <h3>{{L}}. Verificación térmica del conductor ${badge}</h3>
+      <div class="headline">${fmt(vt.areaMinMm2,2)} <span class="unit">mm² mínimos por conductor, contra ${fmt(calibreFinal.mm2,2)} mm² instalados (${calibreFinal.awg})</span></div>
+      <div class="memoria">
+        Corriente de falla en el extremo de la carga: ${fmt(cc.iccCarga/1000,2)} kA${vt.nParalelo > 1 ? ` &divide; ${vt.nParalelo} conductores en paralelo = <b>${fmt(vt.iccPorConductor/1000,2)} kA por conductor</b>` : ''}, durante <b>${vt.tSeg} s</b> (tiempo de despeje declarado).
+        <br>Temperatura de operación del aislamiento T<sub>1</sub> = ${vt.t1} °C; temperatura máxima admisible durante la falla T<sub>2</sub> = ${vt.t2} °C (referencia ICEA P-32-382 para cobre).
+        <br>(I/A)² &times; t = 0.0297 &times; log&#8329;&#8320;[(T<sub>2</sub>+234)/(T<sub>1</sub>+234)] &rarr; área mínima = <b>${fmt(vt.areaMinMm2,2)} mm²</b> (${fmt(vt.areaMinCmil,0)} cmil) por conductor.
+        <br><br><b>Verificación:</b> área instalada ${fmt(calibreFinal.mm2,2)} mm² (${calibreFinal.awg}) ${cumple ? '&ge;' : '&lt;'} área mínima ${fmt(vt.areaMinMm2,2)} mm² &rarr; <b>${cumple ? 'CUMPLE' : 'NO CUMPLE'}</b>.
+        ${!cumple ? `<br><span style="color:var(--warn)"><b>Acción requerida:</b> aumentar calibre, agregar conductores en paralelo, o verificar si el dispositivo de protección puede despejar la falla más rápido.</span>` : ""}
+        <br><span class="cite">Fórmula de Onderdonk / ICEA P-32-382, IEEE Std 242 (no proviene de una tabla de la NOM — mismo tratamiento que la fórmula de Dwight del electrodo). Solo cobre. Validada contra un proyecto real (VERTIV, generadores QSK60): 6&times;500 kcmil, 44,625 A, 0.2 s &rarr; 46,229 cmil mínimos por conductor, contra 499,302 cmil instalados.</span>
+      </div>
+    </div>`;
+  })() : "";
+
   const stepG = el0 ? (() => {
     const badge = el0.resuelto
       ? `<span class="badge ok">Cumple Art. 250-53</span>`
@@ -892,7 +931,7 @@ function render(data) {
     </div>`;
   })() : "";
 
-  const secciones = [stepA, stepB, stepC, stepD, stepE, stepF, stepG].filter(Boolean);
+  const secciones = [stepA, stepB, stepC, stepD, stepE, stepF, stepF2, stepG].filter(Boolean);
   const bodyHtml = renderDictamen(hallazgos) +
     secciones.map((s, i) => s.replace('{{L}}', String.fromCharCode(65 + i))).join('');
 
@@ -1036,6 +1075,13 @@ document.getElementById('calc').addEventListener('click', () => {
     }
   }
 
+  // F2: verificacion termica del conductor ante cortocircuito (I²t, opcional)
+  const scTsc = parseFloat(document.getElementById('scTsc').value) || 0;
+  let vt = null;
+  if (cc && cc.iccCarga !== null && scTsc > 0) {
+    vt = calcularVerificacionTermica({ iccA: cc.iccCarga, tSeg: scTsc, insulTemp, material, nParalelo });
+  }
+
   // G: electrodo de puesta a tierra (opcional)
   let el0 = null;
   if (document.getElementById('elEnabled').checked) {
@@ -1059,9 +1105,9 @@ document.getElementById('calc').addEventListener('click', () => {
       systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
-      equipoMarcado75, circuitRating, terminalTemp, nParalelo,
+      equipoMarcado75, circuitRating, terminalTemp, nParalelo, scTsc,
     },
-    calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, el0,
+    calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0,
   });
 });
 

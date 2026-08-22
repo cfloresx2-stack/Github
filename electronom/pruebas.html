@@ -342,6 +342,41 @@ grupo("Conductores en paralelo (Art. 310-10(h))", () => {
 });
 
 /* =========================================================================
+   6.6. Verificación térmica del conductor (I²t, Onderdonk/ICEA P-32-382)
+   -------------------------------------------------------------------------
+   Caso real: VERTIV (N-009), generadores QSK60. 6x500 kcmil de cobre,
+   aislamiento 90°C, corriente total de falla 44,625 A, 0.2 s de despeje.
+   La memoria calcula: área mínima total 277,374 cmil (46,229 cmil por
+   conductor), contra 2,995,811 cmil instalados (499,302 cmil/conductor).
+   ========================================================================= */
+grupo("Verificación térmica del conductor (I²t)", () => {
+  const vertiv = calcularVerificacionTermica({ iccA:44625, tSeg:0.2, insulTemp:"90", material:"cu", nParalelo:6 });
+  esCierto(vertiv !== null, "Caso VERTIV: se calcula con material cobre y datos completos");
+  esCerca(vertiv.areaMinCmil, 46229, 50,
+    "Caso real VERTIV (N-009): área mínima por conductor ≈ 46,229 cmil");
+  esCerca(vertiv.areaMinCmil * 6, 277374, 300,
+    "El total (×6 conductores) coincide con los 277,374 cmil de la memoria real");
+
+  esIgual(calcularVerificacionTermica({ iccA:44625, tSeg:0.2, insulTemp:"90", material:"al" }), null,
+    "Aluminio no implementado → devuelve null, no un número inventado");
+  esIgual(calcularVerificacionTermica({ iccA:44625, tSeg:0, insulTemp:"90", material:"cu" }), null,
+    "Sin tiempo de despeje (0) → devuelve null");
+  esIgual(calcularVerificacionTermica({ iccA:0, tSeg:0.2, insulTemp:"90", material:"cu" }), null,
+    "Sin corriente de falla → devuelve null");
+
+  // A mayor tiempo de despeje, mayor área mínima requerida (más energía I²t)
+  const rapido = calcularVerificacionTermica({ iccA:20000, tSeg:0.1, insulTemp:"75", material:"cu" });
+  const lento = calcularVerificacionTermica({ iccA:20000, tSeg:0.5, insulTemp:"75", material:"cu" });
+  esCierto(lento.areaMinMm2 > rapido.areaMinMm2, "Despeje más lento exige más área de cobre");
+
+  // Más conductores en paralelo reparten la corriente → menos área por conductor
+  const sinParalelo = calcularVerificacionTermica({ iccA:20000, tSeg:0.2, insulTemp:"75", material:"cu", nParalelo:1 });
+  const conParalelo = calcularVerificacionTermica({ iccA:20000, tSeg:0.2, insulTemp:"75", material:"cu", nParalelo:4 });
+  esCerca(conParalelo.areaMinMm2, sinParalelo.areaMinMm2 / 4, 1e-6,
+    "4 conductores en paralelo reparten la corriente a 1/4 → 1/4 del área mínima por conductor");
+});
+
+/* =========================================================================
    7. Electrodo de puesta a tierra — fórmula de Dwight
    ========================================================================= */
 grupo("Electrodo de tierra (fórmula de Dwight)", () => {
@@ -435,6 +470,7 @@ grupo("Dictamen de cumplimiento", () => {
   esIgual(busca(sano, "R-VD").estado, ESTADO.CUMPLE, "Caída de 1.5% → Cumple");
   esIgual(busca(sano, "R-CC").estado, ESTADO.NO_EVALUABLE, "Sin cortocircuito calculado → No evaluable");
   esIgual(busca(sano, "R-030").estado, ESTADO.NO_EVALUABLE, "Sin electrodo calculado → No evaluable");
+  esIgual(busca(sano, "R-040").estado, ESTADO.NO_EVALUABLE, "Sin cortocircuito calculado, tampoco se puede verificar el conductor → No evaluable");
 
   // La caída de tensión es una NOTA de la NOM: excederla es Advertencia, no incumplimiento
   const excedida = evaluarCumplimiento({ ...base, vd: { dropPct: 5.2 } });
@@ -462,6 +498,33 @@ grupo("Dictamen de cumplimiento", () => {
   const conParalelo = evaluarCumplimiento({ ...base, input: { ...base.input, nParalelo: 4 } });
   esIgual(busca(conParalelo, "R-039").estado, ESTADO.ADVERTENCIA,
     "Con 4 conductores en paralelo, aparece R-039 como recordatorio (Art. 310-10h)");
+
+  // R-040 / 110-10: verificación térmica del conductor
+  const conFallaSinTsc = evaluarCumplimiento({ ...base, input: { ...base.input, material:"cu" }, cc: { iccCarga:26000 } });
+  esIgual(busca(conFallaSinTsc, "R-040").estado, ESTADO.NO_EVALUABLE,
+    "Hay falla en la carga pero falta el tiempo de despeje → No evaluable");
+
+  const conAluminio = evaluarCumplimiento({ ...base, input: { ...base.input, material:"al", scTsc:0.2 }, cc: { iccCarga:26000 } });
+  esIgual(busca(conAluminio, "R-040").estado, ESTADO.NO_EVALUABLE,
+    "Aluminio no implementado → No evaluable");
+
+  const termicoOk = evaluarCumplimiento({
+    ...base, input: { ...base.input, material:"cu", scTsc:0.2 },
+    calibreFinal: { ...base.calibreFinal, mm2: 100 },
+    cc: { iccCarga:26000 },
+    vt: { iccPorConductor:26000, tSeg:0.2, t1:90, t2:250, areaMinMm2:20, areaMinCmil:39473, nParalelo:1 },
+  });
+  esIgual(busca(termicoOk, "R-040").estado, ESTADO.CUMPLE,
+    "Área instalada (100 mm²) mayor que la mínima requerida (20 mm²) → Cumple");
+
+  const termicoMal = evaluarCumplimiento({
+    ...base, input: { ...base.input, material:"cu", scTsc:0.2 },
+    calibreFinal: { ...base.calibreFinal, mm2: 10 },
+    cc: { iccCarga:26000 },
+    vt: { iccPorConductor:26000, tSeg:0.2, t1:90, t2:250, areaMinMm2:20, areaMinCmil:39473, nParalelo:1 },
+  });
+  esIgual(busca(termicoMal, "R-040").estado, ESTADO.NO_CUMPLE,
+    "Área instalada (10 mm²) menor que la mínima requerida (20 mm²) → No cumple");
 
   // Veredicto global: manda el estado más severo
   esIgual(veredictoGlobal([{estado:ESTADO.CUMPLE},{estado:ESTADO.ADVERTENCIA}]), ESTADO.ADVERTENCIA,
