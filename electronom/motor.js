@@ -42,6 +42,58 @@ const AMPACITY_TABLE = [
   { awg:"1000",mm2:507,   cu60:455, cu75:545, cu90:615, al60:375, al75:445, al90:500 },
 ];
 
+// Tabla 310-15(b)(17): Ampacidad permisible de conductores individuales
+// aislados AL AIRE LIBRE (charola portacable, no tubería), 30°C ambiente.
+// Verificada contra la NOM-001-SEDE-2018 (paginas 196-197) y contra el dato
+// real de VERTIV (N-009): 500 kcmil = 700 A a 90°C, coincide exacto.
+const AMPACITY_TABLE_17 = {
+  "18":  { cu60:null, cu75:null, cu90:18,   al60:null, al75:null, al90:null },
+  "16":  { cu60:null, cu75:null, cu90:24,   al60:null, al75:null, al90:null },
+  "14":  { cu60:25,   cu75:30,   cu90:35,   al60:null, al75:null, al90:null },
+  "12":  { cu60:30,   cu75:35,   cu90:40,   al60:25,   al75:30,   al90:35  },
+  "10":  { cu60:40,   cu75:50,   cu90:55,   al60:35,   al75:40,   al90:45  },
+  "8":   { cu60:60,   cu75:70,   cu90:80,   al60:45,   al75:55,   al90:60  },
+  "6":   { cu60:80,   cu75:95,   cu90:105,  al60:60,   al75:75,   al90:85  },
+  "4":   { cu60:105,  cu75:125,  cu90:140,  al60:80,   al75:100,  al90:115 },
+  "3":   { cu60:120,  cu75:145,  cu90:165,  al60:95,   al75:115,  al90:130 },
+  "2":   { cu60:140,  cu75:170,  cu90:190,  al60:110,  al75:135,  al90:150 },
+  "1":   { cu60:165,  cu75:195,  cu90:220,  al60:130,  al75:155,  al90:175 },
+  "1/0": { cu60:195,  cu75:230,  cu90:260,  al60:150,  al75:180,  al90:205 },
+  "2/0": { cu60:225,  cu75:265,  cu90:300,  al60:175,  al75:210,  al90:235 },
+  "3/0": { cu60:260,  cu75:310,  cu90:350,  al60:200,  al75:240,  al90:270 },
+  "4/0": { cu60:300,  cu75:360,  cu90:405,  al60:235,  al75:280,  al90:315 },
+  "250": { cu60:340,  cu75:405,  cu90:455,  al60:265,  al75:315,  al90:355 },
+  "300": { cu60:375,  cu75:445,  cu90:500,  al60:290,  al75:350,  al90:395 },
+  "350": { cu60:420,  cu75:505,  cu90:570,  al60:330,  al75:395,  al90:445 },
+  "400": { cu60:455,  cu75:545,  cu90:615,  al60:355,  al75:425,  al90:480 },
+  "500": { cu60:515,  cu75:620,  cu90:700,  al60:405,  al75:485,  al90:545 },
+  "600": { cu60:575,  cu75:690,  cu90:780,  al60:455,  al75:545,  al90:615 },
+  "700": { cu60:630,  cu75:755,  cu90:850,  al60:500,  al75:595,  al90:670 },
+  "750": { cu60:655,  cu75:785,  cu90:885,  al60:515,  al75:620,  al90:700 },
+  "800": { cu60:680,  cu75:815,  cu90:920,  al60:535,  al75:645,  al90:725 },
+  "900": { cu60:730,  cu75:870,  cu90:980,  al60:580,  al75:700,  al90:790 },
+  "1000":{ cu60:780,  cu75:935,  cu90:1055, al60:625,  al75:750,  al90:845 },
+};
+
+// Tabla 392-22(b)(1), columna 1 (392-22(b)(1)(b)): area de ocupacion maxima
+// permisible para CABLES DE UN SOLO CONDUCTOR (no multiconductor) en charola
+// tipo escalera, fondo ventilado o malla, para calibres de 250 a 900 kcmil
+// (metodo de suma de areas). Ancho interior de la charola, en cm.
+const TRAY_FILL_392_22_B1_COL1 = [
+  { anchoCm:5,    areaMm2:1400  },
+  { anchoCm:10,   areaMm2:2800  },
+  { anchoCm:15,   areaMm2:4200  },
+  { anchoCm:20,   areaMm2:5600  },
+  { anchoCm:22.5, areaMm2:6100  },
+  { anchoCm:30,   areaMm2:8400  },
+  { anchoCm:40,   areaMm2:11200 },
+  { anchoCm:45,   areaMm2:12600 },
+  { anchoCm:50,   areaMm2:14000 },
+  { anchoCm:60,   areaMm2:16800 },
+  { anchoCm:75,   areaMm2:21000 },
+  { anchoCm:90,   areaMm2:25200 },
+];
+
 // Tabla 310-15(b)(2)(a): factor de corrección por temperatura ambiente (base 30°C)
 const TEMP_CORRECTION = [
   { max:10, f60:1.29, f75:1.20, f90:1.15 },
@@ -436,6 +488,112 @@ function calcularCalibre(requiredAmpacity, material, insulTemp, ambient, current
 }
 
 /* =========================================================================
+   PASO A (alterno): CALIBRE EN CHAROLA PORTACABLE  (Art. 392-80(a)(2))
+   -------------------------------------------------------------------------
+   Solo cables de UN SOLO CONDUCTOR (no multiconductor) en charola tipo
+   escalera, malla o fondo ventilado -- NO fondo sólido (usa 310-15(c), un
+   metodo distinto, no implementado).
+
+   Base: Tabla 310-15(b)(17) (ampacidad al aire libre). Factor segun calibre
+   y si la charola esta cubierta con tapa solida continua de mas de 1.80 m:
+     - 1/0 AWG a 500 kcmil: sin cubierta 65%, cubierta 60%   [392-80(a)(2)(b)]
+     - 600 kcmil y mayores: sin cubierta 75%, cubierta 70%   [392-80(a)(2)(a)]
+     - Excepcion: una sola capa, SIN cubierta, con separacion >= 1 diametro
+       entre conductores individuales -> 100%, sin reduccion [392-80(a)(2)(c)]
+
+   No implementado (fuera de estos rangos: "noEvaluable"): calibres menores a
+   1/0 AWG -- la NOM no da un porcentaje fijo para conductor individual en
+   ese rango; normalmente van atados en grupos (Art. 392-22(b)), que requiere
+   un tratamiento distinto no implementado.
+
+   Igual que en tuberia, el limite de terminal (Art. 110-14(c)) se aplica
+   sobre la MISMA Tabla 310-15(b)(17) -- la NOM no distingue eso por metodo
+   de instalacion. La Tabla 310-15(b)(17) SI lleva correccion por temperatura
+   ambiente (misma Tabla 310-15(b)(2)(a) que la Tabla 16 -- ver nota al pie
+   de la tabla), pero NO lleva factor de agrupamiento: el propio Art. 392-80
+   dice textualmente que 310-15(b)(3)(a) no aplica a cables de un solo
+   conductor en charola.
+   ========================================================================= */
+function calcularAmpacidadCharola({ awg, material, insulTempCol, terminalTempCol, ambient, cubierta, capaUnicaSeparada }) {
+  const t17 = AMPACITY_TABLE_17[awg];
+  if (!t17) return null;
+  const mat = material === "cu" ? "cu" : "al";
+  const baseAmp = t17[mat + insulTempCol];
+  if (baseAmp === null || baseAmp === undefined) return null;
+
+  const areaMm2 = mm2DeAwg(awg);
+  if (areaMm2 === null || areaMm2 < 53.49) {
+    return { noEvaluable: true, motivo: "Solo implementado para 1/0 AWG y mayores en charola (Art. 392-80(a)(2))." };
+  }
+
+  let factor, regla;
+  if (capaUnicaSeparada && !cubierta) {
+    factor = 1; regla = "392-80(a)(2)(c)";
+  } else if (areaMm2 >= 304) {
+    factor = cubierta ? 0.70 : 0.75; regla = "392-80(a)(2)(a)";
+  } else {
+    factor = cubierta ? 0.60 : 0.65; regla = "392-80(a)(2)(b)";
+  }
+
+  const tempFactor = lookupTempFactor(ambient, "f" + insulTempCol) ?? 1;
+  const correctedAmp = baseAmp * tempFactor * factor;
+
+  let limitAmp = null, usableAmp = correctedAmp, limitadaPorTerminal = false;
+  if (terminalTempCol) {
+    limitAmp = t17[mat + terminalTempCol];
+    if (limitAmp === null || limitAmp === undefined) return null;
+    if (limitAmp < correctedAmp) { usableAmp = limitAmp; limitadaPorTerminal = true; }
+  }
+
+  return { baseAmp, tempFactor, factor, regla, correctedAmp, limitAmp, usableAmp, limitadaPorTerminal, cubierta, capaUnicaSeparada, areaMm2 };
+}
+
+// Empaqueta calcularAmpacidadCharola() con la forma de un objeto "calibre"
+// (awg, mm2, ...) para un AWG especifico -- usado tanto por la busqueda del
+// calibre inicial como por el ajuste posterior por caida de tension.
+function calibreCharolaPorAwg(awg, material, insulTempCol, terminalTempCol, ambient, cubierta, capaUnicaSeparada, requiredAmpacity) {
+  const r = calcularAmpacidadCharola({ awg, material, insulTempCol, terminalTempCol, ambient, cubierta, capaUnicaSeparada });
+  if (!r || r.noEvaluable) return null;
+  return { awg, mm2: mm2DeAwg(awg), ...r, terminalTemp: terminalTempCol || null, requiredAmpacity };
+}
+
+function calcularCalibreCharola(requiredAmpacity, material, insulTempCol, terminalTempCol, ambient, cubierta, capaUnicaSeparada) {
+  for (const awg of AWG_ORDER) {
+    const c = calibreCharolaPorAwg(awg, material, insulTempCol, terminalTempCol, ambient, cubierta, capaUnicaSeparada, requiredAmpacity);
+    if (c && c.usableAmp >= requiredAmpacity) return c;
+  }
+  return null;
+}
+
+/* =========================================================================
+   LLENADO DE CHAROLA PORTACABLE  (Art. 392-22(b)(1)(b))
+   -------------------------------------------------------------------------
+   Cables de un solo conductor, calibre 250 a 900 kcmil (127 a 456 mm²):
+   suma de areas transversales aisladas contra la Tabla 392-22(b)(1),
+   columna 1. No implementado (calibres fuera de ese rango, "noEvaluable"):
+   4 AWG a 4/0 AWG y 1000 kcmil y mayores usan el metodo de SUMA DE
+   DIAMETROS (392-22(b)(1)(a) y (d)), y el motor no tiene datos de diametro
+   exterior de cable.
+   ========================================================================= */
+function calcularCharolaLlenado(awgFase, nFaseNeutro, awgTierra, tipoAislamiento) {
+  const tipo = tipoAislamiento || "THHN";
+  const areaFaseBare = mm2DeAwg(awgFase);
+  if (areaFaseBare === null || areaFaseBare < 127 || areaFaseBare > 456) {
+    return { noEvaluable: true, motivo: `Solo implementado para calibres de 250 a 900 kcmil (127 a 456 mm²); ${awgFase} está fuera de ese rango (392-22(b)(1)(a)/(d) usan suma de diámetros, no de áreas).` };
+  }
+  const areaFase = areaConductor(tipo, awgFase);
+  if (!areaFase) return null;
+  const areaTierra = awgTierra ? (areaConductor(tipo, awgTierra) || 0) : 0;
+  const totalArea = areaFase * nFaseNeutro + areaTierra;
+
+  const base = { areaFase, areaTierra, nFaseNeutro, totalArea, tipoAislamiento: tipo };
+  for (const row of TRAY_FILL_392_22_B1_COL1) {
+    if (row.areaMm2 >= totalArea) return { ...base, anchoCm: row.anchoCm, available: row.areaMm2 };
+  }
+  return { ...base, anchoCm: null, available: null };
+}
+
+/* =========================================================================
    PASO B: CAIDA DE TENSION  (Tabla 9, Art. 210-19 Nota 4 / 215-2 Nota 2)
    ========================================================================= */
 // nParalelo: conductores en paralelo por fase (Art. 310-10(h)). Cada conductor
@@ -784,7 +942,17 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   }
 
   // Llenado de canalizacion (Tabla 1, Cap. 10)
-  if (tuberia.trade) {
+  if (input.installMethod === 'charola') {
+    if (tuberia.noEvaluable) {
+      h.push(hallazgo("R-041", ESTADO.NO_EVALUABLE, "Art. 392-22(b)(1)", tuberia.motivo));
+    } else if (tuberia.anchoCm) {
+      h.push(hallazgo("R-041", ESTADO.CUMPLE, "Art. 392-22(b)(1)",
+        `Charola de ${tuberia.anchoCm} cm: ${fmt(tuberia.totalArea,2)} mm² de conductores contra ${fmt(tuberia.available,0)} mm² disponibles.`));
+    } else {
+      h.push(hallazgo("R-041", ESTADO.NO_CUMPLE, "Art. 392-22(b)(1)",
+        `Ninguna charola del rango calculado (hasta 90 cm) aloja ${fmt(tuberia.totalArea,2)} mm² de conductores. Dividir en varias charolas.`));
+    }
+  } else if (tuberia.trade) {
     const ocupacionPct = (tuberia.totalArea / tuberia.available) * tuberia.fillPct;
     h.push(hallazgo("R-TUB", ESTADO.CUMPLE, "Tabla 1, Cap. 10",
       `Tubería ${tuberia.trade}: ${fmt(tuberia.totalArea,2)} mm² de conductores contra ${fmt(tuberia.available,0)} mm² disponibles al ${tuberia.fillPct}% (ocupación real ${fmt(ocupacionPct,1)}%).`));

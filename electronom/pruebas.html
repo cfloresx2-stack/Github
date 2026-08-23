@@ -141,6 +141,78 @@ grupo("Selección de calibre (Art. 310-15)", () => {
 });
 
 /* =========================================================================
+   1b. Charola portacable (Tabla 310-15(b)(17), Art. 392-80(a)(2), 392-22(b)(1))
+   -------------------------------------------------------------------------
+   Validado contra el caso real de VERTIV (N-009): 500 kcmil de cobre,
+   XHHW-2 (90°C), charola escalera cubierta, ambiente 50°C.
+   ========================================================================= */
+grupo("Charola portacable (Art. 392-80 y 392-22b)", () => {
+  // Caso real VERTIV: 700 A base (90°C) x 0.82 (temp. 50°C) x 0.60 (cubierta,
+  // 500 kcmil) = 344.4 A -- coincide exacto con su memoria.
+  const vertiv = calcularAmpacidadCharola({ awg:"500", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:50, cubierta:true, capaUnicaSeparada:false });
+  esIgual(vertiv.baseAmp, 700, "500 kcmil, 90°C, al aire libre → 700 A (Tabla 310-15(b)(17), coincide con VERTIV)");
+  esCerca(vertiv.tempFactor, 0.82, 1e-9, "Factor de temperatura a 50°C, columna 90°C = 0.82 (misma Tabla 310-15(b)(2)(a))");
+  esIgual(vertiv.factor, 0.60, "500 kcmil cubierta → factor 60% (Art. 392-80(a)(2)(b))");
+  esCerca(vertiv.correctedAmp, 344.4, 0.01, "Caso real VERTIV (N-009): ampacidad corregida = 344.4 A");
+
+  // Sin cubierta, mismo calibre: 65% en vez de 60%
+  const sinCubierta = calcularAmpacidadCharola({ awg:"500", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:false, capaUnicaSeparada:false });
+  esIgual(sinCubierta.factor, 0.65, "500 kcmil sin cubierta → factor 65% (Art. 392-80(a)(2)(b))");
+
+  // 600 kcmil y mayores usan 70/75% en vez de 60/65%
+  const grande600cubierta = calcularAmpacidadCharola({ awg:"600", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:true, capaUnicaSeparada:false });
+  esIgual(grande600cubierta.factor, 0.70, "600 kcmil cubierta → factor 70% (Art. 392-80(a)(2)(a)), no 60%");
+  const grande600sinCubierta = calcularAmpacidadCharola({ awg:"600", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:false, capaUnicaSeparada:false });
+  esIgual(grande600sinCubierta.factor, 0.75, "600 kcmil sin cubierta → factor 75%");
+
+  // Excepcion de una sola capa separada (solo sin cubierta): 100%, sin reduccion
+  const capaUnica = calcularAmpacidadCharola({ awg:"500", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:false, capaUnicaSeparada:true });
+  esIgual(capaUnica.factor, 1, "Una sola capa separada, SIN cubierta → 100% (Art. 392-80(a)(2)(c))");
+  esIgual(capaUnica.regla, "392-80(a)(2)(c)", "Se identifica la regla aplicada");
+
+  // La excepcion de una capa NO aplica si esta cubierta (vuelve a 60/65%)
+  const capaUnicaCubierta = calcularAmpacidadCharola({ awg:"500", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:true, capaUnicaSeparada:true });
+  esIgual(capaUnicaCubierta.factor, 0.60, "Una sola capa pero CUBIERTA → no aplica la excepción, sigue en 60%");
+
+  // Calibres menores a 1/0 AWG: no implementado
+  const chico = calcularAmpacidadCharola({ awg:"10", material:"cu", insulTempCol:"90", terminalTempCol:null, ambient:30, cubierta:false, capaUnicaSeparada:false });
+  esCierto(chico.noEvaluable, "Calibres menores a 1/0 AWG no están implementados para charola → noEvaluable");
+
+  // calcularCalibreCharola: busca el calibre minimo que cumple, igual que calcularCalibre
+  const req = calcularCalibreCharola(300, "cu", "90", null, 50, true, false);
+  esCierto(req !== null, "Se encuentra un calibre para 300 A en charola cubierta a 50°C");
+  esCierto(req.usableAmp >= 300, "El calibre elegido cubre la ampacidad requerida");
+
+  // Llenado de charola (Art. 392-22(b)(1)(b)): area de 18 conductores 500 kcmil XHHW
+  const llenado = calcularCharolaLlenado("500", 18, null, "XHHW");
+  esCerca(llenado.totalArea, 8110.8, 0.01, "18 conductores XHHW 500 kcmil (450.6 mm² c/u) = 8,110.8 mm²");
+  esIgual(llenado.anchoCm, 30, "8,110.8 mm² requiere charola de 30 cm (8,400 mm² disponibles; 22.5 cm con 6,100 no alcanza)");
+
+  // Fuera del rango 250-900 kcmil: no implementado (usa suma de diametros, no de areas)
+  const llenadoChico = calcularCharolaLlenado("10", 3, null, "THHN");
+  esCierto(llenadoChico.noEvaluable, "Calibres fuera de 250-900 kcmil no están implementados para llenado de charola → noEvaluable");
+  const llenadoGrande = calcularCharolaLlenado("1000", 3, null, "THHN");
+  esCierto(llenadoGrande.noEvaluable, "1000 kcmil tampoco está implementado (usa suma de diámetros) → noEvaluable");
+
+  // R-041 en el dictamen: solo aparece en modo charola
+  const baseCharola = {
+    input: { requiredAmpacity:300, requiredAmpacityPorConductor:300, circuitCite:"Art. 210-19, Nota 4", systemKey:"1F-1N-1T", length:20, installMethod:"charola" },
+    calibreIni: { awg:"500" }, calibreFinal: { awg:"500", correctedAmp:400 },
+    vd: { dropPct:1.5 }, breaker: { breaker:300 },
+    tierra: { awgTierra:"500", awgBase:"500", breakerA:300, factor:1, limitadoPorFase:false },
+    tuberia: { anchoCm:30, totalArea:8110.8, available:8400 },
+    cc: null, el0: null, motor: false,
+  };
+  const conCharola = evaluarCumplimiento(baseCharola);
+  const buscaR = (hs, id) => hs.find(x => x.reglaId === id);
+  esIgual(buscaR(conCharola, "R-041").estado, ESTADO.CUMPLE, "Charola que sí aloja los conductores → R-041 Cumple");
+  esCierto(!buscaR(conCharola, "R-TUB"), "En modo charola no aparece R-TUB (es de tubería)");
+
+  const charolaNoEval = evaluarCumplimiento({ ...baseCharola, tuberia: { noEvaluable:true, motivo:"fuera de rango" } });
+  esIgual(buscaR(charolaNoEval, "R-041").estado, ESTADO.NO_EVALUABLE, "Fuera del rango implementado → R-041 No evaluable");
+});
+
+/* =========================================================================
    2a. Tipo de aislamiento (Tablas 310-104(a) y 5, Art. 310-10(c))
    ========================================================================= */
 grupo("Tipo de aislamiento", () => {
