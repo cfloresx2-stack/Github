@@ -401,6 +401,34 @@
       </table>
       <button id="addLoad" type="button">+ Agregar carga</button>
       <div class="totalsLine" id="loadTotals"></div>
+
+      <details style="margin-top:16px">
+        <summary>Ayuda: calcular carga de alumbrado general (Art. 220-12 y 220-42)</summary>
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Tipo de inmueble <span class="hint">(Tabla 220-12, VA/m²)</span></label>
+            <select id="al220Tipo"></select>
+          </div>
+          <div>
+            <label>Área <span class="hint">(m², según Art. 220-12: dimensiones exteriores; en vivienda no incluye patios, cocheras ni espacios sin terminar)</span></label>
+            <input type="number" id="al220Area" value="0" step="0.1" min="0">
+          </div>
+        </div>
+        <label>Categoría de demanda <span class="hint">(Tabla 220-42; se sugiere una según el tipo de inmueble, pero puedes cambiarla)</span></label>
+        <select id="al220Categoria"></select>
+        <div class="totalsLine" id="al220Resultado" style="margin-top:8px"></div>
+        <button id="al220Agregar" type="button">+ Agregar esta carga al listado</button>
+        <p class="hint" style="margin-top:8px">Esto calcula SOLO la carga de alumbrado general. Otras cargas (contactos, equipos, motores) se agregan aparte, como filas independientes del listado.</p>
+      </details>
+
+      <details style="margin-top:10px">
+        <summary>Ayuda: factor de demanda de contactos (Art. 220-44 — solo inmuebles que NO son vivienda)</summary>
+        <label style="margin-top:10px">Carga de contactos instalada <span class="hint">(VA, salidas de uso general por Art. 220-14(i))</span></label>
+        <input type="number" id="al244Va" value="0" step="1" min="0">
+        <div class="totalsLine" id="al244Resultado" style="margin-top:8px"></div>
+        <button id="al244Agregar" type="button">+ Agregar esta carga al listado</button>
+        <p class="hint" style="margin-top:8px">100% de los primeros 10,000 VA, 50% del resto. No aplica a vivienda (ahí rigen 220-52/220-53, no implementado).</p>
+      </details>
     </div>
 
     <div class="card">
@@ -637,6 +665,21 @@
   });
   icuSel.value = "10";
 
+  const al220TipoSel = document.getElementById('al220Tipo');
+  Object.entries(LIGHTING_LOAD_TABLE_220_12).forEach(([key, t]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = `${t.label} — ${t.vaM2} VA/m²`;
+    al220TipoSel.appendChild(o);
+  });
+
+  const al220CatSel = document.getElementById('al220Categoria');
+  Object.entries(DEMAND_FACTOR_TABLE_220_42).forEach(([key, c]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = c.label;
+    al220CatSel.appendChild(o);
+  });
+  al220CatSel.value = "todosLosDemas";
+
   updatePhaseOptions();
   updateSystemOptions();
 })();
@@ -715,6 +758,63 @@ function updateLoadTotals() {
 document.getElementById('addLoad').addEventListener('click', () => addLoadRow());
 document.getElementById('demandFactor').addEventListener('input', updateLoadTotals);
 addLoadRow("Carga 1", 1000, 0.9, false);
+
+/* =========================================================================
+   AYUDA: CARGA DE ALUMBRADO GENERAL (Art. 220-12 y 220-42)
+   -------------------------------------------------------------------------
+   Sugerencia de categoria de demanda por tipo de inmueble -- las tablas
+   220-12 y 220-42 usan categorias distintas (220-12 es mas granular), asi
+   que esto es una sugerencia razonable, no una correspondencia normativa
+   literal. El usuario puede cambiarla.
+   ========================================================================= */
+const SUGERENCIA_CATEGORIA_220_42 = {
+  depositos: "almacenes",
+  hospitales: "hospitales",
+  hotelesMoteles: "hotelesMoteles",
+  viviendas: "viviendas",
+};
+function updateAlumbrado220() {
+  const tipo = document.getElementById('al220Tipo').value;
+  const area = parseFloat(document.getElementById('al220Area').value) || 0;
+  const categoria = document.getElementById('al220Categoria').value;
+  const carga = calcularCargaAlumbradoGeneral(tipo, area);
+  const el = document.getElementById('al220Resultado');
+  if (!carga) {
+    el.innerHTML = `<span class="hint">Captura un área mayor a cero.</span>`;
+    return null;
+  }
+  const demanda = calcularDemandaAlumbrado(categoria, carga.va);
+  el.innerHTML = `Instalada: <b>${fmt(carga.va,0)} VA</b> (${carga.vaM2} VA/m² &times; ${fmt(area,2)} m²) &rarr; Demanda (${demanda.label}): <b>${fmt(demanda.vaDemanda,0)} VA</b>`
+    + (carga.nota ? `<br><span class="hint">${carga.nota}</span>` : '');
+  return { carga, demanda };
+}
+document.getElementById('al220Tipo').addEventListener('change', (e) => {
+  const sugerida = SUGERENCIA_CATEGORIA_220_42[e.target.value];
+  if (sugerida) document.getElementById('al220Categoria').value = sugerida;
+  updateAlumbrado220();
+});
+document.getElementById('al220Area').addEventListener('input', updateAlumbrado220);
+document.getElementById('al220Categoria').addEventListener('change', updateAlumbrado220);
+document.getElementById('al220Agregar').addEventListener('click', () => {
+  const r = updateAlumbrado220();
+  if (!r) { alert('Captura un área mayor a cero.'); return; }
+  addLoadRow(`Alumbrado general (${r.carga.label})`, r.demanda.vaDemanda, 1, false);
+});
+
+function updateContactos220_44() {
+  const va = parseFloat(document.getElementById('al244Va').value) || 0;
+  const demanda = calcularDemandaContactos(va);
+  const el = document.getElementById('al244Resultado');
+  if (!demanda) { el.innerHTML = `<span class="hint">Captura un valor mayor a cero.</span>`; return null; }
+  el.innerHTML = `Instalada: <b>${fmt(va,0)} VA</b> &rarr; Demanda: <b>${fmt(demanda.vaDemanda,0)} VA</b> (Art. 220-44)`;
+  return demanda;
+}
+document.getElementById('al244Va').addEventListener('input', updateContactos220_44);
+document.getElementById('al244Agregar').addEventListener('click', () => {
+  const demanda = updateContactos220_44();
+  if (!demanda) { alert('Captura un valor mayor a cero.'); return; }
+  addLoadRow('Contactos (Art. 220-44)', demanda.vaDemanda, 1, false);
+});
 
 document.getElementById('scEnabled').addEventListener('change', (e) => {
   document.getElementById('scPanel').style.display = e.target.checked ? 'block' : 'none';

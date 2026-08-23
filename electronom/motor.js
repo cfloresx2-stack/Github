@@ -355,6 +355,101 @@ const CONDUIT_TABLES = {
   ]},
 };
 
+/* -------------------------------------------------------------------------
+   Tabla 220-12: carga minima de alumbrado general por tipo de inmueble,
+   en VA/m2. Nota de la NOM: valores basados en FP=100% y carga MINIMA (puede
+   no alcanzar para la instalacion real). Verificada contra paginas reales
+   de la NOM-001-SEDE-2018 (Cesar, 2026-08-23), no transcrita de memoria.
+   ------------------------------------------------------------------------- */
+const LIGHTING_LOAD_TABLE_220_12 = {
+  bancos:            { label: "Bancos",                                                      vaM2: 39, nota: "Ver 220-14(k): agregar carga de contactos generales" },
+  casasHuespedes:    { label: "Casas de huéspedes",                                           vaM2: 17 },
+  clubes:            { label: "Clubes",                                                       vaM2: 22 },
+  cuartelesAuditorios:{ label: "Cuarteles y auditorios",                                       vaM2: 11 },
+  depositos:         { label: "Depósitos (almacenamiento)",                                    vaM2: 3  },
+  oficinas:          { label: "Edificios de oficinas",                                         vaM2: 39, nota: "Ver 220-14(k): agregar carga de contactos generales" },
+  industrialesComerciales: { label: "Edificios industriales y comerciales (lugares de almacenamiento)", vaM2: 22 },
+  escuelas:          { label: "Escuelas",                                                      vaM2: 33 },
+  estacionamientos:  { label: "Estacionamientos comerciales",                                  vaM2: 6  },
+  hospitales:        { label: "Hospitales",                                                    vaM2: 22 },
+  hotelesMoteles:    { label: "Hoteles y moteles, incluidos apartamentos sin cocineta",         vaM2: 22 },
+  iglesias:          { label: "Iglesias",                                                      vaM2: 11 },
+  juzgados:          { label: "Juzgados",                                                       vaM2: 22 },
+  peluquerias:       { label: "Peluquerías y salones de belleza",                               vaM2: 33 },
+  restaurantes:      { label: "Restaurantes",                                                   vaM2: 22 },
+  tiendas:           { label: "Tiendas",                                                        vaM2: 33 },
+  viviendas:         { label: "Unidades de vivienda",                                           vaM2: 33, nota: "Ver 220-14(j): no incluye patios abiertos, cocheras ni espacios sin terminar" },
+  vestibulos:        { label: "Vestíbulos, pasillos, closets, escaleras (excepto vivienda unifamiliar)", vaM2: 6 },
+  lugaresReunion:    { label: "Lugares de reunión y auditorios (excepto vivienda unifamiliar)", vaM2: 11 },
+  bodegas:           { label: "Bodegas (excepto vivienda unifamiliar)",                         vaM2: 3  },
+};
+
+/* -------------------------------------------------------------------------
+   Tabla 220-42: factores de demanda de alumbrado general, por tramos
+   marginales (como una tabla de impuestos: el primer tramo de VA paga un
+   %, el siguiente tramo otro %, etc. -- NO es un umbral que aplique un solo
+   porcentaje a toda la carga). "todosLosDemas" cubre cualquier tipo de
+   inmueble de la Tabla 220-12 que no tenga categoria propia aqui (factor
+   de demanda 100%, es decir, sin reduccion).
+   ------------------------------------------------------------------------- */
+const DEMAND_FACTOR_TABLE_220_42 = {
+  almacenes:      { label: "Almacenes",                                                tramos: [ { hasta:12500,     pct:100 }, { hasta:Infinity, pct:50 } ] },
+  hospitales:     { label: "Hospitales",                                               tramos: [ { hasta:50000,     pct:40  }, { hasta:Infinity, pct:20 } ] },
+  hotelesMoteles: { label: "Hoteles y moteles, incluidos apartamentos sin cocina",      tramos: [ { hasta:20000,     pct:50  }, { hasta:100000,   pct:40 }, { hasta:Infinity, pct:30 } ] },
+  viviendas:      { label: "Unidades de vivienda",                                     tramos: [ { hasta:3000,      pct:100 }, { hasta:120000,   pct:35 }, { hasta:Infinity, pct:25 } ] },
+  todosLosDemas:  { label: "Todos los demás",                                          tramos: [ { hasta:Infinity,  pct:100 } ] },
+};
+
+// Carga de alumbrado general instalada (Art. 220-12): VA/m2 de la tabla x area.
+function calcularCargaAlumbradoGeneral(tipoInmueble, areaM2) {
+  const t = LIGHTING_LOAD_TABLE_220_12[tipoInmueble];
+  if (!t || !(areaM2 > 0)) return null;
+  const va = t.vaM2 * areaM2;
+  return { tipoInmueble, label: t.label, vaM2: t.vaM2, areaM2, va, nota: t.nota || null };
+}
+
+// Reparte vaInstalados entre los tramos marginales de una tabla de demanda
+// (como una tabla de impuestos: cada tramo de VA paga su propio %, no un
+// umbral que aplique un solo porcentaje a toda la carga). Compartido por
+// las Tablas 220-42 (alumbrado) y 220-44 (contactos).
+function aplicarTramosDemanda(tramos, vaInstalados) {
+  if (!(vaInstalados >= 0)) return null;
+  let restante = vaInstalados, desde = 0, vaDemanda = 0;
+  const detalle = [];
+  for (const tramo of tramos) {
+    if (restante <= 0) break;
+    const anchoTramo = tramo.hasta - desde;
+    const enEsteTramo = Math.min(restante, anchoTramo);
+    const vaTramo = enEsteTramo * (tramo.pct / 100);
+    vaDemanda += vaTramo;
+    detalle.push({ desde, hasta: tramo.hasta, pct: tramo.pct, vaEnTramo: enEsteTramo, vaDemanda: vaTramo });
+    restante -= enEsteTramo;
+    desde = tramo.hasta;
+  }
+  return { vaInstalados, vaDemanda, detalle };
+}
+
+// Aplica el factor de demanda de la Tabla 220-42 por tramos marginales.
+// Nota de la NOM: estos factores NO se aplican a hospitales/hoteles/moteles
+// en las zonas donde puede requerirse todo el alumbrado simultaneo (salas de
+// operaciones, comedores, salas de baile) -- eso queda a criterio del
+// diseñador, la herramienta no lo detecta automaticamente.
+function calcularDemandaAlumbrado(categoriaDemanda, vaInstalados) {
+  const t = DEMAND_FACTOR_TABLE_220_42[categoriaDemanda];
+  if (!t) return null;
+  const r = aplicarTramosDemanda(t.tramos, vaInstalados);
+  return r && { categoriaDemanda, label: t.label, ...r };
+}
+
+// Tabla 220-44: factor de demanda de contactos (salidas de uso general) en
+// inmuebles que NO son vivienda -- 100% de los primeros 10,000 VA, 50% del
+// resto. Para vivienda ver 220-52/220-53 (no implementado aqui).
+const DEMAND_FACTOR_TABLE_220_44 = [ { hasta:10000, pct:100 }, { hasta:Infinity, pct:50 } ];
+
+function calcularDemandaContactos(vaInstalados) {
+  return aplicarTramosDemanda(DEMAND_FACTOR_TABLE_220_44, vaInstalados);
+}
+
 // Tipos de sistema: define # de fases, si hay neutro/tierra y como se calculan corriente y caida de tension
 const SYSTEM_TYPES = {
   "1F-1N":     { label: "1 fase + 1 neutro (2 hilos)",                fases:1, neutro:true,  tierra:false },
