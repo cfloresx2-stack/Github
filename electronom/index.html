@@ -416,9 +416,24 @@
         </div>
         <label>Categoría de demanda <span class="hint">(Tabla 220-42; se sugiere una según el tipo de inmueble, pero puedes cambiarla)</span></label>
         <select id="al220Categoria"></select>
+
+        <div id="al220ViviendaPanel" style="display:none">
+          <div class="row2" style="margin-top:10px">
+            <div>
+              <label>Circuitos de aparatos pequeños <span class="hint">(Art. 220-52(a), 1500 VA c/u; mínimo 2 por 210-11(c)(1))</span></label>
+              <input type="number" id="al220Pequenos" value="2" step="1" min="0">
+            </div>
+            <div>
+              <label>Circuitos de lavadora <span class="hint">(Art. 220-52(b), 1500 VA c/u; mínimo 1 por 210-11(c)(2))</span></label>
+              <input type="number" id="al220Lavadora" value="1" step="1" min="0">
+            </div>
+          </div>
+          <p class="hint" style="margin-top:6px">Solo aplica a viviendas mayores a 60 m². Estas cargas se suman a la de alumbrado general ANTES de aplicar el factor de demanda de la Tabla 220-42 (no llevan su propio factor de demanda).</p>
+        </div>
+
         <div class="totalsLine" id="al220Resultado" style="margin-top:8px"></div>
         <button id="al220Agregar" type="button">+ Agregar esta carga al listado</button>
-        <p class="hint" style="margin-top:8px">Esto calcula SOLO la carga de alumbrado general. Otras cargas (contactos, equipos, motores) se agregan aparte, como filas independientes del listado.</p>
+        <p class="hint" style="margin-top:8px">Esto calcula SOLO la carga de alumbrado general (+ aparatos pequeños/lavadora en vivienda). Otras cargas (contactos, equipos, motores) se agregan aparte, como filas independientes del listado.</p>
       </details>
 
       <details style="margin-top:10px">
@@ -427,7 +442,40 @@
         <input type="number" id="al244Va" value="0" step="1" min="0">
         <div class="totalsLine" id="al244Resultado" style="margin-top:8px"></div>
         <button id="al244Agregar" type="button">+ Agregar esta carga al listado</button>
-        <p class="hint" style="margin-top:8px">100% de los primeros 10,000 VA, 50% del resto. No aplica a vivienda (ahí rigen 220-52/220-53, no implementado).</p>
+        <p class="hint" style="margin-top:8px">100% de los primeros 10,000 VA, 50% del resto. Para vivienda, ver los ayudantes de aparatos fijos y secadoras más abajo.</p>
+      </details>
+
+      <details style="margin-top:10px">
+        <summary>Ayuda: factor de demanda de aparatos fijos en vivienda (Art. 220-53)</summary>
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Suma de placas de datos <span class="hint">(VA, de los aparatos fijos)</span></label>
+            <input type="number" id="al253Va" value="0" step="1" min="0">
+          </div>
+          <div>
+            <label>Cantidad de aparatos fijos</label>
+            <input type="number" id="al253Cant" value="4" step="1" min="0">
+          </div>
+        </div>
+        <div class="totalsLine" id="al253Resultado" style="margin-top:8px"></div>
+        <button id="al253Agregar" type="button">+ Agregar esta carga al listado</button>
+        <p class="hint" style="margin-top:8px">75% de reducción con 4 o más aparatos fijos; con menos de 4, sin reducción. NO incluye estufas, secadoras, calefacción fija ni aire acondicionado (cada uno tiene su propia regla).</p>
+      </details>
+
+      <details style="margin-top:10px">
+        <summary>Ayuda: factor de demanda de secadoras domésticas (Art. 220-54)</summary>
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Cantidad de secadoras <span class="hint">(1 a 11; más de 11 no está implementado)</span></label>
+            <input type="number" id="al254Cant" value="1" step="1" min="1">
+          </div>
+          <div>
+            <label>VA por secadora <span class="hint">(de la placa de datos; se usa el mayor entre esto y 5,000 VA)</span></label>
+            <input type="number" id="al254Va" value="5000" step="1" min="0">
+          </div>
+        </div>
+        <div class="totalsLine" id="al254Resultado" style="margin-top:8px"></div>
+        <button id="al254Agregar" type="button">+ Agregar esta carga al listado</button>
       </details>
     </div>
 
@@ -777,16 +825,31 @@ function updateAlumbrado220() {
   const tipo = document.getElementById('al220Tipo').value;
   const area = parseFloat(document.getElementById('al220Area').value) || 0;
   const categoria = document.getElementById('al220Categoria').value;
+  const esVivienda = tipo === 'viviendas';
+  document.getElementById('al220ViviendaPanel').style.display = esVivienda ? 'block' : 'none';
+
   const carga = calcularCargaAlumbradoGeneral(tipo, area);
   const el = document.getElementById('al220Resultado');
   if (!carga) {
     el.innerHTML = `<span class="hint">Captura un área mayor a cero.</span>`;
     return null;
   }
-  const demanda = calcularDemandaAlumbrado(categoria, carga.va);
-  el.innerHTML = `Instalada: <b>${fmt(carga.va,0)} VA</b> (${carga.vaM2} VA/m² &times; ${fmt(area,2)} m²) &rarr; Demanda (${demanda.label}): <b>${fmt(demanda.vaDemanda,0)} VA</b>`
+
+  let extra = null, vaInstaladoTotal = carga.va, extraTexto = '';
+  if (esVivienda) {
+    const nPequenos = parseInt(document.getElementById('al220Pequenos').value) || 0;
+    const nLavadora = parseInt(document.getElementById('al220Lavadora').value) || 0;
+    extra = calcularCargasPequenosYLavadora(nPequenos, nLavadora);
+    if (extra) {
+      vaInstaladoTotal += extra.va;
+      extraTexto = ` + ${fmt(extra.va,0)} VA de aparatos pequeños/lavadora (${nPequenos + nLavadora} circuitos &times; 1500 VA, Art. 220-52) = <b>${fmt(vaInstaladoTotal,0)} VA</b> instalados en total`;
+    }
+  }
+
+  const demanda = calcularDemandaAlumbrado(categoria, vaInstaladoTotal);
+  el.innerHTML = `Instalada: <b>${fmt(carga.va,0)} VA</b> (${carga.vaM2} VA/m² &times; ${fmt(area,2)} m²)${extraTexto} &rarr; Demanda (${demanda.label}): <b>${fmt(demanda.vaDemanda,0)} VA</b>`
     + (carga.nota ? `<br><span class="hint">${carga.nota}</span>` : '');
-  return { carga, demanda };
+  return { carga, extra, vaInstaladoTotal, demanda };
 }
 document.getElementById('al220Tipo').addEventListener('change', (e) => {
   const sugerida = SUGERENCIA_CATEGORIA_220_42[e.target.value];
@@ -795,6 +858,8 @@ document.getElementById('al220Tipo').addEventListener('change', (e) => {
 });
 document.getElementById('al220Area').addEventListener('input', updateAlumbrado220);
 document.getElementById('al220Categoria').addEventListener('change', updateAlumbrado220);
+document.getElementById('al220Pequenos').addEventListener('input', updateAlumbrado220);
+document.getElementById('al220Lavadora').addEventListener('input', updateAlumbrado220);
 document.getElementById('al220Agregar').addEventListener('click', () => {
   const r = updateAlumbrado220();
   if (!r) { alert('Captura un área mayor a cero.'); return; }
@@ -814,6 +879,41 @@ document.getElementById('al244Agregar').addEventListener('click', () => {
   const demanda = updateContactos220_44();
   if (!demanda) { alert('Captura un valor mayor a cero.'); return; }
   addLoadRow('Contactos (Art. 220-44)', demanda.vaDemanda, 1, false);
+});
+
+function updateAparatosFijos220_53() {
+  const va = parseFloat(document.getElementById('al253Va').value) || 0;
+  const cant = parseInt(document.getElementById('al253Cant').value) || 0;
+  const demanda = calcularDemandaAparatosFijos(va, cant);
+  const el = document.getElementById('al253Resultado');
+  if (!demanda) { el.innerHTML = `<span class="hint">Captura valores válidos.</span>`; return null; }
+  el.innerHTML = `Instalada: <b>${fmt(va,0)} VA</b> &times; ${demanda.factor}% &rarr; Demanda: <b>${fmt(demanda.vaDemanda,0)} VA</b>`;
+  return demanda;
+}
+document.getElementById('al253Va').addEventListener('input', updateAparatosFijos220_53);
+document.getElementById('al253Cant').addEventListener('input', updateAparatosFijos220_53);
+document.getElementById('al253Agregar').addEventListener('click', () => {
+  const demanda = updateAparatosFijos220_53();
+  if (!demanda) { alert('Captura valores válidos.'); return; }
+  addLoadRow('Aparatos fijos (Art. 220-53)', demanda.vaDemanda, 1, false);
+});
+
+function updateSecadoras220_54() {
+  const cant = parseInt(document.getElementById('al254Cant').value) || 0;
+  const va = parseFloat(document.getElementById('al254Va').value) || 0;
+  const demanda = calcularDemandaSecadoras(cant, va);
+  const el = document.getElementById('al254Resultado');
+  if (!demanda) { el.innerHTML = `<span class="hint">Captura al menos 1 secadora.</span>`; return null; }
+  if (demanda.noEvaluable) { el.innerHTML = `<span class="hint">${demanda.motivo}</span>`; return null; }
+  el.innerHTML = `Instalada: <b>${fmt(demanda.vaInstalados,0)} VA</b> (${fmt(demanda.vaPorSecadora,0)} VA &times; ${demanda.cantidad}) &times; ${demanda.pct}% &rarr; Demanda: <b>${fmt(demanda.vaDemanda,0)} VA</b>`;
+  return demanda;
+}
+document.getElementById('al254Cant').addEventListener('input', updateSecadoras220_54);
+document.getElementById('al254Va').addEventListener('input', updateSecadoras220_54);
+document.getElementById('al254Agregar').addEventListener('click', () => {
+  const demanda = updateSecadoras220_54();
+  if (!demanda) { alert('Revisa los datos: solo está implementado de 1 a 11 secadoras.'); return; }
+  addLoadRow('Secadoras (Art. 220-54)', demanda.vaDemanda, 1, false);
 });
 
 document.getElementById('scEnabled').addEventListener('change', (e) => {

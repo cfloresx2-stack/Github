@@ -450,6 +450,45 @@ function calcularDemandaContactos(vaInstalados) {
   return aplicarTramosDemanda(DEMAND_FACTOR_TABLE_220_44, vaInstalados);
 }
 
+// Art. 220-52: circuitos de aparatos pequeños y de lavadora en vivienda
+// (unidad de vivienda mayor a 60 m2). 1500 VA por cada circuito de 2 hilos
+// de cada tipo. Estas cargas se SUMAN a la de alumbrado general ANTES de
+// aplicar el factor de demanda de la Tabla 220-42 -- no llevan su propio
+// factor de demanda por separado.
+function calcularCargasPequenosYLavadora(nPequenos, nLavadora) {
+  if (!(nPequenos >= 0) || !(nLavadora >= 0)) return null;
+  const vaPequenos = nPequenos * 1500;
+  const vaLavadora = nLavadora * 1500;
+  return { nPequenos, nLavadora, vaPequenos, vaLavadora, va: vaPequenos + vaLavadora };
+}
+
+// Art. 220-53: factor de demanda de aparatos fijos en vivienda. 75% cuando
+// hay 4 o mas aparatos fijos conectados al mismo alimentador; con menos de
+// 4, sin reduccion (100%). NO incluye estufas, secadoras, calefaccion fija
+// ni aire acondicionado (cada uno tiene su propia regla, aparte).
+function calcularDemandaAparatosFijos(vaInstalados, cantidad) {
+  if (!(vaInstalados >= 0) || !(cantidad >= 0)) return null;
+  const factor = cantidad >= 4 ? 75 : 100;
+  return { vaInstalados, cantidad, factor, vaDemanda: vaInstalados * (factor / 100) };
+}
+
+// Tabla 220-54: factor de demanda de secadoras electricas domesticas de
+// ropa, segun cantidad de secadoras. Carga minima por secadora: 5000 VA o
+// la de la placa de datos, la que sea mayor. Solo implementado de 1 a 11
+// secadoras (rango verificado contra la hoja "Tablas Art 220" del
+// catalogo); mas de 11 usa una formula distinta, no implementada.
+const DEMAND_FACTOR_TABLE_220_54 = { 1:100, 2:100, 3:100, 4:100, 5:85, 6:75, 7:65, 8:60, 9:55, 10:50, 11:47 };
+function calcularDemandaSecadoras(cantidad, vaPlacaPorSecadora) {
+  if (!Number.isInteger(cantidad) || cantidad < 1) return null;
+  const pct = DEMAND_FACTOR_TABLE_220_54[cantidad];
+  if (pct === undefined) {
+    return { noEvaluable: true, motivo: `Solo implementado para 1 a 11 secadoras (Tabla 220-54); ${cantidad} está fuera de ese rango.` };
+  }
+  const vaPorSecadora = Math.max(5000, vaPlacaPorSecadora || 0);
+  const vaInstalados = vaPorSecadora * cantidad;
+  return { cantidad, pct, vaPorSecadora, vaInstalados, vaDemanda: vaInstalados * (pct / 100) };
+}
+
 // Tipos de sistema: define # de fases, si hay neutro/tierra y como se calculan corriente y caida de tension
 const SYSTEM_TYPES = {
   "1F-1N":     { label: "1 fase + 1 neutro (2 hilos)",                fases:1, neutro:true,  tierra:false },
