@@ -445,7 +445,7 @@
     </div>
 
     <div class="card">
-      <h2>4. Caída de tensión y tubería</h2>
+      <h2>4. Caída de tensión y canalización</h2>
 
       <div class="row2">
         <div>
@@ -453,9 +453,30 @@
           <input type="number" id="length" value="20" step="0.1" min="0">
         </div>
         <div>
-          <label>Tipo de tubería</label>
-          <select id="conduitType"></select>
+          <label>Método de instalación</label>
+          <select id="installMethod">
+            <option value="conduit">Tubería (conduit)</option>
+            <option value="charola">Charola portacable — escalera, malla o fondo ventilado</option>
+          </select>
         </div>
+      </div>
+
+      <div id="conduitPanel">
+        <label>Tipo de tubería</label>
+        <select id="conduitType"></select>
+      </div>
+
+      <div id="charolaPanel" style="display:none">
+        <div class="checkline" style="margin-top:0">
+          <input type="checkbox" id="chCubierta">
+          <label for="chCubierta">Charola <b>cubierta</b> con tapa sólida continua de más de 1.80 m <span class="hint">(Art. 392-80(a)(2)(a)/(b))</span></label>
+        </div>
+        <div class="checkline">
+          <input type="checkbox" id="chCapaUnica">
+          <label for="chCapaUnica">Conductores en <b>una sola capa</b>, separados entre sí al menos 1 diámetro <span class="hint">(solo aplica sin cubierta — Art. 392-80(a)(2)(c): da 100% de la Tabla 310-15(b)(17), sin reducción)</span></label>
+        </div>
+        <p class="hint" style="margin-top:8px">Solo implementado para charola tipo <b>escalera, malla o fondo ventilado</b> (no fondo sólido), calibre <b>1/0 AWG y mayor</b> (Art. 392-80(a)(2)) para ampacidad, y <b>250 a 900 kcmil</b> (Art. 392-22(b)(1)) para el llenado — fuera de esos rangos, la herramienta lo marca como no evaluable en vez de inventar un resultado.</p>
+        <p class="hint">La caída de tensión y el cortocircuito siguen usando la Tabla 9 (impedancia en <b>tubería PVC</b>): la NOM no trae una columna de impedancia para charola, así que el resultado en charola es una aproximación, no un valor tabulado.</p>
       </div>
     </div>
 
@@ -706,6 +727,12 @@ document.getElementById('nParalelo').addEventListener('input', (e) => {
   document.getElementById('nParaleloTxt2').textContent = n;
 });
 
+document.getElementById('installMethod').addEventListener('change', (e) => {
+  const charola = e.target.value === 'charola';
+  document.getElementById('conduitPanel').style.display = charola ? 'none' : 'block';
+  document.getElementById('charolaPanel').style.display = charola ? 'block' : 'none';
+});
+
 document.getElementById('elEnabled').addEventListener('change', (e) => {
   document.getElementById('elPanel').style.display = e.target.checked ? 'block' : 'none';
 });
@@ -761,7 +788,7 @@ function render(data) {
   const summaryHtml = `
       ${header.proj || 'Proyecto sin nombre'} &mdash; Tablero: ${header.board || '—'} &mdash; Circuito: ${header.circ || '—'}
       <span class="badge ${ESTADO_BADGE[veredicto]}" style="margin-left:8px">${veredicto}</span>
-      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; Tubería ${tuberia.trade ?? '—'}</span>`;
+      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; ${input.installMethod === 'charola' ? 'Charola ' + (tuberia.anchoCm ?? '—') + (tuberia.anchoCm ? ' cm' : '') : 'Tubería ' + (tuberia.trade ?? '—')}</span>`;
 
   const stepA = `
     <div class="result-block">
@@ -775,7 +802,9 @@ function render(data) {
         ${input.nParalelo > 1 ? `<br><b>${input.nParalelo} conductores en paralelo por fase</b> (Art. 310-10(h)): cada conductor debe llevar 1/${input.nParalelo} de la corriente total &rarr; ampacidad requerida por conductor = ${fmt(input.requiredAmpacity,2)} &divide; ${input.nParalelo} = <b>${fmt(input.requiredAmpacityPorConductor,2)} A</b>. Deben ser del mismo material, calibre, aislamiento, longitud y terminación.` : ""}
         <br>
         Aislamiento <b>${input.insulType}</b> en lugar ${input.lugarMojado ? 'mojado' : 'seco'} &rarr; columna de <b>${input.insulTemp} °C</b> (Tabla 310-104(a)).
-        <br>Calibre mínimo por ampacidad: <b>${calibreIni.awg}</b> (ampacidad base 310-15(b)(16) a ${input.insulTemp} °C = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor agrupamiento ${calibreIni.groupPct}% (310-15(b)(3)(a), ${input.currentCarrying} cond.) = ${fmt(calibreIni.correctedAmp,2)} A).
+        ${input.installMethod === 'charola'
+          ? `<br>Calibre mínimo por ampacidad en charola: <b>${calibreIni.awg}</b> (ampacidad al aire libre 310-15(b)(17) a ${input.insulTemp} °C = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor de charola ${fmt(calibreIni.factor*100,0)}% (Art. ${calibreIni.regla}${calibreIni.cubierta ? ', cubierta' : ', sin cubierta'}) = ${fmt(calibreIni.correctedAmp,2)} A). Sin factor de agrupamiento: no aplica a cables de un solo conductor en charola.`
+          : `<br>Calibre mínimo por ampacidad: <b>${calibreIni.awg}</b> (ampacidad base 310-15(b)(16) a ${input.insulTemp} °C = ${fmt(calibreIni.baseAmp,0)} A &times; factor temp. ${fmt(calibreIni.tempFactor,2)} (310-15(b)(2)) &times; factor agrupamiento ${calibreIni.groupPct}% (310-15(b)(3)(a), ${input.currentCarrying} cond.) = ${fmt(calibreIni.correctedAmp,2)} A).`}
         ${calibreIni.terminalTemp ? `<br><b>Límite de terminal (Art. 110-14(c)):</b> ${input.equipoMarcado75
             ? `el equipo está marcado para 75 °C, así que la ampacidad se limita a la columna de 75 °C`
             : `el circuito es de ${input.circuitRating} A (${input.circuitRating <= 100 ? '100 A o menos' : 'más de 100 A'}) y el equipo no está marcado, así que la ampacidad se debe basar en la columna de ${calibreIni.terminalTemp} °C`}: ${fmt(calibreIni.limitAmp,0)} A. ${calibreIni.limitadaPorTerminal
@@ -783,6 +812,15 @@ function render(data) {
             : `La ampacidad corregida (${fmt(calibreIni.correctedAmp,2)} A) no lo excede, así que manda ella.`}` : ''}
         ${calibreFinal.awg !== calibreIni.awg ? `<br><b>Se incrementó a ${calibreFinal.awg}</b> porque el calibre por ampacidad no cumplía el límite de caída de tensión de 3% &mdash; ver sección B.` : ""}
         <details><summary>Ver tabla de verificación</summary>
+        ${input.installMethod === 'charola' ? `
+        <table><tr><th>Dato</th><th>Valor</th><th>Fuente NOM-001</th></tr>
+        <tr><td>Ampacidad al aire libre (${input.material==='cu'?'Cu':'Al'}, ${input.insulTemp}°C)</td><td>${fmt(calibreFinal.baseAmp,0)} A</td><td class="cite">Tabla 310-15(b)(17)</td></tr>
+        <tr><td>Factor corrección por temp. ambiente (${input.ambient}°C)</td><td>${fmt(calibreFinal.tempFactor,2)}</td><td class="cite">Tabla 310-15(b)(2)(a)</td></tr>
+        <tr><td>Factor de charola (${calibreFinal.cubierta ? 'cubierta' : 'sin cubierta'}${calibreFinal.capaUnicaSeparada && !calibreFinal.cubierta ? ', una capa separada' : ''})</td><td>${fmt(calibreFinal.factor*100,0)}%</td><td class="cite">Art. ${calibreFinal.regla}</td></tr>
+        <tr><td>Ampacidad corregida (columna ${input.insulTemp} °C)</td><td>${fmt(calibreFinal.correctedAmp,2)} A</td><td class="cite">392-80(a)(2)</td></tr>
+        ${calibreFinal.terminalTemp ? `<tr><td>Límite por terminal (columna ${calibreFinal.terminalTemp} °C)</td><td>${fmt(calibreFinal.limitAmp,0)} A</td><td class="cite">Art. 110-14(c)</td></tr>
+        <tr><td><b>Ampacidad utilizable</b> (la menor de las dos)</td><td><b>${fmt(calibreFinal.usableAmp,2)} A</b></td><td class="cite">392-80(a)(2) + 110-14(c)</td></tr>` : ''}
+        </table>` : `
         <table><tr><th>Dato</th><th>Valor</th><th>Fuente NOM-001</th></tr>
         <tr><td>Ampacidad base (${input.material==='cu'?'Cu':'Al'}, ${input.insulTemp}°C)</td><td>${fmt(calibreFinal.baseAmp,0)} A</td><td class="cite">Tabla 310-15(b)(16)</td></tr>
         <tr><td>Factor corrección por temp. ambiente (${input.ambient}°C)</td><td>${fmt(calibreFinal.tempFactor,2)}</td><td class="cite">Tabla 310-15(b)(2)(a)</td></tr>
@@ -790,7 +828,7 @@ function render(data) {
         <tr><td>Ampacidad corregida (columna ${input.insulTemp} °C)</td><td>${fmt(calibreFinal.correctedAmp,2)} A</td><td class="cite">310-15(a)</td></tr>
         ${calibreFinal.terminalTemp ? `<tr><td>Límite por terminal (columna ${calibreFinal.terminalTemp} °C)</td><td>${fmt(calibreFinal.limitAmp,0)} A</td><td class="cite">Art. 110-14(c)</td></tr>
         <tr><td><b>Ampacidad utilizable</b> (la menor de las dos)</td><td><b>${fmt(calibreFinal.usableAmp,2)} A</b></td><td class="cite">310-15(b) + 110-14(c)</td></tr>` : ''}
-        </table></details>
+        </table>`}</details>
       </div>
     </div>`;
 
@@ -802,6 +840,7 @@ function render(data) {
         Usando calibre final <b>${calibreFinal.awg}</b>: R = ${fmt(vd.r,3)} &Omega;/km, X<sub>L</sub> = ${fmt(vd.xl,3)} &Omega;/km (Tabla 9, conduit PVC, cobre).
         Impedancia efectiva a FP=${fmt(input.fpVD,3)}: Z<sub>e</sub> = R&times;FP + X<sub>L</sub>&times;sen(&angle;FP) = <b>${fmt(vd.ze,3)} &Omega;/km</b>.
         ${vd.nParalelo > 1 ? `Con ${vd.nParalelo} conductores en paralelo, cada uno lleva I &divide; ${vd.nParalelo} = <b>${fmt(input.current / vd.nParalelo,2)} A</b>. ` : ""}Caída = ${input.systemFases===3?'&radic;3':'2'} &times; I${vd.nParalelo > 1 ? '/'+vd.nParalelo : ''} &times; L(km) &times; Z<sub>e</sub> = <b>${fmt(vd.dropV,2)} V</b> = <b>${fmt(vd.dropPct,2)}%</b> de ${input.voltage} V.
+        ${input.installMethod === 'charola' ? `<br><span style="color:var(--warn)">La NOM no trae una columna de impedancia para charola en la Tabla 9: este resultado usa la de tubería PVC como aproximación.</span>` : ""}
         <br><span class="cite">${input.circuitCite}. Límite orientativo: 3% en el circuito, 5% combinado alimentador+derivado.</span>
       </div>
     </div>`;
@@ -841,7 +880,26 @@ function render(data) {
       </div>
     </div>` : "";
 
-  const stepE = `
+  const stepE = input.installMethod === 'charola' ? (() => {
+    if (tuberia.noEvaluable) {
+      return `
+    <div class="result-block">
+      <h3>{{L}}. Llenado de charola portacable <span class="badge na">No evaluable</span></h3>
+      <div class="memoria">${tuberia.motivo}<br><span class="cite">Art. 392-22(b)(1), NOM-001-SEDE-2018.</span></div>
+    </div>`;
+    }
+    return `
+    <div class="result-block">
+      <h3>{{L}}. Llenado de charola portacable <span class="badge ${tuberia.anchoCm ? 'ok':'warn'}">${tuberia.anchoCm ? tuberia.anchoCm+' cm' : 'fuera de rango'}</span></h3>
+      <div class="headline">${tuberia.anchoCm ?? '—'}<span class="unit"> cm de ancho interior mínimo</span></div>
+      <div class="memoria">
+        Sistema ${input.systemKey}, aislamiento ${tuberia.tipoAislamiento}: ${tuberia.nFaseNeutro} conductor(es) de fase${SYSTEM_TYPES[input.systemKey].neutro?'/neutro':''} calibre ${calibreFinal.awg} &times; ${fmt(tuberia.areaFase,2)} mm&sup2;${tierra ? ` + 1 tierra ${tierra.awgTierra} &times; ${fmt(tuberia.areaTierra,2)} mm&sup2;` : ''} = área total <b>${fmt(tuberia.totalArea,2)} mm&sup2;</b>.
+        Charola mínima que cumple: <b>${tuberia.anchoCm ? tuberia.anchoCm+' cm' : 'ninguna del rango calculado'}</b> (${tuberia.available ? fmt(tuberia.available,0)+" mm² disponibles" : ""}).
+        ${input.nParalelo > 1 ? `<br><span style="color:var(--warn)">Este cálculo es para <b>UN</b> conjunto de conductores. Con ${input.nParalelo} conductores en paralelo por fase, si los ${input.nParalelo} conjuntos van en la MISMA charola, el área requerida se multiplica por ${input.nParalelo}.</span>` : ""}
+        <br><span class="cite">Tabla 392-22(b)(1), columna 1 (392-22(b)(1)(b)), NOM-001-SEDE-2018. Suma de áreas para cables de un solo conductor, 250 a 900 kcmil, en charola tipo escalera/malla/fondo ventilado.</span>
+      </div>
+    </div>`;
+  })() : `
     <div class="result-block">
       <h3>{{L}}. Diámetro de tubería <span class="badge ${tuberia.trade ? 'ok':'warn'}">${tuberia.trade ?? 'fuera de rango'}</span></h3>
       <div class="headline">${tuberia.trade ?? '—'}<span class="unit"> ${tuberia.conduitName}</span></div>
@@ -949,7 +1007,9 @@ function render(data) {
     proj: header.proj, board: header.board, circ: header.circ,
     circuitKindLabel: input.circuitKindLabel, motor, systemKey: input.systemKey, voltage: input.voltage,
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
-    breakerA: breaker.breaker, conduitTrade: tuberia.trade, conduitName: tuberia.conduitName,
+    breakerA: breaker.breaker,
+    conduitTrade: input.installMethod === 'charola' ? (tuberia.anchoCm ? tuberia.anchoCm + ' cm (charola)' : null) : tuberia.trade,
+    conduitName: input.installMethod === 'charola' ? 'Charola portacable' : tuberia.conduitName,
     dropPct: vd.dropPct, current: input.current,
     va: input.totalVAdemanda, fases: input.systemFases,
     posicion: parseInt(document.getElementById('circPos').value) || null,
@@ -987,6 +1047,9 @@ document.getElementById('calc').addEventListener('click', () => {
   const length = parseFloat(document.getElementById('length').value);
   const conduitType = document.getElementById('conduitType').value;
   const nParalelo = Math.max(1, parseInt(document.getElementById('nParalelo').value) || 1);
+  const installMethod = document.getElementById('installMethod').value; // conduit | charola
+  const chCubierta = document.getElementById('chCubierta').checked;
+  const chCapaUnica = document.getElementById('chCapaUnica').checked;
 
   const totals = updateLoadTotals();
   if (totals.totalVA <= 0) { alert('Agrega al menos una carga con VA mayor a cero.'); return; }
@@ -1017,8 +1080,16 @@ document.getElementById('calc').addEventListener('click', () => {
   // A: calibre inicial. Con conductores en paralelo (Art. 310-10(h)), cada uno
   // solo necesita llevar 1/nParalelo de la ampacidad requerida total.
   const requiredAmpacityPorConductor = requiredAmpacity / nParalelo;
-  const calibreIni = calcularCalibre(requiredAmpacityPorConductor, material, insulTemp, ambient, sys.currentCarrying, terminalTemp);
-  if (!calibreIni) { alert('La corriente solicitada excede el rango de la tabla (máx. 1000 kcmil). Revisa los datos.'); return; }
+  const esCharola = installMethod === 'charola';
+  const calibreIni = esCharola
+    ? calcularCalibreCharola(requiredAmpacityPorConductor, material, insulTemp, terminalTemp, ambient, chCubierta, chCapaUnica)
+    : calcularCalibre(requiredAmpacityPorConductor, material, insulTemp, ambient, sys.currentCarrying, terminalTemp);
+  if (!calibreIni) {
+    alert(esCharola
+      ? 'No se encontró calibre adecuado en charola. Revisa los datos: esta herramienta solo evalúa charola para calibres de 1/0 AWG en adelante (Art. 392-80(a)(2)).'
+      : 'La corriente solicitada excede el rango de la tabla (máx. 1000 kcmil). Revisa los datos.');
+    return;
+  }
 
   // B: caida de tension, sube de calibre si excede 3% (solo cobre, rango de Tabla 9)
   let calibreFinal = calibreIni;
@@ -1028,20 +1099,26 @@ document.getElementById('calc').addEventListener('click', () => {
     while (vd && vd.dropPct > 3 && idx < AWG_ORDER.length - 1) {
       idx++;
       const nextAwg = AWG_ORDER[idx];
-      // Se recalcula con la misma regla de dos pasos que calcularCalibre
-      const row = AMPACITY_TABLE.find(r => r.awg === nextAwg);
-      const baseAmp = row[(material === 'cu' ? 'cu' : 'al') + insulTemp];
-      if (baseAmp === null || baseAmp === undefined) continue;
-      const limitAmp = row[(material === 'cu' ? 'cu' : 'al') + terminalTemp];
-      const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
-      const groupPct = lookupGroupingPct(sys.currentCarrying);
-      const correctedAmp = baseAmp * tempFactor * (groupPct/100);
-      const limitadaPorTerminal = limitAmp != null && limitAmp < correctedAmp;
-      calibreFinal = {
-        awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct,
-        correctedAmp, limitAmp, usableAmp: limitadaPorTerminal ? limitAmp : correctedAmp,
-        limitadaPorTerminal, terminalTemp, requiredAmpacity: requiredAmpacityPorConductor,
-      };
+      if (esCharola) {
+        const c = calibreCharolaPorAwg(nextAwg, material, insulTemp, terminalTemp, ambient, chCubierta, chCapaUnica, requiredAmpacityPorConductor);
+        if (!c) continue;
+        calibreFinal = c;
+      } else {
+        // Se recalcula con la misma regla de dos pasos que calcularCalibre
+        const row = AMPACITY_TABLE.find(r => r.awg === nextAwg);
+        const baseAmp = row[(material === 'cu' ? 'cu' : 'al') + insulTemp];
+        if (baseAmp === null || baseAmp === undefined) continue;
+        const limitAmp = row[(material === 'cu' ? 'cu' : 'al') + terminalTemp];
+        const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
+        const groupPct = lookupGroupingPct(sys.currentCarrying);
+        const correctedAmp = baseAmp * tempFactor * (groupPct/100);
+        const limitadaPorTerminal = limitAmp != null && limitAmp < correctedAmp;
+        calibreFinal = {
+          awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct,
+          correctedAmp, limitAmp, usableAmp: limitadaPorTerminal ? limitAmp : correctedAmp,
+          limitadaPorTerminal, terminalTemp, requiredAmpacity: requiredAmpacityPorConductor,
+        };
+      }
       vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD, nParalelo);
     }
   }
@@ -1057,8 +1134,10 @@ document.getElementById('calc').addEventListener('click', () => {
     ? calcularTierraFisica(breaker.breaker, material, calibreIni.awg, calibreFinal.awg)
     : null;
 
-  // E: tuberia — fases/neutro al calibre calculado + la tierra a su propio calibre
-  const tuberia = calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType, insulType);
+  // E: canalizacion — fases/neutro al calibre calculado + la tierra a su propio calibre
+  const tuberia = esCharola
+    ? calcularCharolaLlenado(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, insulType)
+    : calcularTuberia(calibreFinal.awg, sys.currentCarrying, tierra ? tierra.awgTierra : null, conduitType, insulType);
 
   // F: cortocircuito y capacidad interruptiva (opcional)
   let cc = null;
@@ -1106,6 +1185,7 @@ document.getElementById('calc').addEventListener('click', () => {
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
       equipoMarcado75, circuitRating, terminalTemp, nParalelo, scTsc,
+      installMethod, chCubierta, chCapaUnica,
     },
     calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0,
   });
