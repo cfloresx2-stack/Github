@@ -1271,6 +1271,46 @@ function corrienteAlimentador(maxFaseVA, vFaseNeutro) {
   return vFaseNeutro > 0 ? maxFaseVA / vFaseNeutro : 0;
 }
 
+/* =========================================================================
+   CARGA DEL NEUTRO DEL ALIMENTADOR O ACOMETIDA (Art. 220-61)
+   -------------------------------------------------------------------------
+   La carga del neutro es el MAXIMO DESEQUILIBRIO -- aqui, de forma
+   conservadora, se aproxima con la misma corriente de la fase mas cargada
+   que ya usa el cuadro de cargas para el alimentador (corrienteAlimentador).
+   Es el mismo nivel de aproximacion que el resto del motor: no modela el
+   balance real circuito por circuito (para eso se necesitaria saber, de
+   cada circuito, si es una carga linea-neutro real o una carga trifasica
+   balanceada sin corriente de neutro).
+
+   Reducciones del 70%, SOLO si no aplica ninguna excepcion:
+     1) Sobre la porcion de la carga que corresponde a estufas/secadoras
+        (Tablas 220-54 y 220-55) -- declarada aparte, no se detecta sola.
+     2) Sobre la porcion del RESTO del desequilibrio que exceda 200 A.
+
+   Excepciones que PROHIBEN cualquier reduccion (se declaran, no se
+   detectan automaticamente):
+     - Circuitos de 3 hilos (neutro + 2 fases) tomados de un sistema
+       trifasico 4 hilos en estrella.
+     - La parte que alimenta cargas NO LINEALES en sistemas trifasicos
+       4 hilos en estrella (el neutro puede requerir incluso mas capacidad
+       por corrientes armonicas, no menos).
+   ========================================================================= */
+function calcularCargaNeutro({ maxFaseA, vaEstufasSecadoras, vFaseNeutro, sinReduccion }) {
+  if (!(maxFaseA >= 0) || !(vFaseNeutro > 0)) return null;
+  const aEstufasSecadoras = Math.min((vaEstufasSecadoras || 0) / vFaseNeutro, maxFaseA);
+  const restoA = maxFaseA - aEstufasSecadoras;
+
+  if (sinReduccion) {
+    return { maxFaseA, aEstufasSecadoras, restoA, sinReduccion: true, cargaNeutroA: maxFaseA };
+  }
+
+  const estufasReducida = aEstufasSecadoras * 0.70;
+  const restoReducido = Math.min(restoA, 200) + Math.max(restoA - 200, 0) * 0.70;
+  const cargaNeutroA = estufasReducida + restoReducido;
+
+  return { maxFaseA, aEstufasSecadoras, restoA, estufasReducida, restoReducido, cargaNeutroA, sinReduccion: false };
+}
+
 // Veredicto global del circuito: manda el estado mas severo presente.
 function veredictoGlobal(hallazgos) {
   if (hallazgos.some(h => h.estado === ESTADO.NO_CUMPLE)) return ESTADO.NO_CUMPLE;
