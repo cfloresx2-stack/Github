@@ -699,6 +699,34 @@ grupo("Dictamen de cumplimiento", () => {
 });
 
 /* =========================================================================
+   10b. Carga del neutro del alimentador (Art. 220-61)
+   ========================================================================= */
+grupo("Carga del neutro del alimentador (Art. 220-61)", () => {
+  // Caso con estufas/secadoras y desequilibrio por encima de 200 A: cruza
+  // los dos tipos de reduccion a la vez.
+  const r = calcularCargaNeutro({ maxFaseA:300, vaEstufasSecadoras:6000, vFaseNeutro:120, sinReduccion:false });
+  esCerca(r.aEstufasSecadoras, 50, 1e-9, "6,000 VA de estufas/secadoras a 120 V = 50 A");
+  esCerca(r.restoA, 250, 1e-9, "Resto del desequilibrio = 300 A − 50 A = 250 A");
+  esCerca(r.estufasReducida, 35, 1e-9, "Porción de estufas/secadoras al 70%: 50 A × 0.70 = 35 A");
+  esCerca(r.restoReducido, 235, 1e-9, "Resto: primeros 200 A al 100% + 50 A excedentes al 70% = 200 + 35 = 235 A");
+  esCerca(r.cargaNeutroA, 270, 1e-9, "Carga de neutro final: 35 + 235 = 270 A (de 300 A sin reducir)");
+
+  // Sin estufas/secadoras y bajo el umbral de 200 A: sin ninguna reducción
+  const sinReduccionAplicable = calcularCargaNeutro({ maxFaseA:150, vaEstufasSecadoras:0, vFaseNeutro:120, sinReduccion:false });
+  esCerca(sinReduccionAplicable.cargaNeutroA, 150, 1e-9,
+    "150 A sin estufas y bajo 200 A → sin reducción, carga de neutro = 150 A");
+
+  // Excepcion declarada (circuito de 3 hilos de 3F-4H, o carga no lineal):
+  // ninguna reduccion se aplica, aunque haya estufas y exceda 200 A
+  const excepcion = calcularCargaNeutro({ maxFaseA:300, vaEstufasSecadoras:6000, vFaseNeutro:120, sinReduccion:true });
+  esCerca(excepcion.cargaNeutroA, 300, 1e-9,
+    "Con la excepción declarada, la carga de neutro es igual a la fase más cargada (300 A), sin reducción");
+
+  esIgual(calcularCargaNeutro({ maxFaseA:-1, vaEstufasSecadoras:0, vFaseNeutro:120 }), null, "Fase negativa → null");
+  esIgual(calcularCargaNeutro({ maxFaseA:100, vaEstufasSecadoras:0, vFaseNeutro:0 }), null, "Tensión fase-neutro 0 → null");
+});
+
+/* =========================================================================
    11. Cuadro de cargas
    ========================================================================= */
 grupo("Cuadro de cargas — asignación de fases por posición", () => {
