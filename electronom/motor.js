@@ -1458,3 +1458,114 @@ function veredictoGlobal(hallazgos) {
   return ESTADO.CUMPLE;
 }
 
+/* =========================================================================
+   DIAGRAMA UNIFILAR -- armado de la jerarquia de tableros
+   -------------------------------------------------------------------------
+   No es una regla normativa: es pura logica de armado de arbol a partir de
+   los datos que el usuario ya capturo. Un circuito tipo "alimentador"
+   puede declarar a que tablero entra (su "destino"); con eso se reconstruye
+   que tablero alimenta a cual, y de ahi el arbol del diagrama.
+
+   tableros: array de nombres de tablero (string) ya capturados.
+   alimentadores: array de { origen, destino, etiqueta } -- solo los
+   circuitos tipo alimentador que declararon un tablero destino.
+
+   Devuelve { arbol, advertencias }. arbol es un array de nodos raiz (puede
+   haber mas de uno si hay tableros sin alimentador entrante conocido, por
+   ejemplo si aun no se ha capturado ese alimentador). Cada nodo:
+   { nombre, etiquetaEntrada, hijos: [...] }.
+   ========================================================================= */
+function construirArbolDiagrama(tableros, alimentadores) {
+  const nombres = new Set((tableros || []).filter(Boolean));
+  const padres = {}; // destino -> { origen, etiqueta }
+  const advertencias = [];
+
+  (alimentadores || []).forEach(a => {
+    if (!a || !a.destino || !a.origen) return;
+    nombres.add(a.origen);
+    nombres.add(a.destino);
+    if (a.destino === a.origen) {
+      advertencias.push(`El alimentador "${a.etiqueta || a.destino}" tiene el mismo tablero de origen y destino (${a.origen}) — se ignoró.`);
+      return;
+    }
+    if (padres[a.destino]) {
+      advertencias.push(`El tablero "${a.destino}" tiene más de un alimentador entrante — se usó el primero capturado, se ignoraron los demás.`);
+      return;
+    }
+    padres[a.destino] = { origen: a.origen, etiqueta: a.etiqueta };
+  });
+
+  // Romper ciclos: si siguiendo la cadena de padres se vuelve al punto de
+  // partida (o a un nodo ya visitado en esa cadena), se corta la ultima
+  // conexion que cerraba el ciclo.
+  [...nombres].forEach(nombre => {
+    if (!padres[nombre]) return;
+    const visitados = new Set([nombre]);
+    let actual = nombre;
+    while (padres[actual]) {
+      actual = padres[actual].origen;
+      if (visitados.has(actual)) {
+        advertencias.push(`Se detectó un ciclo de alimentación que incluye a "${nombre}" — se rompió esa conexión para poder dibujar el diagrama.`);
+        delete padres[nombre];
+        return;
+      }
+      visitados.add(actual);
+    }
+  });
+
+  const hijosDe = {};
+  nombres.forEach(n => { hijosDe[n] = []; });
+  Object.entries(padres).forEach(([destino, info]) => {
+    hijosDe[info.origen].push({ nombre: destino, etiqueta: info.etiqueta });
+  });
+  Object.keys(hijosDe).forEach(k => hijosDe[k].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+
+  function construirNodo(nombre, etiquetaEntrada) {
+    return { nombre, etiquetaEntrada, hijos: hijosDe[nombre].map(h => construirNodo(h.nombre, h.etiqueta)) };
+  }
+
+  const raices = [...nombres].filter(n => !padres[n]).sort();
+  const arbol = raices.map(r => construirNodo(r, null));
+  return { arbol, advertencias };
+}
+
+// Calcula la posicion (x,y) de cada tablero del diagrama y las coordenadas
+// de cada linea de conexion, con un layout de arbol simple: las hojas se
+// reparten en fila de izquierda a derecha, y cada nodo padre se centra
+// sobre sus hijos. Pura geometria, no hay nada normativo aqui.
+function calcularLayoutDiagrama(arbol, opciones) {
+  const espacioX = (opciones && opciones.espacioX) || 170;
+  const espacioY = (opciones && opciones.espacioY) || 110;
+  const posiciones = {};
+  const conexiones = [];
+  let cursorHoja = 0;
+
+  function colocar(nodo, profundidad, padreNombre, etiquetaEntrada) {
+    let x;
+    if (nodo.hijos.length === 0) {
+      x = cursorHoja * espacioX;
+      cursorHoja++;
+    } else {
+      const xs = nodo.hijos.map(h => colocar(h, profundidad + 1, nodo.nombre, h.etiquetaEntrada));
+      x = (Math.min(...xs) + Math.max(...xs)) / 2;
+    }
+    posiciones[nodo.nombre] = { x, y: profundidad * espacioY };
+    if (padreNombre !== null) {
+      conexiones.push({ desde: padreNombre, hasta: nodo.nombre, etiqueta: etiquetaEntrada });
+    }
+    return x;
+  }
+
+  (arbol || []).forEach(raiz => colocar(raiz, 0, null, null));
+
+  const nodos = Object.entries(posiciones).map(([nombre, p]) => ({ nombre, x: p.x, y: p.y }));
+  const conexionesConCoords = conexiones.map(c => ({
+    ...c,
+    x1: posiciones[c.desde].x, y1: posiciones[c.desde].y,
+    x2: posiciones[c.hasta].x, y2: posiciones[c.hasta].y,
+  }));
+  const anchoMax = nodos.length ? Math.max(...nodos.map(n => n.x)) : 0;
+  const altoMax = nodos.length ? Math.max(...nodos.map(n => n.y)) : 0;
+  return { nodos, conexiones: conexionesConCoords, anchoMax, altoMax };
+}
+

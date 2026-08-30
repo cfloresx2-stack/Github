@@ -938,6 +938,76 @@ grupo("Cuadro de cargas — balanceo automático", () => {
   esIgual(balDos.length, 2, "Cada tablero (board) se balancea de forma independiente");
 });
 
+grupo("Diagrama unifilar — armado del árbol", () => {
+  // Cadena simple: TP -> B -> B1
+  const cadena = construirArbolDiagrama(
+    ["TP", "B", "B1"],
+    [ { origen:"TP", destino:"B", etiqueta:"Alim-B" }, { origen:"B", destino:"B1", etiqueta:"Alim-B1" } ]
+  );
+  esIgual(cadena.arbol.length, 1, "Una sola raíz cuando todo cuelga de un tablero principal");
+  esIgual(cadena.arbol[0].nombre, "TP", "TP es la raíz");
+  esIgual(cadena.arbol[0].hijos[0].nombre, "B", "B es hijo de TP");
+  esIgual(cadena.arbol[0].hijos[0].hijos[0].nombre, "B1", "B1 es hijo de B (nieto de TP)");
+  esIgual(cadena.advertencias.length, 0, "Sin advertencias en un caso limpio");
+
+  // Tablero con dos hijos (ramificación)
+  const ramificado = construirArbolDiagrama(
+    ["TP", "A", "B"],
+    [ { origen:"TP", destino:"A", etiqueta:"Alim-A" }, { origen:"TP", destino:"B", etiqueta:"Alim-B" } ]
+  );
+  esIgual(ramificado.arbol[0].hijos.length, 2, "TP tiene 2 hijos (A y B)");
+
+  // Tableros sin alimentador conocido: cada uno es su propia raíz
+  const sinRelacion = construirArbolDiagrama(["X", "Y"], []);
+  esIgual(sinRelacion.arbol.length, 2, "Sin alimentadores declarados, cada tablero es una raíz independiente");
+
+  // Mismo origen y destino: se ignora con advertencia
+  const autoAlim = construirArbolDiagrama(["TP"], [ { origen:"TP", destino:"TP", etiqueta:"Alim-X" } ]);
+  esIgual(autoAlim.arbol.length, 1, "Origen=destino no genera una conexión");
+  esCierto(autoAlim.advertencias.length > 0, "Se advierte el caso de origen=destino");
+
+  // Dos alimentadores entrando al mismo tablero: se queda con el primero
+  const duplicado = construirArbolDiagrama(
+    ["TP", "TP2", "B"],
+    [ { origen:"TP", destino:"B", etiqueta:"Alim-1" }, { origen:"TP2", destino:"B", etiqueta:"Alim-2" } ]
+  );
+  esIgual(duplicado.arbol.length, 2, "Con un alimentador entrante duplicado, TP2 queda como raíz independiente (se ignoró su conexión)");
+  esCierto(duplicado.advertencias.length > 0, "Se advierte el alimentador entrante duplicado");
+
+  // Ciclo: A alimenta a B y B alimenta a A -- se rompe para poder dibujar
+  const ciclo = construirArbolDiagrama(
+    ["A", "B"],
+    [ { origen:"A", destino:"B", etiqueta:"Alim-AB" }, { origen:"B", destino:"A", etiqueta:"Alim-BA" } ]
+  );
+  esCierto(ciclo.advertencias.some(a => a.includes("ciclo")), "Se detecta y advierte el ciclo de alimentación");
+  esCierto(ciclo.arbol.length >= 1, "A pesar del ciclo, se devuelve al menos una raíz dibujable");
+});
+
+grupo("Diagrama unifilar — layout geométrico", () => {
+  // Cadena de 3: deben quedar alineados en X y con Y creciente por nivel
+  const { arbol } = construirArbolDiagrama(
+    ["TP", "B", "B1"],
+    [ { origen:"TP", destino:"B", etiqueta:"Alim-B" }, { origen:"B", destino:"B1", etiqueta:"Alim-B1" } ]
+  );
+  const layout = calcularLayoutDiagrama(arbol);
+  esIgual(layout.nodos.length, 3, "3 nodos en el layout");
+  esIgual(layout.conexiones.length, 2, "2 conexiones (TP-B, B-B1)");
+  const porNombre = n => layout.nodos.find(x => x.nombre === n);
+  esCierto(porNombre("B").y > porNombre("TP").y, "B queda más abajo que TP (nivel siguiente)");
+  esCierto(porNombre("B1").y > porNombre("B").y, "B1 queda más abajo que B");
+  esCerca(porNombre("TP").x, porNombre("B").x, 1e-9, "En una cadena simple (sin ramificar) todos quedan alineados en X");
+
+  // Ramificación: los dos hijos deben quedar a distinta X, y el padre centrado
+  const { arbol: arbol2 } = construirArbolDiagrama(
+    ["TP", "A", "B"],
+    [ { origen:"TP", destino:"A", etiqueta:"Alim-A" }, { origen:"TP", destino:"B", etiqueta:"Alim-B" } ]
+  );
+  const layout2 = calcularLayoutDiagrama(arbol2);
+  const p2 = n => layout2.nodos.find(x => x.nombre === n);
+  esCierto(p2("A").x !== p2("B").x, "Los dos hijos quedan en columnas distintas");
+  esCerca(p2("TP").x, (p2("A").x + p2("B").x) / 2, 1e-9, "El padre queda centrado sobre sus dos hijos");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */

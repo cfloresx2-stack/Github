@@ -352,6 +352,7 @@
   <button type="button" data-tabbtn="calculadora" class="tabActive">Calculadora</button>
   <button type="button" data-tabbtn="memoria">Memoria del proyecto</button>
   <button type="button" data-tabbtn="cuadro">Cuadro de cargas</button>
+  <button type="button" data-tabbtn="diagrama">Diagrama unifilar</button>
 </div>
 
 <div class="wrap">
@@ -383,6 +384,11 @@
         <option value="alimentador">Alimentador (Art. 215)</option>
       </select>
       <p class="hint" id="circuitKindAviso" style="display:none; color:var(--warn); margin-top:6px"></p>
+
+      <div id="tableroDestinoWrap" style="display:none">
+        <label style="margin-top:16px">Tablero que alimenta este alimentador <span class="hint">(nombre del tablero DESTINO, aguas abajo; usado para armar el diagrama unifilar)</span></label>
+        <input type="text" id="tableroDestino" placeholder="Ej. TAB-B">
+      </div>
 
       <div class="checkline">
         <input type="checkbox" id="isMotor">
@@ -741,6 +747,18 @@
     </div>
   </div>
 
+  <!-- ============ DIAGRAMA UNIFILAR ============ -->
+  <div class="card memoriaSection" data-tab="diagrama">
+    <h2>Diagrama unifilar <span class="hint">(esquemático, generado a partir de los tableros y alimentadores capturados)</span></h2>
+    <p class="hint">Se arma solo a partir de los circuitos tipo "Alimentador" que declaran a qué tablero entran (campo "Tablero que alimenta este alimentador", en la sección 1 de la Calculadora). Es un esquema de cajas y líneas con el calibre/interruptor de cada alimentador como etiqueta — no usa simbología normativa de dibujo eléctrico. Si necesitas el plano final, usa el botón de abajo para descargar los datos y rehacerlo en AutoCAD.</p>
+    <div id="diagramaAdvertencias" style="margin-top:8px"></div>
+    <div id="diagramaWrap" style="margin-top:12px; overflow-x:auto">
+      <div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el diagrama.</div>
+    </div>
+    <button id="descargarDiagramaCsv" type="button" style="margin-top:12px">⬇️ Descargar datos del diagrama (CSV)</button>
+    <p class="hint" style="margin-top:6px">Lista de tablero origen → tablero destino, con el alimentador, calibre, tierra, interruptor y canalización de cada tramo — útil como base para redibujar el plano final en AutoCAD u otro programa de dibujo.</p>
+  </div>
+
 </div>
 
 <div id="printArea"></div>
@@ -879,7 +897,8 @@ function capturarFormSnapshot() {
   const chk = id => document.getElementById(id).checked;
   return {
     projName: val('projName'), boardName: val('boardName'), circName: val('circName'),
-    circPos: val('circPos'), circuitKind: val('circuitKind'), isMotor: chk('isMotor'), motorDevice: val('motorDevice'),
+    circPos: val('circPos'), circuitKind: val('circuitKind'), tableroDestino: val('tableroDestino'),
+    isMotor: chk('isMotor'), motorDevice: val('motorDevice'),
     voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
     loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
     material: val('material'), insulType: val('insulType'), lugarMojado: chk('lugarMojado'),
@@ -910,7 +929,7 @@ function restaurarFormSnapshot(s) {
     el.dispatchEvent(new Event('change'));
   }
   setVal('projName', s.projName); setVal('boardName', s.boardName); setVal('circName', s.circName);
-  setVal('circPos', s.circPos); setVal('circuitKind', s.circuitKind);
+  setVal('circPos', s.circPos); setVal('circuitKind', s.circuitKind); setVal('tableroDestino', s.tableroDestino || '');
   setVal('voltage', s.voltage); setVal('phaseType', s.phaseType);
   setVal('systemType', s.systemType);
   setVal('demandFactor', s.demandFactor);
@@ -1132,6 +1151,10 @@ function checkCircuitKindMismatch() {
 }
 document.getElementById('circName').addEventListener('input', checkCircuitKindMismatch);
 document.getElementById('circuitKind').addEventListener('change', checkCircuitKindMismatch);
+
+document.getElementById('circuitKind').addEventListener('change', (e) => {
+  document.getElementById('tableroDestinoWrap').style.display = e.target.value === 'alimentador' ? 'block' : 'none';
+});
 
 document.getElementById('installMethod').addEventListener('change', (e) => {
   const charola = e.target.value === 'charola';
@@ -1411,7 +1434,7 @@ function render(data) {
 
   lastCalc = {
     id: Date.now(),
-    proj: header.proj, board: header.board, circ: header.circ,
+    proj: header.proj, board: header.board, circ: header.circ, destino: header.destino || null,
     circuitKindLabel: input.circuitKindLabel, motor, systemKey: input.systemKey, voltage: input.voltage,
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
     breakerA: breaker.breaker,
@@ -1440,6 +1463,7 @@ document.getElementById('calc').addEventListener('click', () => {
   const boardName = document.getElementById('boardName').value;
   const circName = document.getElementById('circName').value;
   const circuitKind = document.getElementById('circuitKind').value; // derivado | alimentador
+  const tableroDestino = circuitKind === 'alimentador' ? document.getElementById('tableroDestino').value.trim() : '';
   const isMotor = document.getElementById('isMotor').checked;
   const motorPct = parseFloat(document.getElementById('motorDevice').value);
 
@@ -1590,7 +1614,7 @@ document.getElementById('calc').addEventListener('click', () => {
   }
 
   render({
-    header: { proj: projName, board: boardName, circ: circName },
+    header: { proj: projName, board: boardName, circ: circName, destino: tableroDestino || null },
     motor: isMotor,
     input: {
       current, requiredAmpacity, requiredAmpacityPorConductor, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
@@ -1629,6 +1653,7 @@ function addToMemoria() {
   saveRegistry(reg);
   renderRegistry();
   renderCuadroCargas();
+  renderDiagramaUnifilar();
   const btn = document.getElementById('addToMemoria');
   btn.textContent = "✓ Agregado a la memoria del proyecto";
   btn.disabled = true;
@@ -1807,11 +1832,111 @@ function renderCuadroCargas() {
   });
 }
 
+/* =========================================================================
+   DIAGRAMA UNIFILAR (esquematico)
+   -------------------------------------------------------------------------
+   Se arma solo a partir de los circuitos tipo "Alimentador" que declararon
+   a que tablero entran (campo tableroDestino en la captura). La jerarquia
+   la calcula construirArbolDiagrama (motor.js), el layout geometrico
+   calcularLayoutDiagrama (motor.js) -- aqui solo se traduce ese layout a
+   SVG. No hay simbologia normativa de dibujo electrico: son cajas y
+   lineas con el calibre/interruptor del alimentador como etiqueta.
+   ========================================================================= */
+function renderDiagramaSVG(layout, infoPorDestino) {
+  const margen = 90, boxW = 150, boxH = 50;
+  const anchoSvg = layout.anchoMax + margen * 2;
+  const altoSvg = layout.altoMax + margen * 2 + boxH;
+
+  let lineasHtml = '', etiquetasHtml = '', cajasHtml = '';
+
+  layout.conexiones.forEach(c => {
+    const x1 = c.x1 + margen, y1 = c.y1 + margen + boxH;
+    const x2 = c.x2 + margen, y2 = c.y2 + margen;
+    const midY = (y1 + y2) / 2;
+    lineasHtml += `<path d="M ${x1} ${y1} V ${midY} H ${x2} V ${y2}" fill="none" stroke="#31415a" stroke-width="1.6" />`;
+    const info = infoPorDestino[c.hasta];
+    const partes = [c.etiqueta, info && info.awg ? info.awg + ' AWG' : null, info && info.breakerA ? info.breakerA + ' A' : null].filter(Boolean);
+    if (partes.length) {
+      etiquetasHtml += `<text x="${Math.max(x1, x2) + 8}" y="${midY - 5}" font-size="10.5" fill="#31415a">${partes.join(' · ')}</text>`;
+    }
+  });
+
+  layout.nodos.forEach(n => {
+    const x = n.x + margen - boxW / 2, y = n.y + margen;
+    cajasHtml += `
+      <rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="7" fill="#fff" stroke="#0b2545" stroke-width="1.6" />
+      <text x="${x + boxW / 2}" y="${y + boxH / 2 + 5}" text-anchor="middle" font-size="13" font-weight="bold" fill="#0b2545">${n.nombre}</text>`;
+  });
+
+  return `<svg viewBox="${-boxW / 2} 0 ${anchoSvg + boxW} ${altoSvg}" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; display:block">
+    ${lineasHtml}${etiquetasHtml}${cajasHtml}
+  </svg>`;
+}
+
+function renderDiagramaUnifilar() {
+  const reg = loadRegistry();
+  const wrap = document.getElementById('diagramaWrap');
+  const avisos = document.getElementById('diagramaAdvertencias');
+  avisos.innerHTML = '';
+
+  if (reg.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el diagrama.</div>`;
+    return;
+  }
+
+  const tableros = [...new Set(reg.map(r => r.board).filter(Boolean))];
+  const alimentadores = reg
+    .filter(r => r.circuitKindLabel === 'Alimentador' && r.destino)
+    .map(r => ({ origen: r.board, destino: r.destino, etiqueta: r.circ || 'Alimentador', awg: r.awg, awgTierra: r.awgTierra, breakerA: r.breakerA, conduitTrade: r.conduitTrade, conduitName: r.conduitName }));
+
+  if (alimentadores.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Ningún alimentador capturado tiene un tablero destino declarado todavía. Edita un circuito tipo "Alimentador" y llena el campo "Tablero que alimenta este alimentador" (sección 1 de la Calculadora) para que aparezca aquí.</div>`;
+    return;
+  }
+
+  const { arbol, advertencias } = construirArbolDiagrama(tableros, alimentadores);
+  if (advertencias.length) {
+    avisos.innerHTML = `<p class="hint" style="color:var(--warn)">${advertencias.map(a => '⚠ ' + a).join('<br>')}</p>`;
+  }
+
+  const layout = calcularLayoutDiagrama(arbol);
+  const infoPorDestino = {};
+  alimentadores.forEach(a => { infoPorDestino[a.destino] = a; });
+
+  wrap.innerHTML = renderDiagramaSVG(layout, infoPorDestino);
+}
+
+document.getElementById('descargarDiagramaCsv').addEventListener('click', () => {
+  const reg = loadRegistry();
+  const alimentadores = reg.filter(r => r.circuitKindLabel === 'Alimentador' && r.destino);
+  if (alimentadores.length === 0) { alert('No hay alimentadores con tablero destino declarado para exportar. Edita un circuito tipo "Alimentador" y llena el campo de tablero destino.'); return; }
+
+  const proj = document.getElementById('projName').value || 'Proyecto';
+  const encabezado = ['Tablero origen', 'Tablero destino', 'Alimentador', 'Calibre (AWG)', 'Tierra (AWG)', 'Interruptor (A)', 'Canalización'];
+  const filas = alimentadores.map(a => [
+    a.board || '', a.destino || '', a.circ || '', a.awg || '', a.awgTierra || '', a.breakerA || '',
+    a.conduitTrade ? `${a.conduitTrade} (${a.conduitName || ''})` : (a.conduitName || ''),
+  ]);
+  const csvEscape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [encabezado, ...filas].map(fila => fila.map(csvEscape).join(',')).join('\r\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Diagrama unifilar - ${proj}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
 function removeFromRegistry(id) {
   const reg = loadRegistry().filter(r => r.id !== id);
   saveRegistry(reg);
   renderRegistry();
   renderCuadroCargas();
+  renderDiagramaUnifilar();
 }
 
 document.getElementById('clearRegistry').addEventListener('click', () => {
@@ -1820,6 +1945,7 @@ document.getElementById('clearRegistry').addEventListener('click', () => {
     saveRegistry([]);
     renderRegistry();
     renderCuadroCargas();
+    renderDiagramaUnifilar();
   }
 });
 
@@ -1949,6 +2075,7 @@ function activarTab(nombre) {
   });
   if (nombre === 'memoria') renderRegistry();
   if (nombre === 'cuadro') renderCuadroCargas();
+  if (nombre === 'diagrama') renderDiagramaUnifilar();
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 document.querySelectorAll('.tabBar button').forEach(btn => {
@@ -1957,6 +2084,7 @@ document.querySelectorAll('.tabBar button').forEach(btn => {
 
 renderRegistry();
 renderCuadroCargas();
+renderDiagramaUnifilar();
 </script>
 
 </body>
