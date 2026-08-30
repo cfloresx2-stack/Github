@@ -353,6 +353,7 @@
         <option value="derivado">Circuito derivado (Art. 210)</option>
         <option value="alimentador">Alimentador (Art. 215)</option>
       </select>
+      <p class="hint" id="circuitKindAviso" style="display:none; color:var(--warn); margin-top:6px"></p>
 
       <div class="checkline">
         <input type="checkbox" id="isMotor">
@@ -627,6 +628,10 @@
       </div>
     </div>
 
+    <div id="editandoBanner" class="checkline" style="display:none; background:var(--ice); border-radius:8px; padding:10px 12px; margin-bottom:10px">
+      <span>✏️ Editando un circuito ya agregado a la memoria — al calcular y volver a agregar, <b>reemplaza al original</b>.</span>
+      <button type="button" id="cancelarEdicion" class="miniBtn" style="margin-left:auto">Cancelar edición</button>
+    </div>
     <button id="calc">Calcular circuito</button>
   </div>
 
@@ -794,6 +799,67 @@ function getLoads() {
   });
 }
 
+// Captura TODOS los campos del formulario (para poder reconstruirlo despues
+// con restaurarFormSnapshot, al editar un circuito ya agregado a la memoria).
+function capturarFormSnapshot() {
+  const val = id => document.getElementById(id).value;
+  const chk = id => document.getElementById(id).checked;
+  return {
+    projName: val('projName'), boardName: val('boardName'), circName: val('circName'),
+    circPos: val('circPos'), circuitKind: val('circuitKind'), isMotor: chk('isMotor'), motorDevice: val('motorDevice'),
+    voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
+    loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
+    material: val('material'), insulType: val('insulType'), lugarMojado: chk('lugarMojado'),
+    terminalMarcada: chk('terminalMarcada'), ambient: val('ambient'), nParalelo: val('nParalelo'),
+    installMethod: val('installMethod'), chCubierta: chk('chCubierta'), chCapaUnica: chk('chCapaUnica'),
+    length: val('length'), conduitType: val('conduitType'),
+    scEnabled: chk('scEnabled'), scKva: val('scKva'), scZ: val('scZ'), scIcu: val('scIcu'),
+    scZsource: val('scZsource'), scTsc: val('scTsc'),
+    elEnabled: chk('elEnabled'), elRho: val('elRho'), elLargo: val('elLargo'),
+    elDiam: val('elDiam'), elComplementario: chk('elComplementario'),
+  };
+}
+
+// Reconstruye el formulario a partir de un snapshot capturado antes (ver
+// capturarFormSnapshot). Dispara 'change'/'input' en cada campo para que los
+// listeners existentes (mostrar/ocultar paneles, ajustar opciones de sistema
+// segun tension, etc.) se ejecuten igual que si el usuario lo hubiera hecho.
+function restaurarFormSnapshot(s) {
+  function setVal(id, value) {
+    const el = document.getElementById(id);
+    el.value = value;
+    el.dispatchEvent(new Event('input'));
+    el.dispatchEvent(new Event('change'));
+  }
+  function setChk(id, value) {
+    const el = document.getElementById(id);
+    el.checked = value;
+    el.dispatchEvent(new Event('change'));
+  }
+  setVal('projName', s.projName); setVal('boardName', s.boardName); setVal('circName', s.circName);
+  setVal('circPos', s.circPos); setVal('circuitKind', s.circuitKind);
+  setVal('voltage', s.voltage); setVal('phaseType', s.phaseType);
+  setVal('systemType', s.systemType);
+  setVal('demandFactor', s.demandFactor);
+
+  document.getElementById('loadsBody').innerHTML = '';
+  (s.loads || []).forEach(l => addLoadRow(l.name, l.watts, l.fp, l.cont));
+
+  setVal('material', s.material); setVal('insulType', s.insulType);
+  setChk('lugarMojado', s.lugarMojado); setChk('terminalMarcada', s.terminalMarcada);
+  setVal('ambient', s.ambient); setVal('nParalelo', s.nParalelo);
+  setVal('installMethod', s.installMethod); setChk('chCubierta', s.chCubierta); setChk('chCapaUnica', s.chCapaUnica);
+  setVal('length', s.length); setVal('conduitType', s.conduitType);
+
+  setChk('isMotor', s.isMotor); setVal('motorDevice', s.motorDevice);
+  setChk('scEnabled', s.scEnabled); setVal('scKva', s.scKva); setVal('scZ', s.scZ);
+  setVal('scIcu', s.scIcu); setVal('scZsource', s.scZsource); setVal('scTsc', s.scTsc);
+  setChk('elEnabled', s.elEnabled); setVal('elRho', s.elRho); setVal('elLargo', s.elLargo);
+  setVal('elDiam', s.elDiam); setChk('elComplementario', s.elComplementario);
+
+  updateLoadTotals();
+}
+
 function updateLoadTotals() {
   const loads = getLoads();
   const total = combinePQ(loads);
@@ -933,6 +999,25 @@ document.getElementById('nParalelo').addEventListener('input', (e) => {
   document.getElementById('nParaleloTxt2').textContent = n;
 });
 
+function checkCircuitKindMismatch() {
+  const nombre = document.getElementById('circName').value.toLowerCase();
+  const tipo = document.getElementById('circuitKind').value;
+  const diceAlimentador = /aliment/.test(nombre);
+  const diceDerivado = /derivad/.test(nombre);
+  const aviso = document.getElementById('circuitKindAviso');
+  if (diceAlimentador && tipo !== 'alimentador') {
+    aviso.textContent = 'El nombre dice "alimentador" pero el tipo de circuito sigue en "Circuito derivado" — revisa si debería ser "Alimentador (Art. 215)".';
+    aviso.style.display = 'block';
+  } else if (diceDerivado && tipo !== 'derivado') {
+    aviso.textContent = 'El nombre dice "derivado" pero el tipo de circuito sigue en "Alimentador" — revisa si debería ser "Circuito derivado (Art. 210)".';
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+}
+document.getElementById('circName').addEventListener('input', checkCircuitKindMismatch);
+document.getElementById('circuitKind').addEventListener('change', checkCircuitKindMismatch);
+
 document.getElementById('installMethod').addEventListener('change', (e) => {
   const charola = e.target.value === 'charola';
   document.getElementById('conduitPanel').style.display = charola ? 'none' : 'block';
@@ -979,6 +1064,7 @@ function renderDictamen(hallazgos) {
    RENDER
    ========================================================================= */
 let lastCalc = null; // guarda el ultimo calculo hecho, listo para agregarse a la memoria
+let editingId = null; // id del circuito de la memoria que se esta editando (null = captura nueva)
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
@@ -1221,6 +1307,7 @@ function render(data) {
     posicion: parseInt(document.getElementById('circPos').value) || null,
     dictamen: veredicto, hallazgos,
     summaryHtml, bodyHtml,
+    formSnapshot: capturarFormSnapshot(),
   };
   document.getElementById('addToMemoria').addEventListener('click', addToMemoria);
 }
@@ -1412,7 +1499,12 @@ function saveRegistry(reg) {
 
 function addToMemoria() {
   if (!lastCalc) return;
-  const reg = loadRegistry();
+  let reg = loadRegistry();
+  if (editingId !== null) {
+    reg = reg.filter(r => r.id !== editingId);
+    editingId = null;
+    document.getElementById('editandoBanner').style.display = 'none';
+  }
   reg.push(lastCalc);
   saveRegistry(reg);
   renderRegistry();
@@ -1421,6 +1513,25 @@ function addToMemoria() {
   btn.textContent = "✓ Agregado a la memoria del proyecto";
   btn.disabled = true;
 }
+
+// Vuelve a llenar el formulario con los datos de un circuito ya agregado a
+// la memoria, para corregirlo sin volver a capturar todo desde cero. No
+// quita el circuito original hasta que se calcule y agregue de nuevo (para
+// no perder datos si el usuario se sale a la mitad).
+function editarCircuito(id) {
+  const reg = loadRegistry();
+  const r = reg.find(x => x.id === id);
+  if (!r || !r.formSnapshot) return;
+  restaurarFormSnapshot(r.formSnapshot);
+  editingId = id;
+  document.getElementById('editandoBanner').style.display = 'flex';
+  document.getElementById('resultsWrap').innerHTML = `<div class="placeholder">Revisa los datos y presiona <b>Calcular circuito</b> para actualizar este circuito.</div>`;
+  document.getElementById('projName').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+document.getElementById('cancelarEdicion').addEventListener('click', () => {
+  editingId = null;
+  document.getElementById('editandoBanner').style.display = 'none';
+});
 
 function renderRegistry() {
   const reg = loadRegistry();
@@ -1442,7 +1553,10 @@ function renderRegistry() {
       <td>${r.conduitTrade ?? '—'}</td>
       <td>${fmt(r.dropPct,2)}%</td>
       <td>${r.dictamen ? `<span class="badge ${ESTADO_BADGE[r.dictamen]}">${r.dictamen}</span>` : '—'}</td>
-      <td><button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button></td>
+      <td>
+        ${r.formSnapshot ? `<button class="miniBtn" onclick="editarCircuito(${r.id})">Editar</button>` : ''}
+        <button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button>
+      </td>
     </tr>`).join("");
   wrap.innerHTML = `
     <table class="printTable" id="registryTable">
