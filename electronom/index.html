@@ -280,10 +280,10 @@
   .memoriaSection {
     grid-column: 1 / -1;
   }
-  table#registryTable { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
-  table#registryTable th { background: var(--ice); color: var(--navy); text-align: left; padding: 7px 8px; font-size: 11.5px; }
-  table#registryTable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  table#registryTable tr:hover { background: #fafbff; }
+  table.printTable { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  table.printTable th { background: var(--ice); color: var(--navy); text-align: left; padding: 7px 8px; font-size: 11.5px; }
+  table.printTable td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.printTable tr:hover { background: #fafbff; }
   .miniBtn {
     background: var(--white);
     border: 1px solid var(--border);
@@ -1445,7 +1445,7 @@ function renderRegistry() {
       <td><button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button></td>
     </tr>`).join("");
   wrap.innerHTML = `
-    <table id="registryTable">
+    <table class="printTable" id="registryTable">
       <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -1498,7 +1498,7 @@ function renderCuadroCargas() {
     return `
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;color:var(--navy);margin:0 0 8px">Tablero ${q.tablero} ${balanceBadge}</h3>
-        <table id="registryTable">
+        <table class="printTable" id="cuadroFasesTable">
           <thead><tr>
             <th>CT.</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
             <th>Carga (VA)</th><th>Fase A</th><th>Fase B</th><th>Fase C</th>
@@ -1616,7 +1616,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     </div>
     <div class="card">
       <h2>Resumen de circuitos</h2>
-      <table id="registryTable">
+      <table class="printTable" id="resumenCircuitosTable">
         <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th></tr></thead>
         <tbody>${summaryRows}</tbody>
       </table>
