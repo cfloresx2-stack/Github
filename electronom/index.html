@@ -321,6 +321,7 @@
 
   /* Vista de impresión / memoria completa */
   #printArea { display: none; }
+  @page { margin: 1.5cm; }
   @media print {
     body > header, .tabBar, body > .wrap > div:first-child, #resultsWrap, .memoriaSection,
     table#registryTable, footer, button, .placeholder { display: none !important; }
@@ -328,6 +329,15 @@
     #printArea { display: block !important; }
     details.circuitSheet { break-inside: avoid; border: 1px solid #999; }
     details.circuitSheet > summary { background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; }
+    /* Los navegadores no imprimen fondos de color por default (a menos que
+       el usuario active "graficos de fondo" al imprimir/guardar como PDF).
+       Sin esto, el texto blanco del encabezado quedaria invisible sobre
+       fondo blanco. */
+    .resultsHead { background: #fff !important; color: #000 !important; border: 2px solid var(--navy); }
+    .resultsHead .sub { color: var(--muted) !important; }
+    table.printTable thead tr { break-after: avoid; }
+    table.printTable tr { break-inside: avoid; }
+    .card { break-inside: avoid; }
   }
 </style>
 </head>
