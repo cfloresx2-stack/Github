@@ -848,6 +848,56 @@ grupo("Cuadro de cargas — asignación de fases por posición", () => {
 });
 
 /* =========================================================================
+   11b. Balanceo automático de fases (para tablero NUEVO, sin posición fija)
+   ========================================================================= */
+grupo("Cuadro de cargas — balanceo automático", () => {
+  const c = (id, board, circ, va, fases) =>
+    ({ id, board, circ, va, fases, voltage:220, breakerA:20, awg:"12" });
+
+  // Caso real donde la posición secuencial queda mal balanceada (30%) y el
+  // balanceo automático mejora bastante (11.1%), por la mezcla de un
+  // circuito grande con varios chicos, todos de 2 polos.
+  const circuitos = [ c(1,"T1","C1",5000,2), c(2,"T1","C2",4000,2), c(3,"T1","C3",3000,2), c(4,"T1","C4",1000,2) ];
+  const secuencial = generarCuadroDeCargas(circuitos)[0];
+  const balanceado = balancearCuadroDeCargas(circuitos)[0];
+  esCerca(secuencial.desbalancePct, 30, 0.1, "Por posición secuencial, este caso da 30% de desbalance");
+  esCierto(balanceado.desbalancePct < secuencial.desbalancePct,
+    "El balanceo automático reduce el desbalance frente a la posición secuencial",
+    `${fmt(balanceado.desbalancePct,1)}% contra ${fmt(secuencial.desbalancePct,1)}%`);
+  esCerca(balanceado.desbalancePct, 11.11, 0.1, "El balanceo automático deja este caso en ~11.1% de desbalance");
+
+  // La carga total no cambia, solo como se reparte
+  esCerca(balanceado.totalVA, secuencial.totalVA, 1e-6, "El total de VA del tablero no cambia entre los dos modos");
+
+  // Circuitos de 1 polo: cada uno debe caer en la fase con MENOS carga
+  // acumulada hasta ese momento (heurística de mayor a menor VA)
+  const monofasicos = [ c(1,"T2","C1",3000,1), c(2,"T2","C2",3000,1), c(3,"T2","C3",3000,1) ];
+  const balMono = balancearCuadroDeCargas(monofasicos)[0];
+  esIgual(balMono.desbalancePct, 0, "Tres cargas iguales de 1 polo se reparten perfecto entre A, B y C");
+
+  // Circuito de 3 polos: siempre reparte por igual entre las 3 fases, sin
+  // importar el orden ni las demas cargas (no hay eleccion posible)
+  const triPolos = balancearCuadroDeCargas([ c(1,"T3","C1",9000,3) ])[0];
+  esCerca(triPolos.cargaPorFase.A, 3000, 1e-9, "Un circuito de 3 polos reparte 1/3 de su VA a cada fase");
+  esCerca(triPolos.cargaPorFase.B, 3000, 1e-9, "");
+  esCerca(triPolos.cargaPorFase.C, 3000, 1e-9, "");
+
+  // No se pisan las posiciones asignadas dentro de un mismo tablero
+  const variasCargas = [
+    c(1,"T4","C1",1000,1), c(2,"T4","C2",1000,1), c(3,"T4","C3",1000,1), c(4,"T4","C4",1000,1),
+    c(5,"T4","C5",2000,2), c(6,"T4","C6",2000,2), c(7,"T4","C7",5000,3),
+  ];
+  const balVarias = balancearCuadroDeCargas(variasCargas)[0];
+  const posiciones = balVarias.filas.map(f => f.posicion);
+  esIgual(new Set(posiciones).size, posiciones.length, "Ningún circuito del mismo tablero queda en la misma posición");
+
+  // Tableros distintos se balancean por separado
+  const dosTableros = [ c(1,"TA","C1",5000,1), c(2,"TA","C2",100,1), c(3,"TB","C1",5000,1), c(4,"TB","C2",100,1) ];
+  const balDos = balancearCuadroDeCargas(dosTableros);
+  esIgual(balDos.length, 2, "Cada tablero (board) se balancea de forma independiente");
+});
+
+/* =========================================================================
    Pintar resultados
    ========================================================================= */
 document.getElementById('resultados').innerHTML = grupos.map(g => `
