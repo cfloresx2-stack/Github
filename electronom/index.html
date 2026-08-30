@@ -652,7 +652,13 @@
   <!-- ============ CUADRO DE CARGAS ============ -->
   <div class="card memoriaSection">
     <h2>Cuadro de cargas por tablero <span class="hint">(reparto de fases y balanceo)</span></h2>
-    <div id="cuadroCargasWrap">
+    <label>Modo de asignación de fase</label>
+    <select id="cuadroModo">
+      <option value="posicion">Por posición física — documentar un tablero ya construido</option>
+      <option value="balanceado">Balancear automáticamente — diseñar un tablero nuevo</option>
+    </select>
+    <p class="hint" id="cuadroModoHint" style="margin-top:6px; display:none">En este modo, la "posición" es solo una etiqueta de espacio (no indica la fase real como en el modo por posición física): la fase de cada circuito ya la decide el balanceo, mostrada en su propia columna. Cualquier posición declarada en un circuito individual se ignora aquí.</p>
+    <div id="cuadroCargasWrap" style="margin-top:12px">
       <div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el cuadro de cargas.</div>
     </div>
   </div>
@@ -1453,7 +1459,9 @@ function renderCuadroCargas() {
     return;
   }
 
-  const cuadros = generarCuadroDeCargas(reg);
+  const modoBalanceado = document.getElementById('cuadroModo').value === 'balanceado';
+  document.getElementById('cuadroModoHint').style.display = modoBalanceado ? 'block' : 'none';
+  const cuadros = modoBalanceado ? balancearCuadroDeCargas(reg) : generarCuadroDeCargas(reg);
 
   wrap.innerHTML = cuadros.map((q, qi) => {
     const primero = q.filas[0]?.circuito;
@@ -1511,8 +1519,10 @@ function renderCuadroCargas() {
           ${q.fasesUsadas > 1 ? `Fase más cargada <b>${fmt(q.maxFase,0)} VA</b>, menos cargada ${fmt(q.minFase,0)} VA. ` : ''}
           El alimentador se dimensiona por la fase más cargada: ${fmt(q.maxFase,0)} VA ÷ ${fmt(vFN,0)} V (fase-neutro) =
           <b>${fmt(iAlim,1)} A</b> &rarr; interruptor principal sugerido <b>${intAlim} A</b> (Tabla 240-6(a)).
-          <br>La fase de cada circuito la define su <b>posición física</b> en el tablero: las barras alternan por pares de espacios (1 y 2 → A, 3 y 4 → B, 5 y 6 → C, 7 y 8 → A…), así que un interruptor de varios polos cae en fases consecutivas. Si no capturaste la posición, se asignan espacios impares en orden.
-          <br>El porcentaje de desbalance es un indicador de buena práctica: la NOM no fija un máximo.
+          ${modoBalanceado
+            ? `<br>La fase de cada circuito la elige el <b>balanceo automático</b>: se ordenan de mayor a menor VA y cada uno cae en la fase (o par/terna de fases) con menos carga acumulada hasta ese momento. La posición mostrada es solo una etiqueta de espacio, no indica la fase.`
+            : `<br>La fase de cada circuito la define su <b>posición física</b> en el tablero: las barras alternan por pares de espacios (1 y 2 → A, 3 y 4 → B, 5 y 6 → C, 7 y 8 → A…), así que un interruptor de varios polos cae en fases consecutivas. Si no capturaste la posición, se asignan espacios impares en orden.`}
+          <br>La NOM exige <b>reportar</b> el porcentaje de desbalance entre fases en el cuadro de cargas del proyecto eléctrico (Apéndice, numeral 7.1, sección II), pero no fija un máximo permitido para cargas de tablero — los colores de esta insignia (≤5% / ≤15% / mayor) son criterio propio de la herramienta, no un límite normativo.
         </p>
 
         <details style="margin-top:8px">
@@ -1621,6 +1631,8 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
 
   window.print();
 });
+
+document.getElementById('cuadroModo').addEventListener('change', renderCuadroCargas);
 
 renderRegistry();
 renderCuadroCargas();

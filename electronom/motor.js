@@ -1256,6 +1256,76 @@ function generarCuadroDeCargas(circuitos) {
   });
 }
 
+/* -------------------------------------------------------------------------
+   BALANCEO AUTOMATICO DE FASES (para disenar un tablero NUEVO, cuando
+   todavia no hay una posicion fisica fija -- si el tablero ya existe y se
+   esta documentando, usar generarCuadroDeCargas con la posicion real).
+
+   Ordena los circuitos de mayor a menor VA ("first fit decreasing", la
+   heuristica estandar para minimizar el desbalance en un problema de
+   reparto) y asigna cada uno a la fase (o par/terna de fases, segun el
+   numero de polos) que tenga MENOS carga acumulada en ese momento.
+
+   La "posicion" que se le asigna a cada circuito es solo una ETIQUETA DE
+   ESPACIO UNICA dentro del tablero (igual que el contador simple de
+   generarCuadroDeCargas cuando no hay posicion declarada) -- NO codifica
+   la fase como en el modo por posicion fisica, porque aqui la fase ya la
+   decide el balanceo, no al reves. Un electricista puede acomodar los
+   circuitos en el tablero real en cualquier orden, siempre que cada uno
+   quede en la fase que indica la columna "fases" de cada fila.
+   ------------------------------------------------------------------------- */
+function balancearCuadroDeCargas(circuitos) {
+  const tableros = {};
+
+  circuitos.forEach(c => {
+    const nombre = c.board || "(sin tablero)";
+    if (!tableros[nombre]) tableros[nombre] = { tablero: nombre, circuitos: [] };
+    tableros[nombre].circuitos.push(c);
+  });
+
+  return Object.values(tableros).map(t => {
+    const cargaPorFase = { A: 0, B: 0, C: 0 };
+    const PARES = { AB: ["A", "B"], BC: ["B", "C"], CA: ["C", "A"] };
+
+    const ordenados = [...t.circuitos].sort((a, b) => (b.va || 0) - (a.va || 0));
+
+    let siguienteLibre = 1;
+    const filas = ordenados.map(c => {
+      const nPolos = Math.min(c.fases || 1, 3);
+      let fases;
+      if (nPolos === 1) {
+        const familia = FASES.reduce((min, f) => (cargaPorFase[f] < cargaPorFase[min] ? f : min), FASES[0]);
+        fases = [familia];
+      } else if (nPolos === 2) {
+        const familia = Object.keys(PARES).reduce((min, k) => {
+          const suma = f => PARES[f].reduce((s, ph) => s + cargaPorFase[ph], 0);
+          return suma(k) < suma(min) ? k : min;
+        }, "AB");
+        fases = PARES[familia];
+      } else {
+        fases = FASES;
+      }
+
+      const posicion = siguienteLibre;
+      siguienteLibre += nPolos * 2;
+
+      const vaPorFase = (c.va || 0) / fases.length;
+      fases.forEach(f => { cargaPorFase[f] += vaPorFase; });
+
+      return { circuito: c, posicion, fases, vaPorFase };
+    });
+
+    const cargas = FASES.map(f => cargaPorFase[f]);
+    const usadas = cargas.filter(v => v > 0);
+    const maxFase = Math.max(...cargas);
+    const minFase = usadas.length ? Math.min(...usadas) : 0;
+    const totalVA = cargas.reduce((s, v) => s + v, 0);
+    const desbalancePct = maxFase > 0 ? ((maxFase - minFase) / maxFase) * 100 : 0;
+
+    return { tablero: t.tablero, filas, cargaPorFase, totalVA, maxFase, minFase, desbalancePct, fasesUsadas: usadas.length };
+  });
+}
+
 // Tension de fase a neutro de un circuito, a partir de su tension nominal.
 // En sistemas en estrella (127/220, 254/440, 277/480) la tension nominal de un
 // circuito de 2 o 3 fases se da ENTRE FASES, asi que la de fase a neutro es
