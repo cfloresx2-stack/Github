@@ -323,7 +323,7 @@
   #printArea { display: none; }
   @page { margin: 1.5cm; }
   @media print {
-    body > header, .tabBar, body > .wrap > div:first-child, #resultsWrap, .memoriaSection,
+    body > header, .tabBar, #tabBarHint, body > .wrap > div:first-child, #resultsWrap, .memoriaSection,
     table#registryTable, footer, button, .placeholder { display: none !important; }
     body > .wrap { display: block !important; }
     #printArea { display: block !important; }
@@ -354,6 +354,7 @@
   <button type="button" data-tabbtn="cuadro">Cuadro de cargas</button>
   <button type="button" data-tabbtn="diagrama">Diagrama unifilar</button>
 </div>
+<div id="tabBarHint" style="display:none; background:var(--navy); color:var(--ice); font-size:11px; text-align:center; padding:3px 0 5px">◂ desliza para ver las demás pestañas ▸</div>
 
 <div class="wrap">
 
@@ -1857,7 +1858,12 @@ function renderDiagramaSVG(layout, infoPorDestino) {
     const info = infoPorDestino[c.hasta];
     const partes = [c.etiqueta, info && info.awg ? info.awg + ' AWG' : null, info && info.breakerA ? info.breakerA + ' A' : null].filter(Boolean);
     if (partes.length) {
-      etiquetasHtml += `<text x="${Math.max(x1, x2) + 8}" y="${midY - 5}" font-size="10.5" fill="#31415a">${partes.join(' · ')}</text>`;
+      // Se ancla a x2 (la posicion del HIJO, no del punto medio) porque nunca se
+      // repite entre hermanos -- anclarla al punto medio o al maximo de x1/x2
+      // colisiona cuando el padre queda justo arriba de un hijo (caso comun con
+      // 3+ hijos: el hijo central), ya que dos ramas distintas pueden compartir
+      // esa misma coordenada y sus etiquetas quedan una encima de la otra.
+      etiquetasHtml += `<text x="${x2 + 8}" y="${y2 - 8}" font-size="10.5" fill="#31415a">${partes.join(' · ')}</text>`;
     }
   });
 
@@ -1985,6 +1991,11 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       <h2>Cuadro de cargas por tablero</h2>
       ${document.getElementById('cuadroCargasWrap').innerHTML}
     </div>
+    <div class="card">
+      <h2>Diagrama unifilar</h2>
+      ${document.getElementById('diagramaAdvertencias').innerHTML}
+      ${document.getElementById('diagramaWrap').innerHTML}
+    </div>
     ${detailSections}
     <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
   `;
@@ -2081,6 +2092,19 @@ function activarTab(nombre) {
 document.querySelectorAll('.tabBar button').forEach(btn => {
   btn.addEventListener('click', () => activarTab(btn.dataset.tabbtn));
 });
+
+// En pantallas angostas la barra de pestañas no cabe completa y hay que
+// deslizarla (overflow-x:auto ya lo permite) -- sin este aviso no era obvio
+// que "Cuadro de cargas" y "Diagrama unifilar" seguian ahi, fuera de vista.
+function actualizarAvisoTabBar() {
+  const bar = document.querySelector('.tabBar');
+  document.getElementById('tabBarHint').style.display = bar.scrollWidth > bar.clientWidth + 1 ? 'block' : 'none';
+}
+// ResizeObserver en vez de solo window.resize: tambien cubre cambios de
+// orientacion/zoom donde el evento resize de window no siempre dispara a
+// tiempo (comportamiento observado al probar con el emulador de viewport).
+new ResizeObserver(actualizarAvisoTabBar).observe(document.querySelector('.tabBar'));
+actualizarAvisoTabBar();
 
 renderRegistry();
 renderCuadroCargas();
