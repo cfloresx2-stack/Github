@@ -507,6 +507,47 @@
         <div class="totalsLine" id="al254Resultado" style="margin-top:8px"></div>
         <button id="al254Agregar" type="button">+ Agregar esta carga al listado</button>
       </details>
+
+      <details style="margin-top:10px">
+        <summary>Ayuda: factor de demanda de cocina en vivienda (Art. 220-55)</summary>
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Cantidad de aparatos <span class="hint">(estufas, hornos de pared, parrillas; 1 a 25)</span></label>
+            <input type="number" id="al255Cant" value="1" step="1" min="1">
+          </div>
+          <div>
+            <label>Potencia nominal por aparato <span class="hint">(kW, de la placa de datos; debe ser mayor a 1.75 kW)</span></label>
+            <input type="number" id="al255Kw" value="8" step="0.1" min="0">
+          </div>
+        </div>
+        <label>Método <span class="hint">(la Columna C aplica en todos los casos; la Nota 3 es una alternativa permitida solo hasta 8.75 kW por aparato, y suele dar una demanda menor)</span></label>
+        <select id="al255Metodo">
+          <option value="colC">Columna C (todos los casos, hasta 12 kW)</option>
+          <option value="nota3">Nota 3 (aparatos de 1.75 a 8.75 kW)</option>
+        </select>
+        <div class="totalsLine" id="al255Resultado" style="margin-top:8px"></div>
+        <button id="al255Agregar" type="button">+ Agregar esta carga al listado</button>
+        <p class="hint" style="margin-top:8px">Solo implementado de 1 a 25 aparatos y hasta 12 kW por aparato (Notas 1 y 2 no están implementadas). No aplica a más de un tipo de aparato con capacidades muy distintas.</p>
+      </details>
+
+      <details style="margin-top:10px">
+        <summary>Ayuda: factor de demanda de cocina comercial (Art. 220-56 — solo inmuebles que NO son vivienda)</summary>
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Cantidad de equipos de cocina</label>
+            <input type="number" id="al256Cant" value="1" step="1" min="1">
+          </div>
+          <div>
+            <label>Suma de placas de datos <span class="hint">(VA, de todos los equipos)</span></label>
+            <input type="number" id="al256Va" value="0" step="1" min="0">
+          </div>
+        </div>
+        <label>Suma de las 2 cargas más grandes <span class="hint">(VA; la demanda nunca puede quedar por debajo de este piso)</span></label>
+        <input type="number" id="al256Piso" value="0" step="1" min="0">
+        <div class="totalsLine" id="al256Resultado" style="margin-top:8px"></div>
+        <button id="al256Agregar" type="button">+ Agregar esta carga al listado</button>
+        <p class="hint" style="margin-top:8px">Aplica a equipos de cocción, calentadores de agua de lavaplatos y otros equipos de cocina controlados por termostato o de uso intermitente. NO aplica a calefacción, ventilación ni aire acondicionado.</p>
+      </details>
     </div>
 
     <div class="card">
@@ -1018,6 +1059,48 @@ document.getElementById('al254Agregar').addEventListener('click', () => {
   const demanda = updateSecadoras220_54();
   if (!demanda) { alert('Revisa los datos: solo está implementado de 1 a 11 secadoras.'); return; }
   addLoadRow('Secadoras (Art. 220-54)', demanda.vaDemanda, 1, false);
+});
+
+function updateCocinaVivienda220_55() {
+  const cant = parseInt(document.getElementById('al255Cant').value) || 0;
+  const kw = parseFloat(document.getElementById('al255Kw').value) || 0;
+  const metodo = document.getElementById('al255Metodo').value;
+  const demanda = calcularDemandaCocinaVivienda(cant, kw, metodo);
+  const el = document.getElementById('al255Resultado');
+  if (!demanda) { el.innerHTML = `<span class="hint">Captura una cantidad y potencia válidas.</span>`; return null; }
+  if (demanda.noEvaluable) { el.innerHTML = `<span class="hint">${demanda.motivo}</span>`; return null; }
+  el.innerHTML = demanda.metodo === 'nota3'
+    ? `Instalada: <b>${fmt(demanda.kwInstalados,2)} kW</b> (${fmt(demanda.kwPorAparato,2)} kW &times; ${demanda.cantidad}) &times; ${demanda.pct}% (Columna ${demanda.columna}) &rarr; Demanda: <b>${fmt(demanda.kwDemanda,2)} kW</b> (${fmt(demanda.vaDemanda,0)} VA)`
+    : `${demanda.cantidad} aparato(s) &rarr; Demanda máxima (Columna C): <b>${fmt(demanda.kwDemanda,2)} kW</b> (${fmt(demanda.vaDemanda,0)} VA)`;
+  return demanda;
+}
+document.getElementById('al255Cant').addEventListener('input', updateCocinaVivienda220_55);
+document.getElementById('al255Kw').addEventListener('input', updateCocinaVivienda220_55);
+document.getElementById('al255Metodo').addEventListener('change', updateCocinaVivienda220_55);
+document.getElementById('al255Agregar').addEventListener('click', () => {
+  const demanda = updateCocinaVivienda220_55();
+  if (!demanda) { alert('Revisa los datos: solo está implementado de 1 a 25 aparatos, mayores a 1.75 kW y hasta 12 kW.'); return; }
+  addLoadRow('Cocina vivienda (Art. 220-55)', demanda.vaDemanda, 1, false);
+});
+
+function updateCocinaComercial220_56() {
+  const cant = parseInt(document.getElementById('al256Cant').value) || 0;
+  const va = parseFloat(document.getElementById('al256Va').value) || 0;
+  const piso = parseFloat(document.getElementById('al256Piso').value) || 0;
+  const demanda = calcularDemandaCocinaComercial(cant, va, piso);
+  const el = document.getElementById('al256Resultado');
+  if (!demanda) { el.innerHTML = `<span class="hint">Captura valores válidos.</span>`; return null; }
+  el.innerHTML = `Instalada: <b>${fmt(demanda.vaInstalados,0)} VA</b> &times; ${demanda.pct}% = ${fmt(demanda.vaCalculada,0)} VA &rarr; Demanda: <b>${fmt(demanda.vaDemanda,0)} VA</b>`
+    + (demanda.pisoAplicado ? ` <span class="hint">(se aplicó el piso de la suma de las 2 cargas más grandes)</span>` : '');
+  return demanda;
+}
+document.getElementById('al256Cant').addEventListener('input', updateCocinaComercial220_56);
+document.getElementById('al256Va').addEventListener('input', updateCocinaComercial220_56);
+document.getElementById('al256Piso').addEventListener('input', updateCocinaComercial220_56);
+document.getElementById('al256Agregar').addEventListener('click', () => {
+  const demanda = updateCocinaComercial220_56();
+  if (!demanda) { alert('Captura valores válidos.'); return; }
+  addLoadRow('Cocina comercial (Art. 220-56)', demanda.vaDemanda, 1, false);
 });
 
 document.getElementById('scEnabled').addEventListener('change', (e) => {
