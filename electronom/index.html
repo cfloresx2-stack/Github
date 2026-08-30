@@ -42,6 +42,19 @@
   @media (max-width: 950px) {
     .wrap { grid-template-columns: 1fr; }
   }
+  .tabBar {
+    display: flex; gap: 4px; background: var(--navy); padding: 0 24px;
+    position: sticky; top: 0; z-index: 20; overflow-x: auto;
+  }
+  .tabBar button {
+    background: transparent; border: none; color: var(--ice);
+    padding: 13px 18px; font-size: 14px; font-weight: bold; cursor: pointer;
+    border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  .tabBar button:hover { color: var(--white); }
+  .tabBar button.tabActive { color: var(--white); border-bottom-color: var(--ice); }
+  .wrap > [data-tab] { display: none; }
+  .wrap > [data-tab].tabShown { display: block; }
   .card {
     background: var(--white);
     border: 1px solid var(--border);
@@ -309,7 +322,7 @@
   /* Vista de impresión / memoria completa */
   #printArea { display: none; }
   @media print {
-    body > header, body > .wrap > div:first-child, .memoriaSection .registryActions,
+    body > header, .tabBar, body > .wrap > div:first-child, #resultsWrap, .memoriaSection,
     table#registryTable, footer, button, .placeholder { display: none !important; }
     body > .wrap { display: block !important; }
     #printArea { display: block !important; }
@@ -325,10 +338,16 @@
   <p>Calibre de conductor · Caída de tensión · Capacidad de interruptor · Diámetro de tubería &mdash; basado en NOM-001-SEDE-2018</p>
 </header>
 
+<div class="tabBar">
+  <button type="button" data-tabbtn="calculadora" class="tabActive">Calculadora</button>
+  <button type="button" data-tabbtn="memoria">Memoria del proyecto</button>
+  <button type="button" data-tabbtn="cuadro">Cuadro de cargas</button>
+</div>
+
 <div class="wrap">
 
   <!-- ============ INPUT PANEL ============ -->
-  <div>
+  <div data-tab="calculadora" class="tabShown">
 
     <div class="card">
       <h2>1. Identificación</h2>
@@ -636,14 +655,14 @@
   </div>
 
   <!-- ============ RESULTS PANEL ============ -->
-  <div id="resultsWrap">
+  <div id="resultsWrap" data-tab="calculadora" class="tabShown">
     <div class="card">
       <div class="placeholder">Llena los datos de la izquierda y presiona <b>Calcular circuito</b> para ver el calibre de conductor, caída de tensión, capacidad de interruptor y diámetro de tubería recomendados, con la memoria de cálculo citando los artículos de la NOM-001-SEDE-2018.</div>
     </div>
   </div>
 
   <!-- ============ MEMORIA DE CIRCUITOS CALCULADOS ============ -->
-  <div class="card memoriaSection">
+  <div class="card memoriaSection" data-tab="memoria">
     <h2>Memoria de circuitos calculados <span class="hint">(registro del proyecto)</span></h2>
     <div id="registryTableWrap">
       <div class="emptyRegistry">Aún no has agregado ningún circuito a la memoria. Calcula un circuito y presiona "Agregar a la memoria" para empezar a construir el registro del proyecto.</div>
@@ -655,7 +674,7 @@
   </div>
 
   <!-- ============ CUADRO DE CARGAS ============ -->
-  <div class="card memoriaSection">
+  <div class="card memoriaSection" data-tab="cuadro">
     <h2>Cuadro de cargas por tablero <span class="hint">(reparto de fases y balanceo)</span></h2>
     <label>Modo de asignación de fase</label>
     <select id="cuadroModo">
@@ -1752,6 +1771,29 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
 });
 
 document.getElementById('cuadroModo').addEventListener('change', renderCuadroCargas);
+
+/* =========================================================================
+   PESTAÑAS: Calculadora / Memoria del proyecto / Cuadro de cargas
+   -------------------------------------------------------------------------
+   Las tres viven en el mismo grid .wrap de siempre (no se movio ni se
+   recreo nada); esto solo muestra/oculta con display:none los bloques
+   que ya existian, para no tener que scrollear por todo para llegar a
+   la memoria o al cuadro de cargas.
+   ========================================================================= */
+function activarTab(nombre) {
+  document.querySelectorAll('.wrap > [data-tab]').forEach(el => {
+    el.classList.toggle('tabShown', el.dataset.tab === nombre);
+  });
+  document.querySelectorAll('.tabBar button').forEach(btn => {
+    btn.classList.toggle('tabActive', btn.dataset.tabbtn === nombre);
+  });
+  if (nombre === 'memoria') renderRegistry();
+  if (nombre === 'cuadro') renderCuadroCargas();
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+document.querySelectorAll('.tabBar button').forEach(btn => {
+  btn.addEventListener('click', () => activarTab(btn.dataset.tabbtn));
+});
 
 renderRegistry();
 renderCuadroCargas();
