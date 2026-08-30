@@ -489,6 +489,75 @@ function calcularDemandaSecadoras(cantidad, vaPlacaPorSecadora) {
   return { cantidad, pct, vaPorSecadora, vaInstalados, vaDemanda: vaInstalados * (pct / 100) };
 }
 
+// Tabla 220-55: factores de demanda para estufas electricas domesticas,
+// hornos de pared, parrillas montadas en el mueble de cocina y otros
+// aparatos de coccion de MAS de 1.75 kW, en unidades de vivienda (tambien
+// aplica a programas educativos, Nota 5 -- mismo calculo). La Columna C es
+// el metodo por defecto (obligatorio "en todos los casos, excepto lo
+// permitido de otra forma en la Nota 3"): da la demanda MAXIMA en kW
+// directamente por cantidad de aparatos, sin importar la potencia
+// individual (mientras sea <=12 kW). La Nota 3 permite, como alternativa
+// para aparatos de mas de 1.75 kW hasta 8.75 kW, sumar la potencia nominal
+// de los aparatos y multiplicarla por el factor de la columna A (<3.5 kW)
+// o B (3.5 a 8.75 kW) segun la cantidad -- suele ser mas favorable que la
+// Columna C para aparatos individualmente pequeños.
+// Solo implementado de 1 a 25 aparatos: en el documento fuente, las filas
+// de 26 en adelante traen formulas en celdas combinadas cuyo alcance por
+// fila no se pudo verificar sin ambiguedad -- no se debe adivinar, se
+// marcan "No evaluable". Notas 1 y 2 (estufas de mas de 12 kW, o de
+// distinta capacidad nominal de mas de 8.75 kW) tampoco estan
+// implementadas por la misma razon (formulas de ajuste porcentual fuera
+// de este alcance). Nota 4 (carga del circuito derivado de UNA estufa) no
+// aplica aqui: es para el circuito derivado, no el alimentador, y ya se
+// captura directo como fila del listado de cargas del propio circuito.
+const TABLA_220_55_COL_C = {1:8,2:11,3:14,4:17,5:20,6:21,7:22,8:23,9:24,10:25,11:26,12:27,13:28,14:29,15:30,16:31,17:32,18:33,19:34,20:35,21:36,22:37,23:38,24:39,25:40};
+const TABLA_220_55_COL_A = {1:80,2:75,3:70,4:66,5:62,6:59,7:56,8:53,9:51,10:49,11:47,12:45,13:43,14:41,15:40,16:39,17:38,18:37,19:36,20:35,21:34,22:33,23:32,24:31,25:30};
+const TABLA_220_55_COL_B = {1:80,2:65,3:55,4:50,5:45,6:43,7:40,8:36,9:35,10:34,11:32,12:32,13:32,14:32,15:32,16:28,17:28,18:28,19:28,20:28,21:26,22:26,23:26,24:26,25:26};
+
+function calcularDemandaCocinaVivienda(cantidad, kwPorAparato, metodo) {
+  if (!Number.isInteger(cantidad) || cantidad < 1) return null;
+  if (!(kwPorAparato > 1.75)) {
+    return { noEvaluable: true, motivo: 'La Tabla 220-55 solo aplica a aparatos de cocción con capacidad individual mayor a 1.75 kW.' };
+  }
+  if (cantidad > 25) {
+    return { noEvaluable: true, motivo: 'Solo implementado para 1 a 25 aparatos (Tabla 220-55); más de 25 usa fórmulas no implementadas.' };
+  }
+
+  if (metodo === 'nota3') {
+    if (kwPorAparato > 8.75) {
+      return { noEvaluable: true, motivo: 'La Nota 3 (columnas A/B) solo aplica a aparatos de hasta 8.75 kW; usa la Columna C.' };
+    }
+    const columna = kwPorAparato <= 3.5 ? 'A' : 'B';
+    const pct = columna === 'A' ? TABLA_220_55_COL_A[cantidad] : TABLA_220_55_COL_B[cantidad];
+    const kwInstalados = kwPorAparato * cantidad;
+    const kwDemanda = kwInstalados * (pct / 100);
+    return { metodo: 'nota3', columna, cantidad, kwPorAparato, pct, kwInstalados, kwDemanda, vaDemanda: kwDemanda * 1000 };
+  }
+
+  if (kwPorAparato > 12) {
+    return { noEvaluable: true, motivo: 'La Columna C solo aplica hasta 12 kW por aparato (Notas 1 y 2 no están implementadas); si tu aparato mide entre 1.75 y 8.75 kW puedes usar la Nota 3.' };
+  }
+  const kwDemanda = TABLA_220_55_COL_C[cantidad];
+  return { metodo: 'colC', cantidad, kwPorAparato, kwDemanda, vaDemanda: kwDemanda * 1000 };
+}
+
+// Tabla 220-56: factor de demanda para equipos de cocina en inmuebles que
+// NO son unidades de vivienda (cocinas comerciales: equipo de coccion,
+// calentadores de agua de lavaplatos, y otros equipos de cocina
+// controlados por termostato o de uso intermitente -- NO calefaccion,
+// ventilacion ni aire acondicionado). La carga de demanda NUNCA puede ser
+// menor que la suma de las dos cargas de equipo mas grandes (piso
+// normativo explicito del Art. 220-56).
+function calcularDemandaCocinaComercial(cantidad, vaInstalados, vaDosMasGrandes) {
+  if (!Number.isInteger(cantidad) || cantidad < 1) return null;
+  if (!(vaInstalados >= 0) || !(vaDosMasGrandes >= 0)) return null;
+  const pct = cantidad === 1 ? 100 : cantidad === 2 ? 100 : cantidad === 3 ? 90 : cantidad === 4 ? 80 : cantidad === 5 ? 70 : 65;
+  const vaCalculada = vaInstalados * (pct / 100);
+  const vaDemanda = Math.max(vaCalculada, vaDosMasGrandes);
+  const pisoAplicado = vaDemanda > vaCalculada;
+  return { cantidad, pct, vaInstalados, vaCalculada, vaDosMasGrandes, vaDemanda, pisoAplicado };
+}
+
 // Tipos de sistema: define # de fases, si hay neutro/tierra y como se calculan corriente y caida de tension
 const SYSTEM_TYPES = {
   "1F-1N":     { label: "1 fase + 1 neutro (2 hilos)",                fases:1, neutro:true,  tierra:false },
