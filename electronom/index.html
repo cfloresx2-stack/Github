@@ -671,6 +671,7 @@
       <button id="generateMemoria" type="button">🖨️ Generar memoria completa (imprimir / PDF)</button>
       <button id="clearRegistry" type="button">Vaciar memoria</button>
     </div>
+    <p class="hint" style="margin-top:8px">Se abre el diálogo de impresión del navegador. Para obtener un PDF (en vez de imprimir en papel), elige <b>"Guardar como PDF"</b> en el destino/impresora — es una opción que ya trae el navegador, no hace falta nada más.</p>
   </div>
 
   <!-- ============ CUADRO DE CARGAS ============ -->
@@ -682,6 +683,8 @@
       <option value="balanceado">Balancear automáticamente — diseñar un tablero nuevo</option>
     </select>
     <p class="hint" id="cuadroModoHint" style="margin-top:6px; display:none">En este modo, la "posición" es solo una etiqueta de espacio (no indica la fase real como en el modo por posición física): la fase de cada circuito ya la decide el balanceo, mostrada en su propia columna. Cualquier posición declarada en un circuito individual se ignora aquí.</p>
+    <button id="descargarCuadroExcel" type="button" style="margin-top:10px">⬇️ Descargar cuadro de cargas (Excel)</button>
+    <p class="hint" style="margin-top:6px">Se descarga un archivo <code>.xls</code> con la tabla de cada tablero, tal como se ve abajo. Excel puede avisar que "el formato no coincide con la extensión" al abrirlo — es normal con este método (sin depender de ninguna librería externa); solo hay que aceptar el aviso.</p>
     <div id="cuadroCargasWrap" style="margin-top:12px">
       <div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el cuadro de cargas.</div>
     </div>
@@ -1771,6 +1774,70 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
 });
 
 document.getElementById('cuadroModo').addEventListener('change', renderCuadroCargas);
+
+/* =========================================================================
+   DESCARGAR CUADRO DE CARGAS EN EXCEL
+   -------------------------------------------------------------------------
+   Sin ninguna libreria: se arma una tabla HTML normal y se descarga con
+   extension .xls y tipo MIME de Excel. Excel abre HTML asi sin problema
+   (es un truco viejo y confiable), solo avisa que el formato no coincide
+   con la extension -- se acepta con un clic. La alternativa (un archivo
+   .xlsx "de verdad", sin ese aviso) requeriria una libreria como SheetJS,
+   que este proyecto evita a proposito para seguir siendo un solo archivo
+   sin dependencias.
+   ========================================================================= */
+function armarFilaExcel(f) {
+  const c = f.circuito;
+  return `<tr>
+    <td>${f.posicion}</td>
+    <td>${c.circ || ''}</td>
+    <td>${c.fases || 1}</td>
+    <td>${c.breakerA} A</td>
+    <td>${c.awg}</td>
+    <td>${fmt(c.va,0)}</td>
+    <td>${f.fases.includes('A') ? fmt(f.vaPorFase,0) : ''}</td>
+    <td>${f.fases.includes('B') ? fmt(f.vaPorFase,0) : ''}</td>
+    <td>${f.fases.includes('C') ? fmt(f.vaPorFase,0) : ''}</td>
+  </tr>`;
+}
+document.getElementById('descargarCuadroExcel').addEventListener('click', () => {
+  const reg = loadRegistry();
+  if (reg.length === 0) { alert('Agrega circuitos a la memoria antes de descargar el cuadro de cargas.'); return; }
+  const proj = document.getElementById('projName').value || 'Proyecto';
+  const modoBalanceado = document.getElementById('cuadroModo').value === 'balanceado';
+  const cuadros = modoBalanceado ? balancearCuadroDeCargas(reg) : generarCuadroDeCargas(reg);
+
+  const tablasHtml = cuadros.map(q => `
+    <h3>Tablero ${q.tablero}</h3>
+    <table border="1">
+      <thead><tr>
+        <th>CT.</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
+        <th>Carga (VA)</th><th>Fase A</th><th>Fase B</th><th>Fase C</th>
+      </tr></thead>
+      <tbody>${q.filas.map(armarFilaExcel).join('')}</tbody>
+      <tfoot><tr>
+        <td colspan="5"><b>Carga por fase (VA)</b></td>
+        <td><b>${fmt(q.totalVA,0)}</b></td><td><b>${fmt(q.cargaPorFase.A,0)}</b></td>
+        <td><b>${fmt(q.cargaPorFase.B,0)}</b></td><td><b>${fmt(q.cargaPorFase.C,0)}</b></td>
+      </tr></tfoot>
+    </table><br>`).join('');
+
+  const html = `<html><head><meta charset="UTF-8"></head><body>
+    <h2>Cuadro de cargas &mdash; ${proj}</h2>
+    <p>Modo: ${modoBalanceado ? 'Balanceado automáticamente' : 'Por posición física'}</p>
+    ${tablasHtml}
+  </body></html>`;
+
+  const blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Cuadro de cargas - ${proj}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
 /* =========================================================================
    PESTAÑAS: Calculadora / Memoria del proyecto / Cuadro de cargas
