@@ -1522,7 +1522,7 @@ function renderCuadroCargas() {
           ${modoBalanceado
             ? `<br>La fase de cada circuito la elige el <b>balanceo automático</b>: se ordenan de mayor a menor VA y cada uno cae en la fase (o par/terna de fases) con menos carga acumulada hasta ese momento. La posición mostrada es solo una etiqueta de espacio, no indica la fase.`
             : `<br>La fase de cada circuito la define su <b>posición física</b> en el tablero: las barras alternan por pares de espacios (1 y 2 → A, 3 y 4 → B, 5 y 6 → C, 7 y 8 → A…), así que un interruptor de varios polos cae en fases consecutivas. Si no capturaste la posición, se asignan espacios impares en orden.`}
-          <br>El porcentaje de desbalance es un indicador de buena práctica: la NOM no fija un máximo.
+          <br>La NOM exige <b>reportar</b> el porcentaje de desbalance entre fases en el cuadro de cargas del proyecto eléctrico (Apéndice, numeral 7.1, sección II), pero no fija un máximo permitido para cargas de tablero — los colores de esta insignia (≤5% / ≤15% / mayor) son criterio propio de la herramienta, no un límite normativo.
         </p>
 
         <details style="margin-top:8px">
