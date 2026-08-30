@@ -1310,6 +1310,11 @@ function render(data) {
     formSnapshot: capturarFormSnapshot(),
   };
   document.getElementById('addToMemoria').addEventListener('click', addToMemoria);
+
+  // El boton "Calcular circuito" queda al final de un formulario largo; sin
+  // esto, el resultado aparece arriba, fuera de la pantalla, y parece que
+  // el boton no hizo nada.
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* =========================================================================
