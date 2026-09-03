@@ -363,7 +363,8 @@
 
     <div class="card">
       <h2>1. Identificación</h2>
-      <label>Nombre del proyecto</label>
+      <p class="hint">Cada vez que capturas y presionas "Calcular circuito" estás definiendo <b>UN circuito</b> (un interruptor). Si el tablero tiene circuitos de distinto tipo (monofásicos, bifásicos, trifásicos), captura cada uno por separado con el <b>mismo nombre de tablero</b> — el Cuadro de Cargas los combina automáticamente, sin importar cuántos polos tenga cada uno.</p>
+      <label style="margin-top:10px">Nombre del proyecto</label>
       <input type="text" id="projName" placeholder="Ej. Nave Industrial Sabritas">
       <div class="row2">
         <div>
@@ -431,7 +432,7 @@
       <label style="margin-top:16px">Factor de demanda <span class="hint">(opcional, 0.1–1; reduce la carga instalada a demanda real antes de calcular la corriente)</span></label>
       <input type="number" id="demandFactor" value="1" step="0.05" min="0.1" max="1">
 
-      <label style="margin-top:16px">Listado de cargas <span class="hint" id="loadListHint">(en modo motor: agrega una fila con la carga del motor)</span></label>
+      <label style="margin-top:16px">Listado de cargas <span class="hint" id="loadListHint">(todo lo que agregues aquí, incluido lo que sumes desde los ayudantes de abajo, se suma en ESTE circuito)</span></label>
       <table id="loadsTable">
         <thead><tr><th>Nombre de la carga</th><th>W</th><th>FP</th><th>¿Cont.?</th><th></th></tr></thead>
         <tbody id="loadsBody"></tbody>
@@ -584,6 +585,17 @@
         <label for="terminalMarcada">El equipo está aprobado y marcado para conductores de 75 °C <span class="hint">(revisar la placa del tablero/interruptor)</span></label>
       </div>
       <p class="hint" style="margin-top:8px">Art. 110-14(c): si no está marcado, la ampacidad de un circuito de <b>100 A o menos</b> se debe basar en la columna de <b>60 °C</b>, y la de uno mayor a 100 A en la de <b>75 °C</b>, sin importar que el conductor sea de 90 °C. El aislamiento de arriba solo determina sobre qué columna se aplican los factores de corrección.</p>
+
+      <label style="margin-top:16px">Calibre mínimo a usar <span class="hint">(opcional; convención propia, NO un requisito de la norma — la NOM permite hasta 14 AWG en circuitos de 15 A, Art. 240-4(d))</span></label>
+      <select id="calibreMinimo">
+        <option value="">Sin mínimo (usa el que dé el cálculo por ampacidad)</option>
+        <option value="14">14 AWG</option>
+        <option value="12">12 AWG</option>
+        <option value="10">10 AWG</option>
+        <option value="8">8 AWG</option>
+        <option value="6">6 AWG</option>
+      </select>
+      <p class="hint" style="margin-top:6px">Si el cálculo por ampacidad da un calibre menor a este mínimo, se sube al mínimo declarado (por ejemplo, para no bajar nunca de 12 AWG por costumbre de oficina). No afecta el cálculo del interruptor: sigue limitado por la Tabla 240-4(d) según el calibre final.</p>
 
       <div class="row2">
         <div>
@@ -758,6 +770,40 @@
     </div>
     <button id="descargarDiagramaCsv" type="button" style="margin-top:12px">⬇️ Descargar datos del diagrama (CSV)</button>
     <p class="hint" style="margin-top:6px">Lista de tablero origen → tablero destino, con el alimentador, calibre, tierra, interruptor y canalización de cada tramo — útil como base para redibujar el plano final en AutoCAD u otro programa de dibujo.</p>
+
+    <details style="margin-top:16px">
+      <summary>Verificar cortocircuito de todos los tableros (opcional)</summary>
+      <div class="checkline" style="margin-top:10px">
+        <input type="checkbox" id="ccArbolEnabled">
+        <label for="ccArbolEnabled">Calcular la falla disponible en cada tablero y verificar la capacidad interruptiva (Art. 110-9)</label>
+      </div>
+      <p class="hint" style="margin-top:6px">Declara los datos del transformador UNA sola vez (no hace falta repetirlos circuito por circuito): se calcula la falla en el tablero raíz y se va reduciendo tablero por tablero según la impedancia real del alimentador que los conecta (mismo árbol del diagrama de arriba).</p>
+      <div id="ccArbolPanel" style="display:none">
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Transformador <span class="hint">(kVA)</span></label>
+            <input type="number" id="ccArbolKva" value="500" step="1" min="1">
+          </div>
+          <div>
+            <label>Impedancia %Z <span class="hint">(placa)</span></label>
+            <input type="number" id="ccArbolZ" value="5" step="0.05" min="0.5" max="20">
+          </div>
+        </div>
+        <div class="row2">
+          <div>
+            <label>Tensión del secundario <span class="hint">(V, línea a línea)</span></label>
+            <input type="number" id="ccArbolVoltage" value="220" step="1" min="1">
+          </div>
+          <div>
+            <label>Impedancia de la fuente <span class="hint">(pu, 0 = conservador)</span></label>
+            <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
+          </div>
+        </div>
+        <div id="ccArbolAdvertencias" style="margin-top:8px"></div>
+        <div id="ccArbolResultado" style="margin-top:8px"></div>
+        <p class="hint" style="margin-top:8px">Falla trifásica simétrica, método por unidad — mismo cálculo y mismas limitaciones que la sección 5 de la Calculadora (no resuelve redes en malla, no calcula falla línea-tierra). La capacidad interruptiva se declara por tablero porque normalmente todos los interruptores de un mismo tablero son de la misma marca/marco.</p>
+      </div>
+    </details>
   </div>
 
 </div>
@@ -902,7 +948,7 @@ function capturarFormSnapshot() {
     isMotor: chk('isMotor'), motorDevice: val('motorDevice'),
     voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
     loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
-    material: val('material'), insulType: val('insulType'), lugarMojado: chk('lugarMojado'),
+    material: val('material'), insulType: val('insulType'), calibreMinimo: val('calibreMinimo'), lugarMojado: chk('lugarMojado'),
     terminalMarcada: chk('terminalMarcada'), ambient: val('ambient'), nParalelo: val('nParalelo'),
     installMethod: val('installMethod'), chCubierta: chk('chCubierta'), chCapaUnica: chk('chCapaUnica'),
     length: val('length'), conduitType: val('conduitType'),
@@ -938,7 +984,7 @@ function restaurarFormSnapshot(s) {
   document.getElementById('loadsBody').innerHTML = '';
   (s.loads || []).forEach(l => addLoadRow(l.name, l.watts, l.fp, l.cont));
 
-  setVal('material', s.material); setVal('insulType', s.insulType);
+  setVal('material', s.material); setVal('insulType', s.insulType); setVal('calibreMinimo', s.calibreMinimo || '');
   setChk('lugarMojado', s.lugarMojado); setChk('terminalMarcada', s.terminalMarcada);
   setVal('ambient', s.ambient); setVal('nParalelo', s.nParalelo);
   setVal('installMethod', s.installMethod); setChk('chCubierta', s.chCubierta); setChk('chCapaUnica', s.chCapaUnica);
@@ -1171,7 +1217,7 @@ document.getElementById('isMotor').addEventListener('change', (e) => {
   document.getElementById('motorPanel').style.display = e.target.checked ? 'block' : 'none';
   document.getElementById('loadListHint').textContent = e.target.checked
     ? '(modo motor: agrega UNA fila con la potencia (W) y FP del motor — se usará como corriente a plena carga, FLC)'
-    : '(agrega todas las cargas de este circuito: potencia en W, FP y si son continuas)';
+    : '(todo lo que agregues aquí, incluido lo que sumes desde los ayudantes de abajo, se suma en ESTE circuito)';
 });
 
 
@@ -1519,7 +1565,32 @@ document.getElementById('calc').addEventListener('click', () => {
   // solo necesita llevar 1/nParalelo de la ampacidad requerida total.
   const requiredAmpacityPorConductor = requiredAmpacity / nParalelo;
   const esCharola = installMethod === 'charola';
-  const calibreIni = esCharola
+
+  // Recalcula las propiedades de ampacidad de un AWG especifico (misma regla
+  // de dos pasos que calcularCalibre/calcularCalibreCharola), sin volver a
+  // buscar el minimo por ampacidad -- se usa tanto para el piso opcional de
+  // calibre minimo como para el bucle de caida de tension de abajo.
+  function calibreEnAwg(awgObjetivo) {
+    if (esCharola) {
+      return calibreCharolaPorAwg(awgObjetivo, material, insulTemp, terminalTemp, ambient, chCubierta, chCapaUnica, requiredAmpacityPorConductor);
+    }
+    const row = AMPACITY_TABLE.find(r => r.awg === awgObjetivo);
+    if (!row) return null;
+    const baseAmp = row[(material === 'cu' ? 'cu' : 'al') + insulTemp];
+    if (baseAmp === null || baseAmp === undefined) return null;
+    const limitAmp = row[(material === 'cu' ? 'cu' : 'al') + terminalTemp];
+    const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
+    const groupPct = lookupGroupingPct(sys.currentCarrying);
+    const correctedAmp = baseAmp * tempFactor * (groupPct/100);
+    const limitadaPorTerminal = limitAmp != null && limitAmp < correctedAmp;
+    return {
+      awg: awgObjetivo, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct,
+      correctedAmp, limitAmp, usableAmp: limitadaPorTerminal ? limitAmp : correctedAmp,
+      limitadaPorTerminal, terminalTemp, requiredAmpacity: requiredAmpacityPorConductor,
+    };
+  }
+
+  let calibreIni = esCharola
     ? calcularCalibreCharola(requiredAmpacityPorConductor, material, insulTemp, terminalTemp, ambient, chCubierta, chCapaUnica)
     : calcularCalibre(requiredAmpacityPorConductor, material, insulTemp, ambient, sys.currentCarrying, terminalTemp);
   if (!calibreIni) {
@@ -1529,6 +1600,16 @@ document.getElementById('calc').addEventListener('click', () => {
     return;
   }
 
+  // Piso opcional de calibre minimo (convencion propia del usuario, NO un
+  // requisito de la norma -- el minimo normativo ya lo aplica calcularCalibre
+  // por ampacidad, Art. 240-4(d)). Si el calculo por ampacidad da un calibre
+  // menor al declarado, se sube antes de evaluar caida de tension.
+  const calibreMinimo = document.getElementById('calibreMinimo').value;
+  if (calibreMinimo && AWG_ORDER.indexOf(calibreIni.awg) < AWG_ORDER.indexOf(calibreMinimo)) {
+    const forzado = calibreEnAwg(calibreMinimo);
+    if (forzado) calibreIni = forzado;
+  }
+
   // B: caida de tension, sube de calibre si excede 3% (solo cobre, rango de Tabla 9)
   let calibreFinal = calibreIni;
   let vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD, nParalelo);
@@ -1536,27 +1617,9 @@ document.getElementById('calc').addEventListener('click', () => {
     let idx = AWG_ORDER.indexOf(calibreFinal.awg);
     while (vd && vd.dropPct > 3 && idx < AWG_ORDER.length - 1) {
       idx++;
-      const nextAwg = AWG_ORDER[idx];
-      if (esCharola) {
-        const c = calibreCharolaPorAwg(nextAwg, material, insulTemp, terminalTemp, ambient, chCubierta, chCapaUnica, requiredAmpacityPorConductor);
-        if (!c) continue;
-        calibreFinal = c;
-      } else {
-        // Se recalcula con la misma regla de dos pasos que calcularCalibre
-        const row = AMPACITY_TABLE.find(r => r.awg === nextAwg);
-        const baseAmp = row[(material === 'cu' ? 'cu' : 'al') + insulTemp];
-        if (baseAmp === null || baseAmp === undefined) continue;
-        const limitAmp = row[(material === 'cu' ? 'cu' : 'al') + terminalTemp];
-        const tempFactor = lookupTempFactor(ambient, "f" + insulTemp) ?? 1;
-        const groupPct = lookupGroupingPct(sys.currentCarrying);
-        const correctedAmp = baseAmp * tempFactor * (groupPct/100);
-        const limitadaPorTerminal = limitAmp != null && limitAmp < correctedAmp;
-        calibreFinal = {
-          awg: nextAwg, mm2: row.mm2, baseAmp, tempFactor, groupFactor: groupPct/100, groupPct,
-          correctedAmp, limitAmp, usableAmp: limitadaPorTerminal ? limitAmp : correctedAmp,
-          limitadaPorTerminal, terminalTemp, requiredAmpacity: requiredAmpacityPorConductor,
-        };
-      }
+      const c = calibreEnAwg(AWG_ORDER[idx]);
+      if (!c) continue;
+      calibreFinal = c;
       vd = calcularCaidaTension(calibreFinal.awg, current, length, voltage, sys.vdFactor, fpVD, nParalelo);
     }
   }
@@ -1655,6 +1718,7 @@ function addToMemoria() {
   renderRegistry();
   renderCuadroCargas();
   renderDiagramaUnifilar();
+  renderCortocircuitoArbol();
   const btn = document.getElementById('addToMemoria');
   btn.textContent = "✓ Agregado a la memoria del proyecto";
   btn.disabled = true;
@@ -1879,6 +1943,24 @@ function renderDiagramaSVG(layout, infoPorDestino) {
   </svg>`;
 }
 
+// Reconstruye, a partir del registro, la lista de tableros y de alimentadores
+// con destino declarado -- lo que necesitan tanto el diagrama unifilar como
+// la verificacion de cortocircuito en cascada (comparten el mismo arbol).
+// lengthM/nParalelo salen del formSnapshot (no se guardan sueltos en el
+// registro); si el circuito es de antes de esa funcionalidad, quedan en 0/1.
+function obtenerTablerosYAlimentadores(reg) {
+  const tableros = [...new Set(reg.map(r => r.board).filter(Boolean))];
+  const alimentadores = reg
+    .filter(r => r.circuitKindLabel === 'Alimentador' && r.destino)
+    .map(r => ({
+      origen: r.board, destino: r.destino, etiqueta: r.circ || 'Alimentador',
+      awg: r.awg, awgTierra: r.awgTierra, breakerA: r.breakerA, conduitTrade: r.conduitTrade, conduitName: r.conduitName,
+      lengthM: r.formSnapshot ? (parseFloat(r.formSnapshot.length) || 0) : 0,
+      nParalelo: r.formSnapshot ? (parseInt(r.formSnapshot.nParalelo) || 1) : 1,
+    }));
+  return { tableros, alimentadores };
+}
+
 function renderDiagramaUnifilar() {
   const reg = loadRegistry();
   const wrap = document.getElementById('diagramaWrap');
@@ -1890,10 +1972,7 @@ function renderDiagramaUnifilar() {
     return;
   }
 
-  const tableros = [...new Set(reg.map(r => r.board).filter(Boolean))];
-  const alimentadores = reg
-    .filter(r => r.circuitKindLabel === 'Alimentador' && r.destino)
-    .map(r => ({ origen: r.board, destino: r.destino, etiqueta: r.circ || 'Alimentador', awg: r.awg, awgTierra: r.awgTierra, breakerA: r.breakerA, conduitTrade: r.conduitTrade, conduitName: r.conduitName }));
+  const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
 
   if (alimentadores.length === 0) {
     wrap.innerHTML = `<div class="emptyRegistry">Ningún alimentador capturado tiene un tablero destino declarado todavía. Edita un circuito tipo "Alimentador" y llena el campo "Tablero que alimenta este alimentador" (sección 1 de la Calculadora) para que aparezca aquí.</div>`;
@@ -1911,6 +1990,100 @@ function renderDiagramaUnifilar() {
 
   wrap.innerHTML = renderDiagramaSVG(layout, infoPorDestino);
 }
+
+/* =========================================================================
+   CORTOCIRCUITO DE TODOS LOS TABLEROS (verificacion al final, en cascada)
+   -------------------------------------------------------------------------
+   Responde al caso que senalo Cesar: la seccion 5 (Cortocircuito) de la
+   Calculadora pide el kVA del transformador POR CIRCUITO, pero en la
+   practica no se conoce el transformador definitivo hasta tener la carga
+   total. Aqui se declara UNA sola vez y se verifica TODOS los tableros de
+   un jalon, reutilizando el mismo arbol del diagrama unifilar (por eso
+   necesita los mismos datos: alimentadores con tablero destino declarado).
+   La capacidad interruptiva SI se declara por tablero (normalmente todos
+   los interruptores de un mismo tablero son de la misma marca/marco).
+   ========================================================================= */
+function renderCortocircuitoArbol() {
+  const reg = loadRegistry();
+  const wrap = document.getElementById('ccArbolResultado');
+  const avisos = document.getElementById('ccArbolAdvertencias');
+  avisos.innerHTML = '';
+
+  if (reg.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para verificar cortocircuito.</div>`;
+    return;
+  }
+
+  const kva = parseFloat(document.getElementById('ccArbolKva').value) || 0;
+  const zPct = parseFloat(document.getElementById('ccArbolZ').value) || 0;
+  const voltage = parseFloat(document.getElementById('ccArbolVoltage').value) || 0;
+  const zSourcePu = parseFloat(document.getElementById('ccArbolZsource').value) || 0;
+  if (!(kva > 0) || !(zPct > 0) || !(voltage > 0)) {
+    wrap.innerHTML = `<div class="emptyRegistry">Captura los datos del transformador (kVA, %Z y tensión) para calcular.</div>`;
+    return;
+  }
+
+  const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
+  if (tableros.length === 0) {
+    wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para verificar cortocircuito.</div>`;
+    return;
+  }
+
+  const { arbol, advertencias: advArbol } = construirArbolDiagrama(tableros, alimentadores);
+  const { resultados, advertencias: advCc } = calcularCortocircuitoArbol(arbol, alimentadores, { kva, zPct, zSourcePu, voltage });
+
+  const todasAdvertencias = [...advArbol, ...advCc];
+  if (todasAdvertencias.length) {
+    avisos.innerHTML = `<p class="hint" style="color:var(--warn)">${todasAdvertencias.map(a => '⚠ ' + a).join('<br>')}</p>`;
+  }
+
+  const filas = Object.entries(resultados)
+    .sort((a, b) => a[1].profundidad - b[1].profundidad || a[0].localeCompare(b[0]))
+    .map(([nombre, r]) => {
+      const slug = 'ccArbol' + (nombre.replace(/[^a-zA-Z0-9]/g, '') || 'x');
+      return { nombre, iccKA: r.iccKA, slug };
+    });
+
+  wrap.innerHTML = `
+    <table class="printTable">
+      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th></tr></thead>
+      <tbody>${filas.map(f => `
+        <tr>
+          <td>${f.nombre}</td>
+          <td>${fmt(f.iccKA, 2)} kA</td>
+          <td><select id="${f.slug}Icu"></select></td>
+          <td id="${f.slug}Badge"></td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+
+  filas.forEach(f => {
+    const sel = document.getElementById(`${f.slug}Icu`);
+    INTERRUPTING_CAPACITIES_KA.forEach(ka => {
+      const o = document.createElement('option');
+      o.value = ka; o.textContent = `${ka} kA`;
+      sel.appendChild(o);
+    });
+    function actualizar() {
+      const icu = parseFloat(sel.value) || 0;
+      const cumple = icu >= f.iccKA;
+      document.getElementById(`${f.slug}Badge`).innerHTML = cumple
+        ? `<span class="badge ok">Cumple Art. 110-9</span>`
+        : `<span class="badge warn">NO CUMPLE</span>`;
+    }
+    sel.addEventListener('change', actualizar);
+    // Selecciona el primer valor de catalogo que ya cumple, como sugerencia inicial
+    const sugerido = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= f.iccKA);
+    if (sugerido) sel.value = sugerido;
+    actualizar();
+  });
+}
+document.getElementById('ccArbolEnabled').addEventListener('change', (e) => {
+  document.getElementById('ccArbolPanel').style.display = e.target.checked ? 'block' : 'none';
+  if (e.target.checked) renderCortocircuitoArbol();
+});
+['ccArbolKva','ccArbolZ','ccArbolVoltage','ccArbolZsource'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderCortocircuitoArbol);
+});
 
 document.getElementById('descargarDiagramaCsv').addEventListener('click', () => {
   const reg = loadRegistry();
@@ -1943,6 +2116,7 @@ function removeFromRegistry(id) {
   renderRegistry();
   renderCuadroCargas();
   renderDiagramaUnifilar();
+  renderCortocircuitoArbol();
 }
 
 document.getElementById('clearRegistry').addEventListener('click', () => {
@@ -1952,6 +2126,7 @@ document.getElementById('clearRegistry').addEventListener('click', () => {
     renderRegistry();
     renderCuadroCargas();
     renderDiagramaUnifilar();
+    renderCortocircuitoArbol();
   }
 });
 
@@ -2086,7 +2261,7 @@ function activarTab(nombre) {
   });
   if (nombre === 'memoria') renderRegistry();
   if (nombre === 'cuadro') renderCuadroCargas();
-  if (nombre === 'diagrama') renderDiagramaUnifilar();
+  if (nombre === 'diagrama') { renderDiagramaUnifilar(); renderCortocircuitoArbol(); }
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 document.querySelectorAll('.tabBar button').forEach(btn => {
@@ -2109,6 +2284,7 @@ actualizarAvisoTabBar();
 renderRegistry();
 renderCuadroCargas();
 renderDiagramaUnifilar();
+renderCortocircuitoArbol();
 </script>
 
 </body>

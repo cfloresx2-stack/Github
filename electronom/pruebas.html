@@ -1008,6 +1008,52 @@ grupo("Diagrama unifilar — layout geométrico", () => {
   esCerca(p2("TP").x, (p2("A").x + p2("B").x) / 2, 1e-9, "El padre queda centrado sobre sus dos hijos");
 });
 
+grupo("Cortocircuito en cascada por el árbol del diagrama", () => {
+  const transformador = { kva: 300, zPct: 4.79, zSourcePu: 0, voltage: 220 };
+
+  // Un solo tablero raiz, sin hijos: debe coincidir EXACTO con iccTrafo de
+  // calcularCortocircuito para el mismo transformador (mismo caso, sin conductor)
+  const { arbol: raizSola } = construirArbolDiagrama(["TP"], []);
+  const rSola = calcularCortocircuitoArbol(raizSola, [], transformador);
+  const directo = calcularCortocircuito({ ...transformador, awg: null, lengthM: 0, nParalelo: 1 });
+  esCerca(rSola.resultados["TP"].iccKA, directo.iccTrafo / 1000, 1e-9,
+    "Falla en el tablero raiz (sin hijos) coincide con iccTrafo de calcularCortocircuito");
+
+  // Raiz -> un hijo con alimentador real: debe coincidir con iccCarga de
+  // calcularCortocircuito para ESE mismo alimentador (misma formula, aplicada en cascada)
+  const alimentadores = [ { destino:"B", awg:"8", lengthM:10, nParalelo:1 } ];
+  const { arbol: cadena } = construirArbolDiagrama(["TP","B"], [ { origen:"TP", destino:"B", etiqueta:"Alim-B" } ]);
+  const rCadena = calcularCortocircuitoArbol(cadena, alimentadores, transformador);
+  const directoConductor = calcularCortocircuito({ ...transformador, awg:"8", lengthM:10, nParalelo:1 });
+  esCerca(rCadena.resultados["TP"].iccKA, directoConductor.iccTrafo / 1000, 1e-9, "Falla en TP (raiz) no cambia por tener hijos");
+  esCerca(rCadena.resultados["B"].iccKA, directoConductor.iccCarga / 1000, 1e-9,
+    "Falla en B coincide con iccCarga de calcularCortocircuito para el mismo alimentador (8 AWG, 10 m)");
+  esCierto(rCadena.resultados["B"].iccKA < rCadena.resultados["TP"].iccKA, "La falla se reduce al bajar un nivel (mas impedancia)");
+  esIgual(rCadena.advertencias.length, 0, "Sin advertencias cuando el alimentador trae calibre y longitud");
+
+  // Cascada de 2 niveles: la falla debe seguir bajando monotonamente
+  const alimentadores2 = [
+    { destino:"B", awg:"4", lengthM:45, nParalelo:1 },
+    { destino:"B1", awg:"10", lengthM:20, nParalelo:1 },
+  ];
+  const { arbol: cadena2 } = construirArbolDiagrama(
+    ["TP","B","B1"],
+    [ { origen:"TP", destino:"B", etiqueta:"Alim-B" }, { origen:"B", destino:"B1", etiqueta:"Alim-B1" } ]
+  );
+  const rCadena2 = calcularCortocircuitoArbol(cadena2, alimentadores2, transformador);
+  esCierto(rCadena2.resultados["B1"].iccKA < rCadena2.resultados["B"].iccKA, "B1 (2 niveles) tiene menos falla que B (1 nivel)");
+  esCierto(rCadena2.resultados["B"].iccKA < rCadena2.resultados["TP"].iccKA, "B tiene menos falla que TP (raiz)");
+
+  // Alimentador sin longitud declarada: no se adivina, se usa el mismo valor
+  // del tablero de origen (conservador) y se marca con advertencia
+  const sinDatos = [ { destino:"B", awg:null, lengthM:0, nParalelo:1 } ];
+  const { arbol: cadenaSinDatos } = construirArbolDiagrama(["TP","B"], [ { origen:"TP", destino:"B", etiqueta:"Alim-B" } ]);
+  const rSinDatos = calcularCortocircuitoArbol(cadenaSinDatos, sinDatos, transformador);
+  esCerca(rSinDatos.resultados["B"].iccKA, rSinDatos.resultados["TP"].iccKA, 1e-9,
+    "Sin calibre/longitud declarados, B usa la misma falla que TP (conservador, sin reducir)");
+  esIgual(rSinDatos.advertencias.length, 1, "Se advierte la falta de datos del alimentador");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
