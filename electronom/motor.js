@@ -925,6 +925,68 @@ function calcularCortocircuito({ kva, zPct, voltage, zSourcePu, awg, lengthM, nP
 }
 
 /* =========================================================================
+   CORTOCIRCUITO DE TODOS LOS TABLEROS, EN CASCADA POR EL ARBOL DEL DIAGRAMA
+   -------------------------------------------------------------------------
+   Extiende calcularCortocircuito para verificar TODOS los interruptores de
+   un proyecto en una sola pasada, en vez de repetir los datos del
+   transformador circuito por circuito. Usa el mismo arbol que arma el
+   diagrama unifilar (construirArbolDiagrama): parte de la falla en el
+   secundario del transformador en cada tablero RAIZ, y la va reduciendo
+   tablero por tablero segun la impedancia real (Tabla 9) del alimentador
+   que los conecta -- exactamente la misma logica de "iccCarga" que ya usa
+   calcularCortocircuito para un solo circuito, aplicada en cascada.
+
+   arbol: el arbol de construirArbolDiagrama.
+   alimentadoresInfo: array de { destino, awg, lengthM, nParalelo } -- los
+   mismos alimentadores usados para armar el arbol, con los datos de
+   conductor necesarios para reducir la falla.
+   transformador: { kva, zPct, zSourcePu, voltage } (voltage = tension de
+   linea a linea en el secundario, la misma para todo el sistema en esta
+   version).
+
+   Si a un alimentador le falta calibre o longitud (circuitos capturados
+   antes de tener ese dato, o el campo se dejo vacio), NO se adivina: se
+   usa el mismo valor de falla del tablero de origen (sin reduccion, el
+   caso conservador) y se marca en advertencias.
+   ========================================================================= */
+function calcularCortocircuitoArbol(arbol, alimentadoresInfo, transformador) {
+  const { kva, zPct, zSourcePu, voltage } = transformador;
+  const sBase = kva * 1000;
+  const iBase = sBase / (Math.sqrt(3) * voltage);
+  const zBase = (voltage * voltage) / sBase;
+  const zTotalPu0 = (zSourcePu || 0) + zPct / 100;
+
+  const infoPorDestino = {};
+  (alimentadoresInfo || []).forEach(a => { if (a && a.destino) infoPorDestino[a.destino] = a; });
+
+  const resultados = {};
+  const advertencias = [];
+
+  function visitar(nodo, zAcumuladaPu, profundidad) {
+    const iccA = iBase / zAcumuladaPu;
+    resultados[nodo.nombre] = { iccKA: iccA / 1000, zAcumuladaPu, profundidad };
+
+    nodo.hijos.forEach(hijo => {
+      const info = infoPorDestino[hijo.nombre];
+      let zHijoPu = zAcumuladaPu;
+      const t9 = info && info.awg ? TABLE9_PVC_CU[info.awg] : null;
+
+      if (info && t9 && info.lengthM > 0) {
+        const n = info.nParalelo || 1;
+        const zCondOhms = (Math.sqrt(t9.r * t9.r + t9.xl * t9.xl) * (info.lengthM / 1000)) / n;
+        zHijoPu = zAcumuladaPu + (zCondOhms / zBase);
+      } else {
+        advertencias.push(`Falta calibre o longitud del alimentador hacia "${hijo.nombre}" -- se usa la misma falla del tablero de origen, sin reducir (conservador).`);
+      }
+      visitar(hijo, zHijoPu, profundidad + 1);
+    });
+  }
+  (arbol || []).forEach(raiz => visitar(raiz, zTotalPu0, 0));
+
+  return { resultados, advertencias, iBase, zBase, sBase };
+}
+
+/* =========================================================================
    VERIFICACION TERMICA DEL CONDUCTOR ANTE CORTOCIRCUITO (I²t adiabático)
    -------------------------------------------------------------------------
    Formula de Onderdonk / ICEA P-32-382 (tambien en IEEE Std 242): area minima
