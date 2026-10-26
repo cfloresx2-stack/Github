@@ -584,6 +584,10 @@
         <input type="checkbox" id="terminalMarcada">
         <label for="terminalMarcada">El equipo está aprobado y marcado para conductores de 75 °C <span class="hint">(revisar la placa del tablero/interruptor)</span></label>
       </div>
+      <div class="checkline">
+        <input type="checkbox" id="neutroNoCuenta">
+        <label for="neutroNoCuenta">El neutro NO cuenta como conductor portador de corriente <span class="hint">(sistemas 3F con neutro: carga balanceada y sin armónicas relevantes, Art. 310-15(b)(5)(a). Por defecto el neutro sí se cuenta, que es lo conservador)</span></label>
+      </div>
       <p class="hint" style="margin-top:8px">Art. 110-14(c): si no está marcado, la ampacidad de un circuito de <b>100 A o menos</b> se debe basar en la columna de <b>60 °C</b>, y la de uno mayor a 100 A en la de <b>75 °C</b>, sin importar que el conductor sea de 90 °C. El aislamiento de arriba solo determina sobre qué columna se aplican los factores de corrección.</p>
 
       <label style="margin-top:16px">Calibre mínimo a usar <span class="hint">(opcional; convención propia, NO un requisito de la norma — la NOM permite hasta 14 AWG en circuitos de 15 A, Art. 240-4(d))</span></label>
@@ -740,7 +744,11 @@
     <div class="registryActions">
       <button id="generateMemoria" type="button">🖨️ Generar memoria completa (imprimir / PDF)</button>
       <button id="clearRegistry" type="button">Vaciar memoria</button>
+      <button id="exportarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">💾 Guardar proyecto (archivo)</button>
+      <button id="importarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">📂 Cargar proyecto (archivo)</button>
+      <input type="file" id="importarProyectoArchivo" accept=".json,application/json" style="display:none">
     </div>
+    <p class="hint" style="margin-top:8px">"Guardar proyecto" descarga un archivo con los datos de captura de todos los circuitos de la memoria (para respaldarlos o pasarlos a otra computadora). "Cargar proyecto" los vuelve a calcular uno por uno con el motor actual y los agrega a la memoria.</p>
     <p class="hint" style="margin-top:8px">Se abre el diálogo de impresión del navegador. Para obtener un PDF (en vez de imprimir en papel), elige <b>"Guardar como PDF"</b> en el destino/impresora — es una opción que ya trae el navegador, no hace falta nada más.</p>
   </div>
 
@@ -949,7 +957,7 @@ function capturarFormSnapshot() {
     voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
     loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
     material: val('material'), insulType: val('insulType'), calibreMinimo: val('calibreMinimo'), lugarMojado: chk('lugarMojado'),
-    terminalMarcada: chk('terminalMarcada'), ambient: val('ambient'), nParalelo: val('nParalelo'),
+    terminalMarcada: chk('terminalMarcada'), neutroNoCuenta: chk('neutroNoCuenta'), ambient: val('ambient'), nParalelo: val('nParalelo'),
     installMethod: val('installMethod'), chCubierta: chk('chCubierta'), chCapaUnica: chk('chCapaUnica'),
     length: val('length'), conduitType: val('conduitType'),
     scEnabled: chk('scEnabled'), scKva: val('scKva'), scZ: val('scZ'), scIcu: val('scIcu'),
@@ -985,7 +993,7 @@ function restaurarFormSnapshot(s) {
   (s.loads || []).forEach(l => addLoadRow(l.name, l.watts, l.fp, l.cont));
 
   setVal('material', s.material); setVal('insulType', s.insulType); setVal('calibreMinimo', s.calibreMinimo || '');
-  setChk('lugarMojado', s.lugarMojado); setChk('terminalMarcada', s.terminalMarcada);
+  setChk('lugarMojado', s.lugarMojado); setChk('terminalMarcada', s.terminalMarcada); setChk('neutroNoCuenta', !!s.neutroNoCuenta);
   setVal('ambient', s.ambient); setVal('nParalelo', s.nParalelo);
   setVal('installMethod', s.installMethod); setChk('chCubierta', s.chCubierta); setChk('chCapaUnica', s.chCapaUnica);
   setVal('length', s.length); setVal('conduitType', s.conduitType);
@@ -1276,6 +1284,7 @@ function render(data) {
         ${motor
           ? `Corriente a plena carga (FLC) estimada de la lista de cargas: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
           : `Corriente total del circuito (lista de cargas${input.demandFactor < 1 ? ', ya con demanda aplicada' : ''}): <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = no continua + 125% &times; continua = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 210-19).`}
+        ${input.requiredAmpacityConductor > input.requiredAmpacity ? `<br><b>Arriba de 800 A</b> (Art. 240-4(b)): el interruptor estándar inmediato superior (${fmt(input.requiredAmpacityConductor,0)} A) no se puede usar sobre un conductor de menor ampacidad, así que el conductor se dimensiona para ${fmt(input.requiredAmpacityConductor,0)} A en lugar de ${fmt(input.requiredAmpacity,2)} A.` : ""}
         ${input.nParalelo > 1 ? `<br><b>${input.nParalelo} conductores en paralelo por fase</b> (Art. 310-10(h)): cada conductor debe llevar 1/${input.nParalelo} de la corriente total &rarr; ampacidad requerida por conductor = ${fmt(input.requiredAmpacity,2)} &divide; ${input.nParalelo} = <b>${fmt(input.requiredAmpacityPorConductor,2)} A</b>. Deben ser del mismo material, calibre, aislamiento, longitud y terminación.` : ""}
         <br>
         Aislamiento <b>${input.insulType}</b> en lugar ${input.lugarMojado ? 'mojado' : 'seco'} &rarr; columna de <b>${input.insulTemp} °C</b> (Tabla 310-104(a)).
@@ -1516,6 +1525,9 @@ document.getElementById('calc').addEventListener('click', () => {
 
   const systemKey = document.getElementById('systemType').value;
   const sys = systemMeta(systemKey);
+  // Art. 310-15(b)(5)(a): en un sistema trifasico con neutro, el neutro que solo lleva la
+  // corriente de desbalance no se cuenta para el ajuste por agrupamiento. Es opcion del usuario.
+  if (document.getElementById('neutroNoCuenta').checked && sys.neutro && sys.fases === 3) sys.currentCarrying -= 1;
   const voltage = parseFloat(document.getElementById('voltage').value);
 
   const material = document.getElementById('material').value;
@@ -1563,7 +1575,13 @@ document.getElementById('calc').addEventListener('click', () => {
 
   // A: calibre inicial. Con conductores en paralelo (Art. 310-10(h)), cada uno
   // solo necesita llevar 1/nParalelo de la ampacidad requerida total.
-  const requiredAmpacityPorConductor = requiredAmpacity / nParalelo;
+  // Art. 240-4(b): el interruptor puede ser el valor estandar inmediato superior a la
+  // ampacidad del conductor SOLO hasta 800 A. Arriba de eso el interruptor (que debe
+  // ser >= la corriente requerida) no puede exceder la ampacidad, asi que el conductor
+  // debe soportar el valor estandar completo, no solo la corriente requerida.
+  const sobre800 = !isMotor && nextStandardBreaker(requiredAmpacity) > 800;
+  const requiredAmpacityConductor = sobre800 ? nextStandardBreaker(requiredAmpacity) : requiredAmpacity;
+  const requiredAmpacityPorConductor = requiredAmpacityConductor / nParalelo;
   const esCharola = installMethod === 'charola';
 
   // Recalcula las propiedades de ampacidad de un AWG especifico (misma regla
@@ -1628,7 +1646,7 @@ document.getElementById('calc').addEventListener('click', () => {
   // C: interruptor
   const breaker = isMotor
     ? calcularInterruptorMotor(current, motorPct)
-    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.usableAmp, calibreFinal.awg, material);
+    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.usableAmp * nParalelo, calibreFinal.awg, material);
 
   // D: conductor de puesta a tierra de equipos (solo si el sistema lo incluye)
   const tierra = sys.tierra
@@ -1681,7 +1699,7 @@ document.getElementById('calc').addEventListener('click', () => {
     header: { proj: projName, board: boardName, circ: circName, destino: tableroDestino || null },
     motor: isMotor,
     input: {
-      current, requiredAmpacity, requiredAmpacityPorConductor, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
+      current, requiredAmpacity, requiredAmpacityConductor, requiredAmpacityPorConductor, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
       systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
       voltage, circuitKindLabel, circuitCite,
       totalVA: totals.totalVA, demandFactor: totals.demandFactor, totalVAdemanda: totals.totalVAdemanda,
@@ -2242,6 +2260,83 @@ document.getElementById('descargarCuadroExcel').addEventListener('click', () => 
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+});
+
+/* =========================================================================
+   GUARDAR / CARGAR PROYECTO (archivo JSON)
+   -------------------------------------------------------------------------
+   La memoria vive en el navegador (localStorage), asi que no viaja a otra
+   computadora ni sobrevive a limpiar los datos del navegador. Aqui se guarda
+   lo que el usuario CAPTURO (el formSnapshot de cada circuito), no los
+   resultados: al cargar, cada circuito se recalcula con el motor vigente, asi
+   un archivo viejo nunca trae resultados desactualizados. Tambien permite
+   preparar un proyecto desde otra herramienta (hoja de calculo, script) con
+   solo armar la lista de capturas.
+   ========================================================================= */
+function importarCircuitos(lista) {
+  const errores = [];
+  let agregados = 0;
+  const respaldo = capturarFormSnapshot();
+  const alertOrig = window.alert;
+  let alertMsg = null;
+  window.alert = (m) => { alertMsg = m; };
+  try {
+    editingId = null;
+    lista.forEach((s) => {
+      alertMsg = null; lastCalc = null;
+      restaurarFormSnapshot(s);
+      document.getElementById('calc').click();
+      if (alertMsg || !lastCalc) { errores.push(`${s.boardName || '?'} / ${s.circName || '?'}: ${alertMsg || 'no se pudo calcular'}`); return; }
+      addToMemoria();
+      agregados++;
+    });
+  } finally {
+    window.alert = alertOrig;
+    restaurarFormSnapshot(respaldo);
+    document.getElementById('editandoBanner').style.display = 'none';
+    document.getElementById('resultsWrap').innerHTML = `<div class="placeholder">Llena los datos de la izquierda y presiona <b>Calcular circuito</b>.</div>`;
+  }
+  return { agregados, errores };
+}
+
+document.getElementById('exportarProyecto').addEventListener('click', () => {
+  const reg = loadRegistry();
+  if (reg.length === 0) { alert('La memoria está vacía: no hay nada que guardar.'); return; }
+  const circuitos = reg.map(r => r.formSnapshot).filter(Boolean);
+  const sinDatos = reg.length - circuitos.length;
+  const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto';
+  const blob = new Blob([JSON.stringify({ app: 'ElectroNOM', version: 1, proyecto: proj, circuitos }, null, 1)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Proyecto ElectroNOM - ${proj}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  if (sinDatos > 0) alert(`${sinDatos} circuito(s) antiguos de la memoria no guardaron sus datos de captura y no se incluyeron en el archivo. Edítalos y vuelve a agregarlos para poder respaldarlos.`);
+});
+
+document.getElementById('importarProyecto').addEventListener('click', () => {
+  document.getElementById('importarProyectoArchivo').click();
+});
+document.getElementById('importarProyectoArchivo').addEventListener('change', (e) => {
+  const archivo = e.target.files[0];
+  e.target.value = '';
+  if (!archivo) return;
+  const lector = new FileReader();
+  lector.onload = () => {
+    let datos;
+    try { datos = JSON.parse(lector.result); } catch (err) { alert('El archivo no es un proyecto válido (no se pudo leer como JSON).'); return; }
+    const lista = Array.isArray(datos) ? datos : datos && datos.circuitos;
+    if (!Array.isArray(lista) || lista.length === 0) { alert('El archivo no trae circuitos para cargar.'); return; }
+    const existentes = loadRegistry().length;
+    if (existentes > 0 && !confirm(`La memoria ya tiene ${existentes} circuito(s). Se agregarán ${lista.length} más del archivo (no se borra nada). ¿Continuar?`)) return;
+    const { agregados, errores } = importarCircuitos(lista);
+    activarTab('memoria');
+    alert(`Se cargaron ${agregados} de ${lista.length} circuito(s).` + (errores.length ? `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}` : ''));
+  };
+  lector.readAsText(archivo);
 });
 
 /* =========================================================================
