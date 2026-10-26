@@ -749,7 +749,8 @@
       <input type="file" id="importarProyectoArchivo" accept=".json,application/json" style="display:none">
     </div>
     <p class="hint" style="margin-top:8px">"Guardar proyecto" descarga un archivo con los datos de captura de todos los circuitos de la memoria (para respaldarlos o pasarlos a otra computadora). "Cargar proyecto" los vuelve a calcular uno por uno con el motor actual y los agrega a la memoria.</p>
-    <p class="hint" style="margin-top:8px">Se abre el diálogo de impresión del navegador. Para obtener un PDF (en vez de imprimir en papel), elige <b>"Guardar como PDF"</b> en el destino/impresora — es una opción que ya trae el navegador, no hace falta nada más.</p>
+    <p id="memoriaAviso" class="hint" style="display:none;color:var(--warn);margin-top:8px;font-weight:bold"></p>
+    <p class="hint" style="margin-top:8px">Se abre el diálogo de impresión del navegador. Si no se abre, verifica que la memoria tenga circuitos y abre ElectroNOM directamente en Chrome o Edge (no desde un visor integrado). Para obtener un PDF (en vez de imprimir en papel), elige <b>"Guardar como PDF"</b> en el destino/impresora — es una opción que ya trae el navegador, no hace falta nada más.</p>
   </div>
 
   <!-- ============ CUADRO DE CARGAS ============ -->
@@ -2150,7 +2151,14 @@ document.getElementById('clearRegistry').addEventListener('click', () => {
 
 document.getElementById('generateMemoria').addEventListener('click', () => {
   const reg = loadRegistry();
-  if (reg.length === 0) { alert('Agrega al menos un circuito a la memoria antes de generar el documento.'); return; }
+  const aviso = document.getElementById('memoriaAviso');
+  if (reg.length === 0) {
+    // Aviso en pantalla (no solo alert): algunos visores integrados no muestran los alert y parecia que el boton no hacia nada
+    aviso.textContent = 'La memoria está vacía: agrega circuitos (Calculadora → "Agregar a la memoria") o carga un proyecto, y vuelve a intentar.';
+    aviso.style.display = 'block';
+    return;
+  }
+  aviso.style.display = 'none';
 
   const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto sin nombre';
   const today = new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
