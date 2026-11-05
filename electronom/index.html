@@ -104,7 +104,7 @@
     cursor: pointer;
   }
   button#calc:hover { background: #14184a; }
-  #motorPanel {
+  #motorPanel, #acPanel {
     display: none;
     margin-top: 14px;
     padding: 12px;
@@ -421,7 +421,54 @@
           <option value="800">Interruptor de disparo instantáneo &mdash; 800% FLC</option>
           <option value="250" selected>Interruptor de tiempo inverso &mdash; 250% FLC</option>
         </select>
-        <p class="hint" style="margin-top:8px">Tabla 430-52. El conductor se dimensiona a 125% de la corriente a plena carga (FLC) por Art. 430-22. La protección de sobrecarga (térmico del arrancador) es independiente y no se calcula aquí.</p>
+        <p class="hint" style="margin-top:8px">Tabla 430-52. El conductor se dimensiona a 125% de la corriente a plena carga (FLC) por Art. 430-22.</p>
+
+        <label style="margin-top:14px">Corriente de placa del motor <span class="hint">(A; con ella se calcula el ajuste máximo del relevador de sobrecarga, Art. 430-32 y 430-6(a)(2))</span></label>
+        <input type="number" id="motorFla" step="0.1" min="0" placeholder="Ej. 15.2 (vacío = se estima con la de tabla y se avisa)">
+        <div class="checkline">
+          <input type="checkbox" id="motorFs115">
+          <label for="motorFs115">La placa marca factor de servicio 1.15 o mayor, o aumento de temperatura de 40 °C o menor <span class="hint">(permite 125 % en vez de 115 %)</span></label>
+        </div>
+      </div>
+
+      <div class="checkline">
+        <input type="checkbox" id="isAC">
+        <label for="isAC">Es un equipo de aire acondicionado o refrigeración con motocompresor (aplica Art. 440)</label>
+      </div>
+
+      <div id="acPanel">
+        <label style="margin-top:0">Datos que trae el equipo</label>
+        <select id="acModo">
+          <option value="placa" selected>Placa con ampacidad mínima (MCA) y protección máxima (MOCP): minisplit, condensadora, paquete, central</option>
+          <option value="compresor">Motocompresor individual: corriente de carga nominal (RLA)</option>
+        </select>
+        <div id="acPlacaWrap">
+          <div class="row2">
+            <div>
+              <label>Ampacidad mínima del circuito, MCA <span class="hint">(A, de la placa)</span></label>
+              <input type="number" id="acMca" step="0.1" min="0" placeholder="Ej. 14.2">
+            </div>
+            <div>
+              <label>Protección máxima, MOCP <span class="hint">(A, de la placa)</span></label>
+              <input type="number" id="acMocp" step="1" min="0" placeholder="Ej. 25">
+            </div>
+          </div>
+          <label>Corriente de carga nominal, RLA <span class="hint">(A, opcional: solo para el medio de desconexión)</span></label>
+          <input type="number" id="acRlaPlaca" step="0.1" min="0" placeholder="Ej. 11.5">
+        </div>
+        <div id="acCompWrap" style="display:none">
+          <div class="row2">
+            <div>
+              <label>Corriente de carga nominal, RLA <span class="hint">(A, de la placa)</span></label>
+              <input type="number" id="acRla" step="0.1" min="0" placeholder="Ej. 10">
+            </div>
+            <div>
+              <label>Corriente de selección del circuito <span class="hint">(A, opcional; si la placa la trae, se usa la mayor)</span></label>
+              <input type="number" id="acSel" step="0.1" min="0" placeholder="Ej. 12">
+            </div>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:8px">Art. 440. Con placa: el conductor se dimensiona a la MCA (440-35) y el interruptor no excede la MOCP (440-22(b)). Motocompresor individual: conductor al 125 % (440-32), interruptor hasta 175 % (440-22(a)), relevador de sobrecarga hasta 140 % (440-52). La lista de cargas de abajo se sigue usando para la caída de tensión y el cuadro de cargas.</p>
       </div>
     </div>
 
@@ -1012,7 +1059,8 @@ function capturarFormSnapshot() {
   return {
     projName: val('projName'), boardName: val('boardName'), circName: val('circName'),
     circPos: val('circPos'), circuitKind: val('circuitKind'), tableroDestino: val('tableroDestino'),
-    isMotor: chk('isMotor'), motorDevice: val('motorDevice'),
+    isMotor: chk('isMotor'), motorDevice: val('motorDevice'), motorFla: val('motorFla'), motorFs115: chk('motorFs115'),
+    isAC: chk('isAC'), acModo: val('acModo'), acMca: val('acMca'), acMocp: val('acMocp'), acRlaPlaca: val('acRlaPlaca'), acRla: val('acRla'), acSel: val('acSel'),
     voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
     loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
     material: val('material'), insulType: val('insulType'), calibreMinimo: val('calibreMinimo'), lugarMojado: chk('lugarMojado'),
@@ -1058,6 +1106,9 @@ function restaurarFormSnapshot(s) {
   setVal('length', s.length); setVal('conduitType', s.conduitType);
 
   setChk('isMotor', s.isMotor); setVal('motorDevice', s.motorDevice);
+  setVal('motorFla', s.motorFla ?? ''); setChk('motorFs115', !!s.motorFs115);
+  setChk('isAC', !!s.isAC); setVal('acModo', s.acModo || 'placa'); setVal('acMca', s.acMca ?? ''); setVal('acMocp', s.acMocp ?? '');
+  setVal('acRlaPlaca', s.acRlaPlaca ?? ''); setVal('acRla', s.acRla ?? ''); setVal('acSel', s.acSel ?? '');
   setChk('scEnabled', s.scEnabled); setVal('scKva', s.scKva); setVal('scZ', s.scZ);
   setVal('scIcu', s.scIcu); setVal('scZsource', s.scZsource); setVal('scTsc', s.scTsc);
   setChk('elEnabled', s.elEnabled); setVal('elRho', s.elRho); setVal('elLargo', s.elLargo);
@@ -1280,12 +1331,29 @@ document.getElementById('elEnabled').addEventListener('change', (e) => {
   document.getElementById('elPanel').style.display = e.target.checked ? 'block' : 'none';
 });
 
-document.getElementById('isMotor').addEventListener('change', (e) => {
-  document.getElementById('motorPanel').style.display = e.target.checked ? 'block' : 'none';
-  document.getElementById('loadListHint').textContent = e.target.checked
+function actualizarPanelesMotorAC() {
+  const motor = document.getElementById('isMotor').checked;
+  const ac = document.getElementById('isAC').checked;
+  document.getElementById('motorPanel').style.display = motor ? 'block' : 'none';
+  document.getElementById('acPanel').style.display = ac ? 'block' : 'none';
+  const placa = document.getElementById('acModo').value === 'placa';
+  document.getElementById('acPlacaWrap').style.display = placa ? 'block' : 'none';
+  document.getElementById('acCompWrap').style.display = placa ? 'none' : 'block';
+  document.getElementById('loadListHint').textContent = motor
     ? '(modo motor: agrega UNA fila con la potencia (W) y FP del motor — se usará como corriente a plena carga, FLC)'
-    : '(todo lo que agregues aquí, incluido lo que sumes desde los ayudantes de abajo, se suma en ESTE circuito)';
+    : ac
+      ? '(equipo de aire acondicionado: agrega UNA fila con su potencia (W) y FP; sirve para la caída de tensión y el cuadro de cargas — el conductor y el interruptor salen de los datos de placa)'
+      : '(todo lo que agregues aquí, incluido lo que sumes desde los ayudantes de abajo, se suma en ESTE circuito)';
+}
+document.getElementById('isMotor').addEventListener('change', (e) => {
+  if (e.target.checked) document.getElementById('isAC').checked = false;   // un circuito es motor (430) o equipo de A/C (440), no ambos
+  actualizarPanelesMotorAC();
 });
+document.getElementById('isAC').addEventListener('change', (e) => {
+  if (e.target.checked) document.getElementById('isMotor').checked = false;
+  actualizarPanelesMotorAC();
+});
+document.getElementById('acModo').addEventListener('change', actualizarPanelesMotorAC);
 
 
 
@@ -1320,7 +1388,7 @@ let editingId = null; // id del circuito de la memoria que se esta editando (nul
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor, sobrecarga, ac } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -1335,7 +1403,7 @@ function render(data) {
   const summaryHtml = `
       ${header.proj || 'Proyecto sin nombre'} &mdash; Tablero: ${header.board || '—'} &mdash; Circuito: ${header.circ || '—'}
       <span class="badge ${ESTADO_BADGE[veredicto]}" style="margin-left:8px">${veredicto}</span>
-      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; ${input.installMethod === 'charola' ? 'Charola ' + (tuberia.anchoCm ?? '—') + (tuberia.anchoCm ? ' cm' : '') : 'Tubería ' + (tuberia.trade ?? '—')}</span>`;
+      <span class="sub">${input.circuitKindLabel}${motor ? ' &middot; Carga de motor (Art. 430)' : ''}${ac ? ' &middot; Aire acondicionado (Art. 440)' : ''} &middot; Sistema ${input.systemKey} &middot; ${input.voltage} V &middot; Calibre ${calibreFinal.awg}${tierra ? ' &middot; Tierra ' + tierra.awgTierra : ''} &middot; Interruptor ${breaker.breaker} A &middot; ${input.installMethod === 'charola' ? 'Charola ' + (tuberia.anchoCm ?? '—') + (tuberia.anchoCm ? ' cm' : '') : 'Tubería ' + (tuberia.trade ?? '—')}</span>`;
 
   const stepA = `
     <div class="result-block">
@@ -1345,6 +1413,10 @@ function render(data) {
         ${input.demandFactor < 1 ? `Carga instalada: <b>${fmt(input.totalVA,0)} VA</b> &times; factor de demanda ${fmt(input.demandFactor,2)} = carga de demanda <b>${fmt(input.totalVAdemanda,0)} VA</b> (criterio simplificado, ver Art. 220 para tablas de demanda por tipo de carga).<br>` : ""}
         ${motor
           ? `Corriente a plena carga (FLC) estimada de la lista de cargas: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
+          : ac
+          ? (ac.modo === 'placa'
+              ? `Equipo de aire acondicionado con placa: ampacidad mínima del circuito (MCA) = <b>${fmt(ac.mca,2)} A</b>. Ampacidad requerida = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 440-35, 440-4(b)). Corriente de la lista de cargas para caída de tensión: ${fmt(input.current,2)} A.`
+              : `Motocompresor: corriente de carga nominal ${fmt(ac.ibase,2)} A &times; 125% = ampacidad requerida <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 440-32). Corriente de la lista de cargas para caída de tensión: ${fmt(input.current,2)} A.`)
           : `Corriente total del circuito (lista de cargas${input.demandFactor < 1 ? ', ya con demanda aplicada' : ''}): <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = no continua + 125% &times; continua = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 210-19).`}
         ${input.requiredAmpacityConductor > input.requiredAmpacity ? `<br><b>Arriba de 800 A</b> (Art. 240-4(b)): el interruptor estándar inmediato superior (${fmt(input.requiredAmpacityConductor,0)} A) no se puede usar sobre un conductor de menor ampacidad, así que el conductor se dimensiona para ${fmt(input.requiredAmpacityConductor,0)} A en lugar de ${fmt(input.requiredAmpacity,2)} A.` : ""}
         ${input.nParalelo > 1 ? `<br><b>${input.nParalelo} conductores en paralelo por fase</b> (Art. 310-10(h)): cada conductor debe llevar 1/${input.nParalelo} de la corriente total &rarr; ampacidad requerida por conductor = ${fmt(input.requiredAmpacity,2)} &divide; ${input.nParalelo} = <b>${fmt(input.requiredAmpacityPorConductor,2)} A</b>. Deben ser del mismo material, calibre, aislamiento, longitud y terminación.` : ""}
@@ -1399,8 +1471,24 @@ function render(data) {
       <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
       <div class="memoria">
         FLC = ${fmt(input.current,2)} A &times; ${breaker.pct}% (Tabla 430-52, dispositivo seleccionado) = máximo ${fmt(breaker.maxCurrent,2)} A &rarr; valor estándar inmediato: <b>${breaker.breaker} A</b>.
-        <br>Nota: esta es la protección contra cortocircuito/falla a tierra del circuito derivado del motor (puede exceder la ampacidad del conductor, es normal en circuitos de motor). La protección de sobrecarga térmica (Parte III, Art. 430) es independiente y no se calcula en esta herramienta.
+        <br>Nota: esta es la protección contra cortocircuito/falla a tierra del circuito derivado del motor (puede exceder la ampacidad del conductor, es normal en circuitos de motor). La protección de sobrecarga del motor es otra: ver el bloque siguiente.
         <br><span class="cite">Art. 430-52, Tabla 430-52, Art. 430-22.</span>
+      </div>
+    </div>` : ac ? `
+    <div class="result-block">
+      <h3>{{L}}. Interruptor y protecciones del equipo de A/C <span class="badge ${ac.excedeMocp ? 'warn' : 'ok'}">${breaker.breaker} A</span></h3>
+      <div class="headline">${breaker.breaker}<span class="unit"> A &mdash; valor estándar (Tabla 240-6(a))</span></div>
+      <div class="memoria">
+        ${ac.modo === 'placa'
+          ? `Equipo con placa: protección máxima de placa (MOCP) = <b>${fmt(ac.mocp,1)} A</b>; ampacidad mínima del circuito (MCA) = <b>${fmt(ac.mca,1)} A</b>.
+             <br>Se elige el valor estándar más chico que no sea menor a la MCA: <b>${breaker.breaker} A</b>${ac.excedeMocp ? ` — <span style="color:var(--warn)"><b>excede la MOCP de placa</b>: no hay un valor estándar entre ${fmt(ac.mca,1)} A y ${fmt(ac.mocp,1)} A; revisar los datos de placa con el fabricante.</span>` : `, que no excede la MOCP.`}
+             ${ac.discMin ? `<br>Medio de desconexión: al menos <b>${fmt(ac.discMin,1)} A</b> (115% de la RLA, Art. 440-12(a)(1)).` : '<br>Medio de desconexión: al menos 115% de la corriente de carga nominal de placa (Art. 440-12(a)(1)).'}`
+          : `Corriente de carga nominal${ac.corrienteSeleccion > ac.rla ? ' (se usa la corriente de selección del circuito, que es mayor)' : ''}: <b>${fmt(ac.ibase,2)} A</b>.
+             <br>Interruptor: máximo 175% = ${fmt(ac.max175,1)} A &rarr; <b>${breaker.breaker} A</b>${ac.usaMinimo15 ? ' (la excepción de 440-22(a) permite no bajar de 15 A)' : ''}. Si ese valor no permite arrancar el compresor, se permite subir hasta 225% = ${fmt(ac.max225,1)} A &rarr; ${ac.breakerMaxArranque} A.
+             <br>Sobrecarga: relevador a no más de 140% = <b>${fmt(ac.relevadorMaxA,2)} A</b> (440-52(a)(1)); un interruptor de tiempo inverso que también haga de sobrecarga, a no más de 125% = ${fmt(ac.breakerSobrecargaMaxA,2)} A (440-52(a)(3)).
+             <br>Medio de desconexión: al menos 115% = <b>${fmt(ac.discMin,2)} A</b> (440-12(a)(1)).`}
+        <br>Como en los motores, esta protección puede exceder la ampacidad del conductor; no es lo mismo que el criterio general de 240-4.
+        <br><span class="cite">${ac.modo === 'placa' ? 'Art. 440-4(b), 440-35, 440-22(b), 440-12.' : 'Art. 440-32, 440-22(a), 440-52, 440-12.'}</span>
       </div>
     </div>` : `
     <div class="result-block">
@@ -1413,6 +1501,21 @@ function render(data) {
         <br><span class="cite">Art. 240-6(a) capacidades estándar; Art. 240-4 protección de conductores; Art. 210-19/210-20 dimensionamiento por carga continua.</span>
       </div>
     </div>`;
+
+  const stepC2 = motor ? `
+    <div class="result-block">
+      <h3>{{L}}. Protección de sobrecarga del motor <span class="badge ${sobrecarga.usaPlaca ? 'ok' : 'adv'}">${sobrecarga.usaPlaca ? 'ajuste máx. ' + fmt(sobrecarga.maxA,1) + ' A' : 'falta corriente de placa'}</span></h3>
+      <div class="headline">${fmt(sobrecarga.maxA,1)}<span class="unit"> A &mdash; disparo máximo del relevador de sobrecarga</span></div>
+      <div class="memoria">
+        ${sobrecarga.usaPlaca
+          ? `Corriente de placa del motor: <b>${fmt(sobrecarga.base,2)} A</b>.`
+          : `<span style="color:var(--warn)"><b>No capturaste la corriente de placa</b>: se estima con la de tabla (${fmt(sobrecarga.flcTabla,2)} A). La norma exige basar la sobrecarga en la corriente de placa (Art. 430-6(a)(2)); captúrala en la sección 1 para dejar el cálculo definitivo.</span>`}
+        <br>Relevador de sobrecarga separado: ${sobrecarga.fs115 ? 'factor de servicio ≥ 1.15 o aumento de temperatura ≤ 40 °C' : 'motor sin esa marca'} &rarr; no más de <b>${sobrecarga.pct}%</b> = <b>${fmt(sobrecarga.maxA,2)} A</b> (Art. 430-32(a)(1)). Si ese ajuste no permite arrancar el motor, se permite subir hasta <b>${sobrecarga.pctAum}%</b> = ${fmt(sobrecarga.maxAumA,2)} A (430-32(c)).
+        <br>Protector térmico integrado al motor: no más de <b>${sobrecarga.pctTermico}%</b> de la corriente de tabla = ${fmt(sobrecarga.termicoMaxA,2)} A (430-32(a)(2)).
+        <br>La herramienta calcula el límite; el relevador o guardamotor se elige en catálogo dentro de ese ajuste. Aplica a motores de servicio continuo de más de 746 W (1 hp); motores menores, de servicio intermitente o con arranque especial siguen otras disposiciones del mismo artículo.
+        <br><span class="cite">Art. 430-32(a)(1), (a)(2) y (c); Art. 430-6(a)(2).</span>
+      </div>
+    </div>` : "";
 
   const stepD = tierra ? `
     <div class="result-block">
@@ -1537,7 +1640,7 @@ function render(data) {
     </div>`;
   })() : "";
 
-  const secciones = [stepA, stepB, stepC, stepD, stepE, stepF, stepF2, stepG].filter(Boolean);
+  const secciones = [stepA, stepB, stepC, stepC2, stepD, stepE, stepF, stepF2, stepG].filter(Boolean);
   const bodyHtml = renderDictamen(hallazgos) +
     secciones.map((s, i) => s.replace('{{L}}', String.fromCharCode(65 + i))).join('');
 
@@ -1553,7 +1656,7 @@ function render(data) {
   lastCalc = {
     id: Date.now(),
     proj: header.proj, board: header.board, circ: header.circ, destino: header.destino || null,
-    circuitKindLabel: input.circuitKindLabel, motor, systemKey: input.systemKey, voltage: input.voltage,
+    circuitKindLabel: input.circuitKindLabel, motor, ac: !!ac, systemKey: input.systemKey, voltage: input.voltage,
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
     breakerA: breaker.breaker,
     conduitTrade: input.installMethod === 'charola' ? (tuberia.anchoCm ? tuberia.anchoCm + ' cm (charola)' : null) : tuberia.trade,
@@ -1586,6 +1689,7 @@ document.getElementById('calc').addEventListener('click', () => {
   if (circuitKind === 'alimentador') document.getElementById('tableroDestino').value = tableroDestino;
   const isMotor = document.getElementById('isMotor').checked;
   const motorPct = parseFloat(document.getElementById('motorDevice').value);
+  const isAC = document.getElementById('isAC').checked;
 
   const systemKey = document.getElementById('systemType').value;
   const sys = systemMeta(systemKey);
@@ -1623,10 +1727,26 @@ document.getElementById('calc').addEventListener('click', () => {
   const circuitKindLabel = circuitKind === 'alimentador' ? 'Alimentador' : 'Circuito derivado';
   const circuitCite = circuitKind === 'alimentador' ? 'Art. 215-2, Nota 2' : 'Art. 210-19, Nota 4';
 
+  // Protecciones del motor (Art. 430-32) o datos del equipo de A/C (Art. 440)
+  const numero = id => parseFloat(document.getElementById(id).value) || 0;
+  const sobrecarga = isMotor
+    ? calcularSobrecargaMotor({ flaPlaca: numero('motorFla'), flcTabla: current, fs115: document.getElementById('motorFs115').checked })
+    : null;
+  let ac = null;
+  if (isAC) {
+    const modoAC = document.getElementById('acModo').value;
+    ac = modoAC === 'placa'
+      ? calcularCircuitoAC({ modo: 'placa', mca: numero('acMca'), mocp: numero('acMocp'), rla: numero('acRlaPlaca') })
+      : calcularCircuitoAC({ modo: 'compresor', rla: numero('acRla'), corrienteSeleccion: numero('acSel') });
+    if (ac.error) { alert(ac.error); return; }
+  }
+
   // Ampacidad requerida
   let requiredAmpacity;
   if (isMotor) {
     requiredAmpacity = current * 1.25; // Art. 430-22, FLC = current (de la lista de cargas)
+  } else if (ac) {
+    requiredAmpacity = ac.ampacidadMin; // Art. 440-32 (125 % de la RLA) o 440-35 (MCA de placa)
   } else {
     requiredAmpacity = currentNoCont + 1.25 * currentCont; // Art. 210-19(a)(1)
   }
@@ -1643,7 +1763,7 @@ document.getElementById('calc').addEventListener('click', () => {
   // ampacidad del conductor SOLO hasta 800 A. Arriba de eso el interruptor (que debe
   // ser >= la corriente requerida) no puede exceder la ampacidad, asi que el conductor
   // debe soportar el valor estandar completo, no solo la corriente requerida.
-  const sobre800 = !isMotor && nextStandardBreaker(requiredAmpacity) > 800;
+  const sobre800 = !isMotor && !ac && nextStandardBreaker(requiredAmpacity) > 800;
   const requiredAmpacityConductor = sobre800 ? nextStandardBreaker(requiredAmpacity) : requiredAmpacity;
   const requiredAmpacityPorConductor = requiredAmpacityConductor / nParalelo;
   const esCharola = installMethod === 'charola';
@@ -1710,7 +1830,9 @@ document.getElementById('calc').addEventListener('click', () => {
   // C: interruptor
   const breaker = isMotor
     ? calcularInterruptorMotor(current, motorPct)
-    : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.usableAmp * nParalelo, calibreFinal.awg, material);
+    : ac
+      ? { breaker: ac.breaker, maxCurrent: ac.modo === 'placa' ? ac.mocp : ac.max175, pct: ac.modo === 'placa' ? null : 175 }
+      : calcularInterruptorGeneral(requiredAmpacity, calibreFinal.usableAmp * nParalelo, calibreFinal.awg, material);
 
   // D: conductor de puesta a tierra de equipos (solo si el sistema lo incluye)
   const tierra = sys.tierra
@@ -1761,7 +1883,7 @@ document.getElementById('calc').addEventListener('click', () => {
 
   render({
     header: { proj: projName, board: boardName, circ: circName, destino: tableroDestino || null },
-    motor: isMotor,
+    motor: isMotor, sobrecarga, ac,
     input: {
       current, requiredAmpacity, requiredAmpacityConductor, requiredAmpacityPorConductor, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
       systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
@@ -1838,6 +1960,9 @@ const MOTIVOS_DICTAMEN = {
   'R-030|Advertencia': ['Resistencia del electrodo calculada: medir en sitio (Art. 250-53)', 'Telurómetro'],
   'R-034|No evaluable': ['Sistema sin conductor de tierra (Art. 250-122)', 'Verificar la canalización metálica'],
   'R-009|Advertencia': ['Protección de sobrecarga del motor por especificar (Art. 430)', 'Se especifica aparte'],
+  'R-045|Advertencia': ['Falta la corriente de placa del motor para el ajuste de sobrecarga (Art. 430-32)', 'Calculadora › sección 1, corriente de placa'],
+  'R-046|No cumple': ['La protección del equipo de A/C no cabe en la MOCP de placa (Art. 440-22)', 'Revisar los datos de placa'],
+  'R-046|No evaluable': ['Faltan datos de placa del equipo de A/C (Art. 440)', 'Calculadora › sección 1, aire acondicionado'],
   'R-039|Advertencia': ['Confirmar en obra los conductores en paralelo (Art. 310-10h)', 'Revisar en campo'],
   'R-VD|Advertencia': ['Caída de tensión mayor a 3 %', 'Aumentar calibre o reducir longitud'],
   'R-VD|No evaluable': ['Calibre fuera de la Tabla 9: sin caída de tensión', ''],
@@ -1905,7 +2030,7 @@ function renderRegistry() {
       <td>${i+1}</td>
       <td>${r.board || '—'}</td>
       <td>${r.circ || '—'}</td>
-      <td>${r.circuitKindLabel}${r.motor ? ' (motor)' : ''}</td>
+      <td>${r.circuitKindLabel}${r.motor ? ' (motor)' : ''}${r.ac ? ' (A/C)' : ''}</td>
       <td>${r.systemKey}</td>
       <td>${r.awg}</td>
       <td>${r.awgTierra ?? '—'}</td>
