@@ -1097,6 +1097,52 @@ grupo("Unifilar detallado — símbolo y agrupación", () => {
   esIgual(g4.length, 2, "Circuitos distintos sin número consecutivo no se agrupan aunque tengan las mismas características");
 });
 
+grupo("Datos de la instalación → dictamen de cada circuito", () => {
+  const transformador = { kva: 300, zPct: 5, zSourcePu: 0, voltage: 220 };
+  const { arbol } = construirArbolDiagrama(["TG", "TA"], [ { origen:"TG", destino:"TA", etiqueta:"F3" } ]);
+  const casc = calcularCortocircuitoArbol(arbol, [ { destino:"TA", awg:"4", lengthM:25, nParalelo:1 } ], transformador);
+  const nodoTA = { ...casc.resultados["TA"] };
+  const busca = (hs, id) => hs.find(x => x.reglaId === id);
+  const base = [
+    { reglaId:"R-002", estado:ESTADO.CUMPLE, articulo:"x", observacion:"" },
+    { reglaId:"R-CC", estado:ESTADO.NO_EVALUABLE, articulo:"Art. 110-9", observacion:"" },
+    { reglaId:"R-040", estado:ESTADO.NO_EVALUABLE, articulo:"Art. 110-10", observacion:"" },
+    { reglaId:"R-030", estado:ESTADO.NO_EVALUABLE, articulo:"Art. 250-53", observacion:"" },
+  ];
+  const circ = { awg:"12", nParalelo:1, lengthM:30, material:"cu", insulTemp:"90" };
+
+  // iccAlFinalDeCircuito coincide con iccCarga de calcularCortocircuito en el tablero raiz
+  const raiz = casc.resultados["TG"];
+  const iccFin = iccAlFinalDeCircuito({ zAcumuladaPu: raiz.zAcumuladaPu, iBase: casc.iBase, zBase: casc.zBase }, "8", 10, 1);
+  const directo = calcularCortocircuito({ ...transformador, awg:"8", lengthM:10, nParalelo:1 });
+  esCerca(iccFin, directo.iccCarga, 1e-6, "Falla al final de un conductor desde la raíz = iccCarga de calcularCortocircuito");
+
+  // Sin declarar nada: sigue No evaluable
+  const sin = recalcularHallazgosInstalacion({ hallazgos: base, circuito: circ, nodo: nodoTA, iBase: casc.iBase, zBase: casc.zBase, icuKa: 0, tSeg: 0, electrodo: null, conCc: true, conEl: true });
+  esIgual(busca(sin, "R-CC").estado, ESTADO.NO_EVALUABLE, "Sin capacidad declarada → R-CC sigue No evaluable");
+
+  // Capacidad suficiente declarada: R-CC Cumple; sin tiempo de despeje R-040 sigue No evaluable
+  const ok = recalcularHallazgosInstalacion({ hallazgos: base, circuito: circ, nodo: nodoTA, iBase: casc.iBase, zBase: casc.zBase, icuKa: 14, tSeg: 0, electrodo: null, conCc: true, conEl: false });
+  esIgual(busca(ok, "R-CC").estado, ESTADO.CUMPLE, "14 kA declarados contra la falla del tablero TA → Cumple");
+  esIgual(busca(ok, "R-040").estado, ESTADO.NO_EVALUABLE, "Sin tiempo de despeje, R-040 sigue No evaluable");
+  esIgual(busca(ok, "R-030").estado, ESTADO.NO_EVALUABLE, "conEl=false no toca el electrodo");
+  esIgual(ok.length, base.length, "No se agregan ni se pierden hallazgos");
+
+  // Capacidad insuficiente
+  const mal = recalcularHallazgosInstalacion({ hallazgos: base, circuito: circ, nodo: nodoTA, iBase: casc.iBase, zBase: casc.zBase, icuKa: 2, tSeg: 0, electrodo: null, conCc: true, conEl: false });
+  esIgual(busca(mal, "R-CC").estado, ESTADO.NO_CUMPLE, "2 kA contra una falla de ~4 kA → No cumple");
+
+  // Con tiempo de despeje se evalua el calentamiento del conductor
+  const conT = recalcularHallazgosInstalacion({ hallazgos: base, circuito: circ, nodo: nodoTA, iBase: casc.iBase, zBase: casc.zBase, icuKa: 14, tSeg: 0.02, electrodo: null, conCc: true, conEl: false });
+  esCierto(busca(conT, "R-040").estado !== ESTADO.NO_EVALUABLE, "Con tiempo de despeje declarado, R-040 ya se evalúa");
+
+  // Electrodo declarado una vez
+  const el = calcularElectrodo({ rho: 100, largoM: 2.44, diamMm: 16, complementario: false });
+  const conEl = recalcularHallazgosInstalacion({ hallazgos: base, circuito: circ, nodo: nodoTA, iBase: casc.iBase, zBase: casc.zBase, icuKa: 0, tSeg: 0, electrodo: el, conCc: false, conEl: true });
+  esCierto(busca(conEl, "R-030").estado !== ESTADO.NO_EVALUABLE, "Con el electrodo calculado, R-030 ya se evalúa");
+  esIgual(busca(conEl, "R-CC").estado, ESTADO.NO_EVALUABLE, "conCc=false no toca R-CC");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
