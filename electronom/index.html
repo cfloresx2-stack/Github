@@ -338,6 +338,8 @@
     table.printTable thead tr { break-after: avoid; }
     table.printTable tr { break-inside: avoid; }
     .card { break-inside: avoid; }
+    .hojasUnifilarImpresion .hojaUnifilar { break-before: page; break-inside: avoid; border: none !important; }
+    .hojasUnifilarImpresion .hojaUnifilar svg { min-width: 0 !important; width: 100% !important; }
   }
 </style>
 </head>
@@ -780,6 +782,10 @@
     <button id="descargarDiagramaCsv" type="button" style="margin-top:12px">⬇️ Descargar datos del diagrama (CSV)</button>
     <p class="hint" style="margin-top:6px">Lista de tablero origen → tablero destino, con el alimentador, calibre, tierra, interruptor y canalización de cada tramo — útil como base para redibujar el plano final en AutoCAD u otro programa de dibujo.</p>
 
+    <h2 style="margin-top:24px">Unifilar detallado por tablero <span class="hint">(símbolos del catálogo ESCO)</span></h2>
+    <p class="hint">Una hoja por tablero: acometida y transformador en la primera, y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Si activas la verificación de cortocircuito de abajo, cada hoja muestra la falla disponible.</p>
+    <div id="unifilarDetalladoWrap" style="margin-top:12px; overflow-x:auto"></div>
+
     <details style="margin-top:16px">
       <summary>Verificar cortocircuito de todos los tableros (opcional)</summary>
       <div class="checkline" style="margin-top:10px">
@@ -797,6 +803,13 @@
             <label>Impedancia %Z <span class="hint">(placa)</span></label>
             <input type="number" id="ccArbolZ" value="5" step="0.05" min="0.5" max="20">
           </div>
+        </div>
+        <div class="row2">
+          <div>
+            <label>Tensión del primario <span class="hint">(kV; solo para rotular el unifilar detallado)</span></label>
+            <input type="number" id="ccArbolPrim" value="" step="0.1" min="0" placeholder="Ej. 13.8">
+          </div>
+          <div></div>
         </div>
         <div class="row2">
           <div>
@@ -825,6 +838,7 @@
 </footer>
 
 <script src="motor.js"></script>
+<script src="simbolos.js"></script>
 <script>
 
 
@@ -1988,12 +2002,14 @@ function renderDiagramaUnifilar() {
 
   if (reg.length === 0) {
     wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se arme el diagrama.</div>`;
+    renderUnifilarDetallado();
     return;
   }
 
   const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
 
   if (alimentadores.length === 0) {
+    renderUnifilarDetallado();
     wrap.innerHTML = `<div class="emptyRegistry">Ningún alimentador capturado tiene un tablero destino declarado todavía. Edita un circuito tipo "Alimentador" y llena el campo "Tablero que alimenta este alimentador" (sección 1 de la Calculadora) para que aparezca aquí.</div>`;
     return;
   }
@@ -2008,6 +2024,7 @@ function renderDiagramaUnifilar() {
   alimentadores.forEach(a => { infoPorDestino[a.destino] = a; });
 
   wrap.innerHTML = renderDiagramaSVG(layout, infoPorDestino);
+  renderUnifilarDetallado();
 }
 
 /* =========================================================================
@@ -2100,9 +2117,161 @@ document.getElementById('ccArbolEnabled').addEventListener('change', (e) => {
   document.getElementById('ccArbolPanel').style.display = e.target.checked ? 'block' : 'none';
   if (e.target.checked) renderCortocircuitoArbol();
 });
-['ccArbolKva','ccArbolZ','ccArbolVoltage','ccArbolZsource'].forEach(id => {
+['ccArbolKva','ccArbolZ','ccArbolVoltage','ccArbolZsource','ccArbolPrim'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderCortocircuitoArbol);
 });
+
+/* =========================================================================
+   UNIFILAR DETALLADO POR TABLERO (simbolos del catalogo ESCO, simbolos.js)
+   -------------------------------------------------------------------------
+   Una hoja por tablero. Convencion: el interruptor de un circuito vive en el
+   tablero de ORIGEN, asi que la hoja del tablero X dibuja su barra y, hacia
+   abajo, cada circuito con interruptor -> conductor -> carga. Los alimentadores
+   terminan en un simbolo de tablero que remite a la hoja del tablero destino.
+   El tablero raiz (sin alimentador entrante) arranca con la red, el
+   transformador y el neutro a tierra.
+   ========================================================================= */
+function escXml(t) { return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function svgTexto(x, y, t, size = 3.2, anchor = 'middle', bold = false) {
+  return `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}"${bold ? ' font-weight="bold"' : ''} fill="#000" stroke="none">${escXml(t)}</text>`;
+}
+function svgSimbolo(nombre, cx, cy) {
+  const prims = SIMBOLOS_ESCO[nombre] || SIMBOLOS_ESCO['08_CARGA'];
+  const f = prims.map(p => {
+    if (p[0] === 'L') return `<line x1="${p[1]}" y1="${-p[2]}" x2="${p[3]}" y2="${-p[4]}"/>`;
+    if (p[0] === 'C') return `<circle cx="${p[1]}" cy="${-p[2]}" r="${p[3]}"/>`;
+    if (p[0] === 'P') return `<${p[2] ? 'polygon' : 'polyline'} points="${p[1].map(q => q[0] + ',' + -q[1]).join(' ')}"/>`;
+    if (p[0] === 'T') return `<text x="${p[1]}" y="${-p[2] + p[3] * 0.35}" font-size="${p[3]}" text-anchor="middle" stroke="none" fill="#000">${escXml(p[4])}</text>`;
+    if (p[0] === 'D') return `<circle cx="0" cy="0" r="1.5" fill="#000"/>`;
+    return '';
+  }).join('');
+  return `<g transform="translate(${cx},${cy})" stroke="#000" stroke-width="0.9" fill="none">${f}</g>`;
+}
+function unidadCalibre(awg) { return /^\d+$/.test(awg) && parseInt(awg) >= 250 ? 'kcmil' : 'AWG'; }
+function partirTexto(t, max) {
+  const palabras = String(t || '').split(' '); const lineas = []; let cur = '';
+  palabras.forEach(w => { if ((cur + ' ' + w).trim().length > max && cur) { lineas.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); });
+  if (cur) lineas.push(cur);
+  return lineas.slice(0, 3);
+}
+
+function circuitosParaUnifilar(reg, tablero) {
+  return reg.filter(r => r.board === tablero).map(r => {
+    const fs = r.formSnapshot || {};
+    const nombreCarga = (fs.loads && fs.loads[0] && fs.loads[0].name) || '';
+    return {
+      id: r.id, circ: r.circ || '', motor: !!r.motor, awg: r.awg, awgTierra: r.awgTierra, nParalelo: parseInt(fs.nParalelo) || 1,
+      breakerA: r.breakerA, conduitTrade: r.conduitTrade, fases: r.fases, systemKey: r.systemKey, voltage: r.voltage,
+      lengthM: parseFloat(fs.length) || 0, destino: r.destino || '', dropPct: r.dropPct, current: r.current,
+      simbolo: simboloDeCircuito({ simbolo: fs.simbolo, motor: !!r.motor, nombre: r.circ + ' ' + nombreCarga, voltage: r.voltage, destino: r.destino }),
+    };
+  });
+}
+
+function svgHojaTablero(tablero, ctx) {
+  const PASO = 48, POR_FILA = 12, X0 = 140, ALTO_FILA = 190;
+  const grupos = agruparCircuitosParaUnifilar(circuitosParaUnifilar(ctx.reg, tablero));
+  const filas = []; for (let i = 0; i < grupos.length; i += POR_FILA) filas.push(grupos.slice(i, i + POR_FILA));
+  if (filas.length === 0) filas.push([]);
+  const ancho = Math.max(560, X0 + Math.max(Math.min(grupos.length, POR_FILA), 5) * PASO + 60);
+  const yBus0 = ctx.esRaizTrafo ? 140 : 100;
+  const alto = yBus0 + (filas.length - 1) * ALTO_FILA + 150;
+  const padre = ctx.padreDe[tablero];
+  const out = [];
+  out.push(`<rect x="2" y="2" width="${ancho - 4}" height="${alto - 4}" fill="#fff" stroke="#000" stroke-width="0.6"/>`);
+  out.push(svgTexto(10, 12, `UNIFILAR — TABLERO ${tablero}`, 5.5, 'start', true));
+  out.push(svgTexto(ancho - 10, 12, `Hoja ${ctx.hoja} de ${ctx.totalHojas}`, 3.6, 'end'));
+  out.push(svgTexto(10, 19, ctx.proyecto, 3, 'start'));
+
+  // Zona de alimentacion (arriba de la barra)
+  const xSrc = 60;
+  if (ctx.esRaizTrafo) {
+    out.push(svgSimbolo('09_RED', xSrc, 38));
+    out.push(svgTexto(xSrc + 16, 36, ctx.trafo.prim ? `RED  ${ctx.trafo.prim} kV` : 'RED / ACOMETIDA', 3.4, 'start', true));
+    out.push(svgSimbolo('04_TRDY', xSrc, 72));
+    out.push(svgTexto(xSrc + 14, 64, `TRANSFORMADOR ${ctx.trafo.kva} kVA`, 3.4, 'start', true));
+    out.push(svgTexto(xSrc + 14, 69, `${ctx.trafo.prim ? ctx.trafo.prim + ' kV Δ — ' : ''}${ctx.trafo.voltage} V Y (neutro a tierra)`, 3, 'start'));
+    out.push(svgTexto(xSrc + 14, 74, `Z = ${ctx.trafo.zPct} %`, 3, 'start'));
+    out.push(`<line x1="${xSrc}" y1="86" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
+    out.push(`<line x1="${xSrc}" y1="92" x2="${xSrc + 26}" y2="92" stroke="#000" stroke-width="0.9"/>`);
+    out.push(svgSimbolo('07_NEUTRO', xSrc + 26, 106));
+  } else if (padre) {
+    out.push(svgSimbolo('01_CONT', xSrc, yBus0 - 34));
+    out.push(`<line x1="${xSrc}" y1="${yBus0 - 20}" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
+    const par = (padre.nParalelo > 1 ? padre.nParalelo + ' × ' : '') + `${padre.awg} ${unidadCalibre(padre.awg)}`;
+    out.push(svgTexto(xSrc + 10, yBus0 - 52, `ALIMENTADO DESDE ${padre.origen} POR ${padre.etiqueta}`, 3.4, 'start', true));
+    out.push(svgTexto(xSrc + 10, yBus0 - 46, `${par} · T ${padre.awgTierra ?? '—'} · Ø ${padre.conduitTrade ?? '—'} · ${padre.lengthM} m`, 3, 'start'));
+    out.push(svgTexto(xSrc + 10, yBus0 - 41, `Interruptor de ${padre.breakerA} A en ${padre.origen} · ΔV ${(padre.dropPct ?? 0).toFixed(2)} %`, 3, 'start'));
+  } else {
+    out.push(svgSimbolo('01_CONT', xSrc, yBus0 - 34));
+    out.push(`<line x1="${xSrc}" y1="${yBus0 - 20}" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
+    out.push(svgTexto(xSrc + 10, yBus0 - 46, 'ALIMENTACIÓN EXTERNA (sin alimentador declarado)', 3.4, 'start', true));
+  }
+
+  filas.forEach((fila, fi) => {
+    const yBus = yBus0 + fi * ALTO_FILA;
+    const xFin = X0 + Math.max(fila.length, 5) * PASO - 10;
+    if (fi > 0) out.push(`<line x1="${xSrc}" y1="${yBus - ALTO_FILA}" x2="${xSrc}" y2="${yBus}" stroke="#000" stroke-width="0.9"/>`);
+    out.push(`<line x1="${xSrc}" y1="${yBus}" x2="${xFin}" y2="${yBus}" stroke="#000" stroke-width="2.4"/>`);
+    out.push(svgTexto(X0 - 4, yBus - 4, `BARRAS ${tablero}${fi > 0 ? ' (continuación)' : ''}`, 3.6, 'start', true));
+    if (fi === 0 && ctx.icc && ctx.icc[tablero]) out.push(svgTexto(xFin, yBus - 4, `Icc disponible en barras: ${ctx.icc[tablero].iccKA.toFixed(1)} kA`, 3.4, 'end', true));
+    fila.forEach((g, i) => {
+      const x = X0 + i * PASO;
+      out.push(svgSimbolo('02_CB_ANSI', x, yBus + 14));
+      out.push(svgTexto(x + 7, yBus + 13, `${g.breakerA} A`, 3.4, 'start', true));
+      out.push(svgTexto(x + 7, yBus + 17, `${g.fases}P`, 3, 'start'));
+      const par = (g.nParalelo > 1 ? g.nParalelo + '×' : '') + `${g.awg} ${unidadCalibre(g.awg)}`;
+      const lin = [par, g.systemKey, `T ${g.awgTierra ?? '—'}`, `Ø ${g.conduitTrade ?? '—'}`, `${g.lengthM} m`, `ΔV ${(g.dropPct ?? 0).toFixed(2)}%`];
+      lin.forEach((t, k) => out.push(svgTexto(x + 3, yBus + 36 + k * 3.7, t, 2.8, 'start')));
+      out.push(svgSimbolo(g.simbolo, x, yBus + 92));
+      if (g.n > 1) out.push(svgTexto(x + 9, yBus + 84, `×${g.n}`, 4.5, 'start', true));
+      let nombre = g.base;
+      if (g.destino) {
+        const h = ctx.hojaDe[g.destino];
+        nombre = `→ TABLERO ${g.destino}` + (h ? ` (hoja ${h})` : '');
+      }
+      const lineasNombre = partirTexto(nombre, 22);
+      lineasNombre.forEach((t, k) => out.push(svgTexto(x, yBus + 112 + k * 3.8, t, 3.2, 'middle', true)));
+      out.push(svgTexto(x, yBus + 112 + lineasNombre.length * 3.8, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle'));
+    });
+  });
+  return `<svg viewBox="0 0 ${ancho} ${alto}" xmlns="http://www.w3.org/2000/svg" style="width:100%; min-width:${Math.min(ancho * 2.2, 1500)}px; height:auto; display:block; font-family:Arial, sans-serif; background:#fff">${out.join('')}</svg>`;
+}
+
+function renderUnifilarDetallado() {
+  const wrap = document.getElementById('unifilarDetalladoWrap');
+  const reg = loadRegistry();
+  if (reg.length === 0) { wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se armen las hojas.</div>`; return; }
+  const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
+  const { arbol } = construirArbolDiagrama(tableros, alimentadores);
+
+  // Orden de hojas: por niveles (raices primero)
+  const orden = []; let nivel = arbol.slice();
+  while (nivel.length) { nivel.forEach(n => orden.push(n.nombre)); nivel = nivel.flatMap(n => n.hijos); }
+  const hojaDe = {}; orden.forEach((t, i) => { hojaDe[t] = i + 1; });
+  const padreDe = {};
+  alimentadores.forEach(a => {
+    if (!padreDe[a.destino]) padreDe[a.destino] = { ...a, dropPct: (reg.find(r => r.board === a.origen && r.circ === a.etiqueta) || {}).dropPct };
+  });
+
+  const trafo = {
+    kva: parseFloat(document.getElementById('ccArbolKva').value) || 0,
+    zPct: parseFloat(document.getElementById('ccArbolZ').value) || 0,
+    voltage: parseFloat(document.getElementById('ccArbolVoltage').value) || 0,
+    prim: parseFloat(document.getElementById('ccArbolPrim').value) || 0,
+    zSourcePu: parseFloat(document.getElementById('ccArbolZsource').value) || 0,
+  };
+  let icc = null;
+  if (document.getElementById('ccArbolEnabled').checked && trafo.kva > 0 && trafo.zPct > 0 && trafo.voltage > 0) {
+    icc = calcularCortocircuitoArbol(arbol, alimentadores, trafo).resultados;
+  }
+  const proyecto = reg[0].proj || 'Proyecto';
+  const primeraRaiz = arbol.length ? arbol[0].nombre : null;
+  wrap.innerHTML = orden.map((t, i) => `
+    <div class="hojaUnifilar" style="margin-bottom:18px; border:1px solid var(--border)">
+      ${svgHojaTablero(t, { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: t === primeraRaiz && trafo.kva > 0 && !padreDe[t] })}
+    </div>`).join('');
+}
 
 document.getElementById('descargarDiagramaCsv').addEventListener('click', () => {
   const reg = loadRegistry();
@@ -2197,6 +2366,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       ${document.getElementById('diagramaAdvertencias').innerHTML}
       ${document.getElementById('diagramaWrap').innerHTML}
     </div>
+    <div class="hojasUnifilarImpresion">${document.getElementById('unifilarDetalladoWrap').innerHTML}</div>
     ${detailSections}
     <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
   `;
@@ -2307,13 +2477,29 @@ function importarCircuitos(lista) {
   return { agregados, errores };
 }
 
+// Datos del transformador (seccion de cortocircuito del diagrama): se guardan con el proyecto
+function capturarTransformador() {
+  const v = id => document.getElementById(id).value;
+  return { kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'), verificarCc: document.getElementById('ccArbolEnabled').checked };
+}
+function restaurarTransformador(t) {
+  if (!t) return;
+  const set = (id, val) => { if (val !== undefined && val !== null) document.getElementById(id).value = val; };
+  set('ccArbolKva', t.kva); set('ccArbolZ', t.zPct); set('ccArbolVoltage', t.voltage); set('ccArbolPrim', t.primario); set('ccArbolZsource', t.zSourcePu);
+  const chk = document.getElementById('ccArbolEnabled');
+  chk.checked = !!t.verificarCc;
+  document.getElementById('ccArbolPanel').style.display = chk.checked ? 'block' : 'none';
+  renderCortocircuitoArbol();
+  renderUnifilarDetallado();
+}
+
 document.getElementById('exportarProyecto').addEventListener('click', () => {
   const reg = loadRegistry();
   if (reg.length === 0) { alert('La memoria está vacía: no hay nada que guardar.'); return; }
   const circuitos = reg.map(r => r.formSnapshot).filter(Boolean);
   const sinDatos = reg.length - circuitos.length;
   const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto';
-  const blob = new Blob([JSON.stringify({ app: 'ElectroNOM', version: 1, proyecto: proj, circuitos }, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'ElectroNOM', version: 1, proyecto: proj, transformador: capturarTransformador(), circuitos }, null, 1)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2341,6 +2527,7 @@ document.getElementById('importarProyectoArchivo').addEventListener('change', (e
     const existentes = loadRegistry().length;
     if (existentes > 0 && !confirm(`La memoria ya tiene ${existentes} circuito(s). Se agregarán ${lista.length} más del archivo (no se borra nada). ¿Continuar?`)) return;
     const { agregados, errores } = importarCircuitos(lista);
+    if (!Array.isArray(datos) && datos.transformador) restaurarTransformador(datos.transformador);
     activarTab('memoria');
     alert(`Se cargaron ${agregados} de ${lista.length} circuito(s).` + (errores.length ? `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}` : ''));
   };

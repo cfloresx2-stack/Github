@@ -1634,3 +1634,47 @@ function calcularLayoutDiagrama(arbol, opciones) {
   return { nodos, conexiones: conexionesConCoords, anchoMax, altoMax };
 }
 
+
+/* =========================================================================
+   DIAGRAMA UNIFILAR DETALLADO -- eleccion de simbolo y agrupacion de circuitos
+   -------------------------------------------------------------------------
+   Logica pura (sin DOM) para dibujar cada tablero con los simbolos del
+   catalogo ESCO. No es normativa: solo decide QUE simbolo lleva cada carga y
+   que circuitos identicos se dibujan una sola vez con "xN" (convencion usual
+   de los planos: "tipico x16").
+   ========================================================================= */
+// Simbolo de la carga de un circuito. Si la captura trae un "simbolo"
+// explicito se respeta; si no, se deduce del tipo de circuito y de su nombre.
+function simboloDeCircuito({ simbolo, motor, nombre, voltage, destino }) {
+  if (simbolo) return simbolo;
+  if (destino) return '08_TAB';                       // alimentador: termina en otro tablero
+  if (motor) return '08_M3';
+  const n = (nombre || '').toLowerCase();
+  if (/a\/c|aire acond|minisplit|mini split|clima/.test(n)) {
+    const tr = n.match(/(\d+(?:\.\d+)?)\s*tr\b/);
+    return tr && parseFloat(tr[1]) >= 3 ? '13_AC_CENTRAL' : '13_AC_MINISPLIT';
+  }
+  if (/contacto|receptaculo|tomacorriente/.test(n)) return voltage >= 220 ? '13_CONT220' : '13_CONT110';
+  if (/alumbr|lumin|l[aá]mpara|anuncio/.test(n)) return '13_LAMP';
+  return '08_CARGA';
+}
+
+// Junta los circuitos identicos de un tablero (mismo simbolo, calibre, paralelo,
+// interruptor, tuberia, polos, tierra, longitud y destino) en un solo renglon
+// con su cantidad. El nombre comun es el nombre del primero sin el numero final
+// ("Turbina de secado 1".."10" -> "Turbina de secado"). Conserva el orden.
+function agruparCircuitosParaUnifilar(circuitos) {
+  const grupos = [];
+  const porFirma = {};
+  (circuitos || []).forEach(c => {
+    const firma = [c.simbolo, c.awg, c.nParalelo || 1, c.breakerA, c.conduitTrade, c.fases, c.awgTierra, c.lengthM, c.destino || '', c.motor ? 1 : 0].join('|');
+    // Solo se agrupan los que terminan con un numero consecutivo en el nombre
+    const base = (c.circ || '').replace(/\s*\d+$/, '');
+    const agrupable = base !== (c.circ || '') && !c.destino;
+    const clave = agrupable ? firma + '|' + base : firma + '|' + c.circ + '|' + (c.id ?? grupos.length);
+    if (porFirma[clave]) { porFirma[clave].n++; porFirma[clave].items.push(c); return; }
+    const g = { base: agrupable ? base : c.circ, n: 1, items: [c], ...c };
+    porFirma[clave] = g; grupos.push(g);
+  });
+  return grupos;
+}
