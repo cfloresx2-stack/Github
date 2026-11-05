@@ -783,7 +783,7 @@
     <p class="hint" style="margin-top:6px">Lista de tablero origen → tablero destino, con el alimentador, calibre, tierra, interruptor y canalización de cada tramo — útil como base para redibujar el plano final en AutoCAD u otro programa de dibujo.</p>
 
     <h2 style="margin-top:24px">Unifilar detallado por tablero <span class="hint">(símbolos del catálogo ESCO)</span></h2>
-    <p class="hint">Una hoja por tablero: acometida y transformador en la primera, y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Si activas la verificación de cortocircuito de abajo, cada hoja muestra la falla disponible.</p>
+    <p class="hint">Una hoja por tablero: acometida, transformador e interruptor principal en la del tablero general (si el tablero raíz solo tiene el alimentador al tablero general, no se dibuja aparte), y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Si activas la verificación de cortocircuito de abajo, cada hoja muestra la falla disponible.</p>
     <div id="unifilarDetalladoWrap" style="margin-top:12px; overflow-x:auto"></div>
     <button id="descargarUnifilarDxf" type="button" style="margin-top:12px">⬇️ Descargar unifilar detallado (DXF para AutoCAD)</button>
     <p id="unifilarDxfAviso" class="hint" style="display:none;color:var(--warn);margin-top:6px;font-weight:bold"></p>
@@ -2167,7 +2167,8 @@ function hojaTablero(tablero, ctx) {
   const filas = []; for (let i = 0; i < grupos.length; i += POR_FILA) filas.push(grupos.slice(i, i + POR_FILA));
   if (filas.length === 0) filas.push([]);
   const ancho = Math.max(560, X0 + Math.max(Math.min(grupos.length, POR_FILA), 5) * PASO + 60);
-  const yBus0 = ctx.esRaizTrafo ? 140 : 100;
+  const pr = ctx.principal;   // interruptor principal + conductor del secundario (transformador fusionado)
+  const yBus0 = ctx.esRaizTrafo ? (pr ? 190 : 140) : 100;
   const alto = yBus0 + (filas.length - 1) * ALTO_FILA + 150;
   const padre = ctx.padreDe[tablero];
   const it = [];
@@ -2190,9 +2191,22 @@ function hojaTablero(tablero, ctx) {
     T(xSrc + 14, 64, `TRANSFORMADOR ${tr.kva} kVA`, 3.4, 'start', true);
     T(xSrc + 14, 69, `${tr.prim ? tr.prim + ' kV Δ — ' : ''}${tr.voltage} V Y (neutro a tierra)`, 3, 'start');
     T(xSrc + 14, 74, `Z = ${tr.zPct} %`, 3, 'start');
-    L(xSrc, 86, xSrc, yBus0);
-    L(xSrc, 92, xSrc + 26, 92);
-    S('07_NEUTRO', xSrc + 26, 106, 'N', 'Neutro a tierra');
+    if (ctx.iccBornes != null) T(xSrc + 14, 79, `Icc en bornes del secundario: ${ctx.iccBornes.toFixed(1)} kA`, 3, 'start', true);
+    if (pr) {
+      const par = (pr.nParalelo > 1 ? pr.nParalelo + '×' : '') + `${pr.awg} ${unidadCalibre(pr.awg)}`;
+      L(xSrc, 86, xSrc, 92);
+      S('02_CB_ANSI', xSrc, 106, 'PRINCIPAL', `${pr.breakerA} A ${pr.fases}P`);
+      T(xSrc + 7, 105, `${pr.breakerA} A principal`, 3.4, 'start', true);
+      T(xSrc + 7, 109, `${pr.fases}P`, 3, 'start');
+      L(xSrc, 120, xSrc, yBus0);
+      [par, pr.systemKey, `T ${pr.awgTierra ?? '—'}`, `Ø ${pr.conduitTrade ?? '—'}`, `${pr.lengthM} m`, `ΔV ${(pr.dropPct ?? 0).toFixed(2)}%`].forEach((t, k) => T(xSrc + 3, 130 + k * 3.7, t, 2.8, 'start'));
+      L(xSrc, 89, xSrc + 100, 89);
+      S('07_NEUTRO', xSrc + 100, 103, 'N', 'Neutro a tierra');
+    } else {
+      L(xSrc, 86, xSrc, yBus0);
+      L(xSrc, 92, xSrc + 26, 92);
+      S('07_NEUTRO', xSrc + 26, 106, 'N', 'Neutro a tierra');
+    }
   } else if (padre) {
     S('01_CONT', xSrc, yBus0 - 34, padre.etiqueta, `desde ${padre.origen}`);
     L(xSrc, yBus0 - 20, xSrc, yBus0);
@@ -2366,9 +2380,26 @@ function obtenerHojasUnifilar() {
   }
   const proyecto = reg[0].proj || 'Proyecto';
   const primeraRaiz = arbol.length ? arbol[0].nombre : null;
+
+  // Si el tablero raiz solo tiene UN circuito -- el alimentador al tablero general -- no merece hoja
+  // propia: ese interruptor y conductor son el principal y el secundario del transformador, y se
+  // dibujan en la hoja del tablero que alimenta.
+  let fusion = null;
+  if (primeraRaiz && trafo.kva > 0 && arbol[0].hijos.length === 1) {
+    const propios = circuitosParaUnifilar(reg, primeraRaiz);
+    const hijo = arbol[0].hijos[0].nombre;
+    if (propios.length === 1 && propios[0].destino === hijo) {
+      const ic = icc && icc[primeraRaiz] ? icc[primeraRaiz].iccKA : null;
+      fusion = { raiz: primeraRaiz, hijo, principal: propios[0], iccBornes: ic };
+      const i0 = orden.indexOf(primeraRaiz); if (i0 >= 0) orden.splice(i0, 1);
+      Object.keys(hojaDe).forEach(k => delete hojaDe[k]); orden.forEach((t, i) => { hojaDe[t] = i + 1; });
+    }
+  }
   return {
     proyecto,
-    hojas: orden.map((t, i) => hojaTablero(t, { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: t === primeraRaiz && trafo.kva > 0 && !padreDe[t] })),
+    hojas: orden.map((t, i) => hojaTablero(t, fusion && t === fusion.hijo
+      ? { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: true, principal: fusion.principal, iccBornes: fusion.iccBornes }
+      : { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: !fusion && t === primeraRaiz && trafo.kva > 0 && !padreDe[t] })),
   };
 }
 
