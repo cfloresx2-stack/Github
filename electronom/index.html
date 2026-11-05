@@ -785,6 +785,9 @@
     <h2 style="margin-top:24px">Unifilar detallado por tablero <span class="hint">(símbolos del catálogo ESCO)</span></h2>
     <p class="hint">Una hoja por tablero: acometida y transformador en la primera, y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Si activas la verificación de cortocircuito de abajo, cada hoja muestra la falla disponible.</p>
     <div id="unifilarDetalladoWrap" style="margin-top:12px; overflow-x:auto"></div>
+    <button id="descargarUnifilarDxf" type="button" style="margin-top:12px">⬇️ Descargar unifilar detallado (DXF para AutoCAD)</button>
+    <p id="unifilarDxfAviso" class="hint" style="display:none;color:var(--warn);margin-top:6px;font-weight:bold"></p>
+    <p class="hint" style="margin-top:6px">Un solo archivo DXF con todas las hojas apiladas, usando los mismos bloques de tu catálogo ESCO (<code>ESCO_02_CB_ANSI</code>, <code>ESCO_08_M3</code>, etc.), con los atributos TAG / DATOS / TIPO llenos pero invisibles (para EATTEDIT o extracción de datos). Ábrelo en AutoCAD y guárdalo como DWG. Los textos van sin acentos.</p>
 
     <details style="margin-top:16px">
       <summary>Verificar cortocircuito de todos los tableros (opcional)</summary>
@@ -2130,23 +2133,12 @@ document.getElementById('ccArbolEnabled').addEventListener('change', (e) => {
    terminan en un simbolo de tablero que remite a la hoja del tablero destino.
    El tablero raiz (sin alimentador entrante) arranca con la red, el
    transformador y el neutro a tierra.
+
+   La hoja se arma UNA vez como lista de elementos neutrales (linea, rectangulo,
+   texto, simbolo con atributos) y de ahi salen los dos formatos: SVG para la
+   pantalla/impresion y DXF (con los mismos bloques ESCO) para AutoCAD.
    ========================================================================= */
 function escXml(t) { return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function svgTexto(x, y, t, size = 3.2, anchor = 'middle', bold = false) {
-  return `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}"${bold ? ' font-weight="bold"' : ''} fill="#000" stroke="none">${escXml(t)}</text>`;
-}
-function svgSimbolo(nombre, cx, cy) {
-  const prims = SIMBOLOS_ESCO[nombre] || SIMBOLOS_ESCO['08_CARGA'];
-  const f = prims.map(p => {
-    if (p[0] === 'L') return `<line x1="${p[1]}" y1="${-p[2]}" x2="${p[3]}" y2="${-p[4]}"/>`;
-    if (p[0] === 'C') return `<circle cx="${p[1]}" cy="${-p[2]}" r="${p[3]}"/>`;
-    if (p[0] === 'P') return `<${p[2] ? 'polygon' : 'polyline'} points="${p[1].map(q => q[0] + ',' + -q[1]).join(' ')}"/>`;
-    if (p[0] === 'T') return `<text x="${p[1]}" y="${-p[2] + p[3] * 0.35}" font-size="${p[3]}" text-anchor="middle" stroke="none" fill="#000">${escXml(p[4])}</text>`;
-    if (p[0] === 'D') return `<circle cx="0" cy="0" r="1.5" fill="#000"/>`;
-    return '';
-  }).join('');
-  return `<g transform="translate(${cx},${cy})" stroke="#000" stroke-width="0.9" fill="none">${f}</g>`;
-}
 function unidadCalibre(awg) { return /^\d+$/.test(awg) && parseInt(awg) >= 250 ? 'kcmil' : 'AWG'; }
 function partirTexto(t, max) {
   const palabras = String(t || '').split(' '); const lineas = []; let cur = '';
@@ -2168,7 +2160,8 @@ function circuitosParaUnifilar(reg, tablero) {
   });
 }
 
-function svgHojaTablero(tablero, ctx) {
+// Arma la hoja de un tablero como lista de elementos neutrales
+function hojaTablero(tablero, ctx) {
   const PASO = 48, POR_FILA = 12, X0 = 140, ALTO_FILA = 190;
   const grupos = agruparCircuitosParaUnifilar(circuitosParaUnifilar(ctx.reg, tablero));
   const filas = []; for (let i = 0; i < grupos.length; i += POR_FILA) filas.push(grupos.slice(i, i + POR_FILA));
@@ -2177,71 +2170,177 @@ function svgHojaTablero(tablero, ctx) {
   const yBus0 = ctx.esRaizTrafo ? 140 : 100;
   const alto = yBus0 + (filas.length - 1) * ALTO_FILA + 150;
   const padre = ctx.padreDe[tablero];
-  const out = [];
-  out.push(`<rect x="2" y="2" width="${ancho - 4}" height="${alto - 4}" fill="#fff" stroke="#000" stroke-width="0.6"/>`);
-  out.push(svgTexto(10, 12, `UNIFILAR — TABLERO ${tablero}`, 5.5, 'start', true));
-  out.push(svgTexto(ancho - 10, 12, `Hoja ${ctx.hoja} de ${ctx.totalHojas}`, 3.6, 'end'));
-  out.push(svgTexto(10, 19, ctx.proyecto, 3, 'start'));
+  const it = [];
+  const L = (x1, y1, x2, y2, lw = 0.9) => it.push({ k: 'line', x1, y1, x2, y2, lw });
+  const T = (x, y, t, size = 3.2, anchor = 'middle', bold = false) => it.push({ k: 'text', x, y, t, size, anchor, bold });
+  const S = (n, x, y, tag = '', datos = '') => it.push({ k: 'sym', n, x, y, tag, datos });
+
+  it.push({ k: 'rect', x: 2, y: 2, w: ancho - 4, h: alto - 4, lw: 0.6, capa: 'marco' });
+  T(10, 12, `UNIFILAR — TABLERO ${tablero}`, 5.5, 'start', true);
+  T(ancho - 10, 12, `Hoja ${ctx.hoja} de ${ctx.totalHojas}`, 3.6, 'end');
+  T(10, 19, ctx.proyecto, 3, 'start');
 
   // Zona de alimentacion (arriba de la barra)
   const xSrc = 60;
   if (ctx.esRaizTrafo) {
-    out.push(svgSimbolo('09_RED', xSrc, 38));
-    out.push(svgTexto(xSrc + 16, 36, ctx.trafo.prim ? `RED  ${ctx.trafo.prim} kV` : 'RED / ACOMETIDA', 3.4, 'start', true));
-    out.push(svgSimbolo('04_TRDY', xSrc, 72));
-    out.push(svgTexto(xSrc + 14, 64, `TRANSFORMADOR ${ctx.trafo.kva} kVA`, 3.4, 'start', true));
-    out.push(svgTexto(xSrc + 14, 69, `${ctx.trafo.prim ? ctx.trafo.prim + ' kV Δ — ' : ''}${ctx.trafo.voltage} V Y (neutro a tierra)`, 3, 'start'));
-    out.push(svgTexto(xSrc + 14, 74, `Z = ${ctx.trafo.zPct} %`, 3, 'start'));
-    out.push(`<line x1="${xSrc}" y1="86" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
-    out.push(`<line x1="${xSrc}" y1="92" x2="${xSrc + 26}" y2="92" stroke="#000" stroke-width="0.9"/>`);
-    out.push(svgSimbolo('07_NEUTRO', xSrc + 26, 106));
+    const tr = ctx.trafo;
+    S('09_RED', xSrc, 38, 'RED', tr.prim ? `${tr.prim} kV` : '');
+    T(xSrc + 16, 36, tr.prim ? `RED  ${tr.prim} kV` : 'RED / ACOMETIDA', 3.4, 'start', true);
+    S('04_TRDY', xSrc, 72, 'TR', `${tr.kva} kVA ${tr.prim ? tr.prim + ' kV / ' : ''}${tr.voltage} V Z=${tr.zPct}%`);
+    T(xSrc + 14, 64, `TRANSFORMADOR ${tr.kva} kVA`, 3.4, 'start', true);
+    T(xSrc + 14, 69, `${tr.prim ? tr.prim + ' kV Δ — ' : ''}${tr.voltage} V Y (neutro a tierra)`, 3, 'start');
+    T(xSrc + 14, 74, `Z = ${tr.zPct} %`, 3, 'start');
+    L(xSrc, 86, xSrc, yBus0);
+    L(xSrc, 92, xSrc + 26, 92);
+    S('07_NEUTRO', xSrc + 26, 106, 'N', 'Neutro a tierra');
   } else if (padre) {
-    out.push(svgSimbolo('01_CONT', xSrc, yBus0 - 34));
-    out.push(`<line x1="${xSrc}" y1="${yBus0 - 20}" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
+    S('01_CONT', xSrc, yBus0 - 34, padre.etiqueta, `desde ${padre.origen}`);
+    L(xSrc, yBus0 - 20, xSrc, yBus0);
     const par = (padre.nParalelo > 1 ? padre.nParalelo + ' × ' : '') + `${padre.awg} ${unidadCalibre(padre.awg)}`;
-    out.push(svgTexto(xSrc + 10, yBus0 - 52, `ALIMENTADO DESDE ${padre.origen} POR ${padre.etiqueta}`, 3.4, 'start', true));
-    out.push(svgTexto(xSrc + 10, yBus0 - 46, `${par} · T ${padre.awgTierra ?? '—'} · Ø ${padre.conduitTrade ?? '—'} · ${padre.lengthM} m`, 3, 'start'));
-    out.push(svgTexto(xSrc + 10, yBus0 - 41, `Interruptor de ${padre.breakerA} A en ${padre.origen} · ΔV ${(padre.dropPct ?? 0).toFixed(2)} %`, 3, 'start'));
+    T(xSrc + 10, yBus0 - 52, `ALIMENTADO DESDE ${padre.origen} POR ${padre.etiqueta}`, 3.4, 'start', true);
+    T(xSrc + 10, yBus0 - 46, `${par} · T ${padre.awgTierra ?? '—'} · Ø ${padre.conduitTrade ?? '—'} · ${padre.lengthM} m`, 3, 'start');
+    T(xSrc + 10, yBus0 - 41, `Interruptor de ${padre.breakerA} A en ${padre.origen} · ΔV ${(padre.dropPct ?? 0).toFixed(2)} %`, 3, 'start');
   } else {
-    out.push(svgSimbolo('01_CONT', xSrc, yBus0 - 34));
-    out.push(`<line x1="${xSrc}" y1="${yBus0 - 20}" x2="${xSrc}" y2="${yBus0}" stroke="#000" stroke-width="0.9"/>`);
-    out.push(svgTexto(xSrc + 10, yBus0 - 46, 'ALIMENTACIÓN EXTERNA (sin alimentador declarado)', 3.4, 'start', true));
+    S('01_CONT', xSrc, yBus0 - 34, 'EXTERNA', '');
+    L(xSrc, yBus0 - 20, xSrc, yBus0);
+    T(xSrc + 10, yBus0 - 46, 'ALIMENTACIÓN EXTERNA (sin alimentador declarado)', 3.4, 'start', true);
   }
 
   filas.forEach((fila, fi) => {
     const yBus = yBus0 + fi * ALTO_FILA;
     const xFin = X0 + Math.max(fila.length, 5) * PASO - 10;
-    if (fi > 0) out.push(`<line x1="${xSrc}" y1="${yBus - ALTO_FILA}" x2="${xSrc}" y2="${yBus}" stroke="#000" stroke-width="0.9"/>`);
-    out.push(`<line x1="${xSrc}" y1="${yBus}" x2="${xFin}" y2="${yBus}" stroke="#000" stroke-width="2.4"/>`);
-    out.push(svgTexto(X0 - 4, yBus - 4, `BARRAS ${tablero}${fi > 0 ? ' (continuación)' : ''}`, 3.6, 'start', true));
-    if (fi === 0 && ctx.icc && ctx.icc[tablero]) out.push(svgTexto(xFin, yBus - 4, `Icc disponible en barras: ${ctx.icc[tablero].iccKA.toFixed(1)} kA`, 3.4, 'end', true));
+    if (fi > 0) L(xSrc, yBus - ALTO_FILA, xSrc, yBus);
+    L(xSrc, yBus, xFin, yBus, 2.4);
+    T(X0 - 4, yBus - 4, `BARRAS ${tablero}${fi > 0 ? ' (continuación)' : ''}`, 3.6, 'start', true);
+    if (fi === 0 && ctx.icc && ctx.icc[tablero]) T(xFin, yBus - 4, `Icc disponible en barras: ${ctx.icc[tablero].iccKA.toFixed(1)} kA`, 3.4, 'end', true);
     fila.forEach((g, i) => {
       const x = X0 + i * PASO;
-      out.push(svgSimbolo('02_CB_ANSI', x, yBus + 14));
-      out.push(svgTexto(x + 7, yBus + 13, `${g.breakerA} A`, 3.4, 'start', true));
-      out.push(svgTexto(x + 7, yBus + 17, `${g.fases}P`, 3, 'start'));
       const par = (g.nParalelo > 1 ? g.nParalelo + '×' : '') + `${g.awg} ${unidadCalibre(g.awg)}`;
+      S('02_CB_ANSI', x, yBus + 14, g.base, `${g.breakerA} A ${g.fases}P`);
+      L(x, yBus + 28, x, yBus + 78);   // conductor entre el interruptor y la carga
+      T(x + 7, yBus + 13, `${g.breakerA} A`, 3.4, 'start', true);
+      T(x + 7, yBus + 17, `${g.fases}P`, 3, 'start');
       const lin = [par, g.systemKey, `T ${g.awgTierra ?? '—'}`, `Ø ${g.conduitTrade ?? '—'}`, `${g.lengthM} m`, `ΔV ${(g.dropPct ?? 0).toFixed(2)}%`];
-      lin.forEach((t, k) => out.push(svgTexto(x + 3, yBus + 36 + k * 3.7, t, 2.8, 'start')));
-      out.push(svgSimbolo(g.simbolo, x, yBus + 92));
-      if (g.n > 1) out.push(svgTexto(x + 9, yBus + 84, `×${g.n}`, 4.5, 'start', true));
+      lin.forEach((t, k) => T(x + 3, yBus + 36 + k * 3.7, t, 2.8, 'start'));
+      S(g.simbolo, x, yBus + 92, g.base, `${g.current.toFixed(1)} A${g.n > 1 ? ' x' + g.n : ''}`);
+      if (g.n > 1) T(x + 9, yBus + 84, `×${g.n}`, 4.5, 'start', true);
       let nombre = g.base;
-      if (g.destino) {
-        const h = ctx.hojaDe[g.destino];
-        nombre = `→ TABLERO ${g.destino}` + (h ? ` (hoja ${h})` : '');
-      }
+      if (g.destino) { const h = ctx.hojaDe[g.destino]; nombre = `→ TABLERO ${g.destino}` + (h ? ` (hoja ${h})` : ''); }
       const lineasNombre = partirTexto(nombre, 22);
-      lineasNombre.forEach((t, k) => out.push(svgTexto(x, yBus + 112 + k * 3.8, t, 3.2, 'middle', true)));
-      out.push(svgTexto(x, yBus + 112 + lineasNombre.length * 3.8, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle'));
+      lineasNombre.forEach((t, k) => T(x, yBus + 112 + k * 3.8, t, 3.2, 'middle', true));
+      T(x, yBus + 112 + lineasNombre.length * 3.8, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
     });
   });
-  return `<svg viewBox="0 0 ${ancho} ${alto}" xmlns="http://www.w3.org/2000/svg" style="width:100%; min-width:${Math.min(ancho * 2.2, 1500)}px; height:auto; display:block; font-family:Arial, sans-serif; background:#fff">${out.join('')}</svg>`;
+  return { tablero, ancho, alto, items: it };
 }
 
-function renderUnifilarDetallado() {
-  const wrap = document.getElementById('unifilarDetalladoWrap');
+// ---- Salida 1: SVG (pantalla e impresion) ----
+function svgSimbolo(nombre, cx, cy) {
+  const prims = SIMBOLOS_ESCO[nombre] || SIMBOLOS_ESCO['08_CARGA'];
+  const f = prims.map(p => {
+    if (p[0] === 'L') return `<line x1="${p[1]}" y1="${-p[2]}" x2="${p[3]}" y2="${-p[4]}"/>`;
+    if (p[0] === 'C') return `<circle cx="${p[1]}" cy="${-p[2]}" r="${p[3]}"/>`;
+    if (p[0] === 'P') return `<${p[2] ? 'polygon' : 'polyline'} points="${p[1].map(q => q[0] + ',' + -q[1]).join(' ')}"/>`;
+    if (p[0] === 'T') return `<text x="${p[1]}" y="${-p[2] + p[3] * 0.35}" font-size="${p[3]}" text-anchor="middle" stroke="none" fill="#000">${escXml(p[4])}</text>`;
+    if (p[0] === 'D') return `<circle cx="0" cy="0" r="1.5" fill="#000"/>`;
+    return '';
+  }).join('');
+  return `<g transform="translate(${cx},${cy})" stroke="#000" stroke-width="0.9" fill="none">${f}</g>`;
+}
+function svgDeHoja(h) {
+  const partes = h.items.map(e => {
+    if (e.k === 'line') return `<line x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}" stroke="#000" stroke-width="${e.lw}"/>`;
+    if (e.k === 'rect') return `<rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" fill="#fff" stroke="#000" stroke-width="${e.lw}"/>`;
+    if (e.k === 'text') return `<text x="${e.x}" y="${e.y}" font-size="${e.size}" text-anchor="${e.anchor}"${e.bold ? ' font-weight="bold"' : ''} fill="#000" stroke="none">${escXml(e.t)}</text>`;
+    if (e.k === 'sym') return svgSimbolo(e.n, e.x, e.y);
+    return '';
+  });
+  return `<svg viewBox="0 0 ${h.ancho} ${h.alto}" xmlns="http://www.w3.org/2000/svg" style="width:100%; min-width:${Math.min(h.ancho * 2.2, 1500)}px; height:auto; display:block; font-family:Arial, sans-serif; background:#fff">${partes.join('')}</svg>`;
+}
+
+// ---- Salida 2: DXF (AutoCAD) con los mismos bloques ESCO ----
+// DXF R12 (AC1009) escrito a mano: lo abre cualquier version de AutoCAD y otros
+// programas. El texto va sin acentos ni simbolos especiales (R12 no declara
+// pagina de codigos); los datos de ingenieria tambien viajan en los atributos
+// TAG/DATOS/TIPO de cada bloque (invisibles, para EATTEDIT o extraccion).
+function asciiDxf(t) {
+  return String(t ?? '').replace(/Δ/g, 'D').replace(/Ø/g, 'dia.').replace(/×/g, 'x').replace(/→/g, '->').replace(/[—–]/g, '-').replace(/°/g, ' grados')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '?');
+}
+function dxfDeHojas(hojas) {
+  const g = (c, v) => `${c}\n${v}\n`;
+  const n = v => (Math.round(v * 1000) / 1000).toString();
+  const usados = new Set();
+  const lineaDxf = (capa, x1, y1, x2, y2) => g(0, 'LINE') + g(8, capa) + g(10, n(x1)) + g(20, n(y1)) + g(30, 0) + g(11, n(x2)) + g(21, n(y2)) + g(31, 0);
+  const textoDxf = (capa, x, y, h, t, ancla, dentro) => {
+    let s = g(0, 'TEXT') + g(8, capa) + g(10, n(x)) + g(20, n(y)) + g(30, 0) + g(40, n(h)) + g(1, asciiDxf(t));
+    const j = ancla === 'end' ? 2 : ancla === 'middle' ? 1 : 0;
+    if (j || dentro) s += g(72, j) + g(11, n(x)) + g(21, n(y)) + g(31, 0) + (dentro ? g(73, 2) : '');
+    return s;
+  };
+  const polilineaDxf = (capa, pts, cerrada, ancho) => {
+    let s = g(0, 'POLYLINE') + g(8, capa) + g(66, 1) + g(10, 0) + g(20, 0) + g(30, 0) + g(70, cerrada ? 1 : 0);
+    if (ancho) s += g(40, n(ancho)) + g(41, n(ancho));
+    pts.forEach(p => { s += g(0, 'VERTEX') + g(8, capa) + g(10, n(p[0])) + g(20, n(p[1])) + g(30, 0); });
+    return s + g(0, 'SEQEND') + g(8, capa);
+  };
+  const bloqueDxf = (nombre) => {
+    const prims = SIMBOLOS_ESCO[nombre];
+    let s = g(0, 'BLOCK') + g(8, 0) + g(2, 'ESCO_' + nombre) + g(70, 2) + g(10, 0) + g(20, 0) + g(30, 0) + g(3, 'ESCO_' + nombre) + g(1, '');
+    prims.forEach(p => {
+      if (p[0] === 'L') s += lineaDxf('0', p[1], p[2], p[3], p[4]);
+      else if (p[0] === 'C') s += g(0, 'CIRCLE') + g(8, 0) + g(10, n(p[1])) + g(20, n(p[2])) + g(30, 0) + g(40, n(p[3]));
+      else if (p[0] === 'P') s += polilineaDxf('0', p[1], p[2], 0);
+      else if (p[0] === 'T') s += textoDxf('0', p[1], p[2], p[3], p[4], 'middle', true);
+      else if (p[0] === 'D') s += g(0, 'CIRCLE') + g(8, 0) + g(10, 0) + g(20, 0) + g(30, 0) + g(40, 1.5);
+    });
+    [['TAG', 16, 7, 3, 0], ['DATOS', 16, 1, 2.5, 0], ['TIPO', 16, -5, 2, 1]].forEach(([tag, x, y, h, inv]) => {
+      s += g(0, 'ATTDEF') + g(8, 0) + g(10, x) + g(20, y) + g(30, 0) + g(40, h) + g(1, '') + g(3, tag) + g(2, tag) + g(70, inv);
+    });
+    return s + g(0, 'ENDBLK') + g(8, 0);
+  };
+
+  // Entidades: hojas apiladas hacia abajo, con 40 unidades de separacion
+  let ent = '', desp = 0;
+  hojas.forEach(h => {
+    const Y = y => -(y + desp);
+    h.items.forEach(e => {
+      if (e.k === 'line') {
+        const capa = 'ESCO_SIMBOLOS';
+        ent += e.lw > 1.5 ? polilineaDxf(capa, [[e.x1, Y(e.y1)], [e.x2, Y(e.y2)]], false, e.lw) : lineaDxf(capa, e.x1, Y(e.y1), e.x2, Y(e.y2));
+      } else if (e.k === 'rect') {
+        ent += polilineaDxf('ESCO_MARCOS', [[e.x, Y(e.y)], [e.x + e.w, Y(e.y)], [e.x + e.w, Y(e.y + e.h)], [e.x, Y(e.y + e.h)]], true, 0);
+      } else if (e.k === 'text') {
+        ent += textoDxf('ESCO_ROTULOS', e.x, Y(e.y), e.size, e.t, e.anchor, false);
+      } else if (e.k === 'sym') {
+        const nombre = SIMBOLOS_ESCO[e.n] ? e.n : '08_CARGA';
+        usados.add(nombre);
+        ent += g(0, 'INSERT') + g(8, 'ESCO_SIMBOLOS') + g(66, 1) + g(2, 'ESCO_' + nombre) + g(10, n(e.x)) + g(20, n(Y(e.y))) + g(30, 0);
+        [['TAG', 16, 7, 3, e.tag], ['DATOS', 16, 1, 2.5, e.datos], ['TIPO', 16, -5, 2, 'ESCO_' + nombre]].forEach(([tag, dx, dy, ht, val]) => {
+          ent += g(0, 'ATTRIB') + g(8, 'ESCO_ROTULOS') + g(10, n(e.x + dx)) + g(20, n(Y(e.y) + dy)) + g(30, 0) + g(40, ht) + g(1, asciiDxf(val)) + g(2, tag) + g(70, 1);
+        });
+        ent += g(0, 'SEQEND') + g(8, 'ESCO_SIMBOLOS');
+      }
+    });
+    desp += h.alto + 40;
+  });
+
+  const capas = [['0', 7], ['ESCO_SIMBOLOS', 7], ['ESCO_ROTULOS', 7], ['ESCO_MARCOS', 8]];
+  let dxf = g(0, 'SECTION') + g(2, 'HEADER') + g(9, '$ACADVER') + g(1, 'AC1009') + g(0, 'ENDSEC');
+  dxf += g(0, 'SECTION') + g(2, 'TABLES');
+  dxf += g(0, 'TABLE') + g(2, 'LTYPE') + g(70, 1) + g(0, 'LTYPE') + g(2, 'CONTINUOUS') + g(70, 0) + g(3, 'Solid line') + g(72, 65) + g(73, 0) + g(40, 0) + g(0, 'ENDTAB');
+  dxf += g(0, 'TABLE') + g(2, 'LAYER') + g(70, capas.length) + capas.map(([c, col]) => g(0, 'LAYER') + g(2, c) + g(70, 0) + g(62, col) + g(6, 'CONTINUOUS')).join('') + g(0, 'ENDTAB');
+  dxf += g(0, 'TABLE') + g(2, 'STYLE') + g(70, 1) + g(0, 'STYLE') + g(2, 'STANDARD') + g(70, 0) + g(40, 0) + g(41, 1) + g(50, 0) + g(71, 0) + g(42, 2.5) + g(3, 'txt') + g(4, '') + g(0, 'ENDTAB');
+  dxf += g(0, 'ENDSEC');
+  dxf += g(0, 'SECTION') + g(2, 'BLOCKS') + [...usados].map(bloqueDxf).join('') + g(0, 'ENDSEC');
+  dxf += g(0, 'SECTION') + g(2, 'ENTITIES') + ent + g(0, 'ENDSEC') + g(0, 'EOF');
+  return dxf;
+}
+
+// ---- Datos de las hojas (compartidos por pantalla, impresion y DXF) ----
+function obtenerHojasUnifilar() {
   const reg = loadRegistry();
-  if (reg.length === 0) { wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se armen las hojas.</div>`; return; }
+  if (reg.length === 0) return null;
   const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
   const { arbol } = construirArbolDiagrama(tableros, alimentadores);
 
@@ -2267,11 +2366,35 @@ function renderUnifilarDetallado() {
   }
   const proyecto = reg[0].proj || 'Proyecto';
   const primeraRaiz = arbol.length ? arbol[0].nombre : null;
-  wrap.innerHTML = orden.map((t, i) => `
-    <div class="hojaUnifilar" style="margin-bottom:18px; border:1px solid var(--border)">
-      ${svgHojaTablero(t, { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: t === primeraRaiz && trafo.kva > 0 && !padreDe[t] })}
-    </div>`).join('');
+  return {
+    proyecto,
+    hojas: orden.map((t, i) => hojaTablero(t, { reg, padreDe, hojaDe, icc, trafo, proyecto, hoja: i + 1, totalHojas: orden.length, esRaizTrafo: t === primeraRaiz && trafo.kva > 0 && !padreDe[t] })),
+  };
 }
+
+function renderUnifilarDetallado() {
+  const wrap = document.getElementById('unifilarDetalladoWrap');
+  const d = obtenerHojasUnifilar();
+  if (!d) { wrap.innerHTML = `<div class="emptyRegistry">Agrega circuitos a la memoria para que se armen las hojas.</div>`; return; }
+  wrap.innerHTML = d.hojas.map(h => `
+    <div class="hojaUnifilar" style="margin-bottom:18px; border:1px solid var(--border)">${svgDeHoja(h)}</div>`).join('');
+}
+
+document.getElementById('descargarUnifilarDxf').addEventListener('click', () => {
+  const aviso = document.getElementById('unifilarDxfAviso');
+  const d = obtenerHojasUnifilar();
+  if (!d) { aviso.textContent = 'La memoria está vacía: agrega circuitos o carga un proyecto antes de exportar.'; aviso.style.display = 'block'; return; }
+  aviso.style.display = 'none';
+  const blob = new Blob([dxfDeHojas(d.hojas)], { type: 'application/dxf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Unifilar detallado - ${d.proyecto}.dxf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
 document.getElementById('descargarDiagramaCsv').addEventListener('click', () => {
   const reg = loadRegistry();
