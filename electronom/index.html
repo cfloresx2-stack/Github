@@ -1326,7 +1326,10 @@ function render(data) {
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
     : `<span class="badge adv">Advertencia: excede 3% recomendado</span>`;
 
-  const hallazgos = evaluarCumplimiento(data);
+  const hallazgos = hallazgosConInstalacionDeCircuito(evaluarCumplimiento(data), {
+    board: header.board, awg: calibreFinal.awg, nParalelo: input.nParalelo, lengthM: input.length,
+    material: input.material, insulTemp: input.insulTemp, conCc: !cc, conEl: !el0,
+  });
   const veredicto = veredictoGlobal(hallazgos);
 
   const summaryHtml = `
@@ -1827,11 +1830,11 @@ document.getElementById('cancelarEdicion').addEventListener('click', () => {
 // Motivo corto (y donde resolverlo) de cada hallazgo que no es "Cumple", para que el usuario
 // sepa QUE falta sin abrir el detalle de cada circuito.
 const MOTIVOS_DICTAMEN = {
-  'R-CC|No evaluable': ['Falta la capacidad interruptiva del tablero (Art. 110-9)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-CC|No evaluable': ['Falta la capacidad interruptiva del tablero (Art. 110-9)', 'Calculadora › tarjeta 7 (Datos generales de la instalación)'],
   'R-CC|No cumple': ['Capacidad interruptiva insuficiente (Art. 110-9)', 'Subir la capacidad del interruptor'],
-  'R-040|No evaluable': ['Falta el tiempo de despeje de la falla (Art. 110-10)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-040|No evaluable': ['Falta el tiempo de despeje de la falla (Art. 110-10)', 'Calculadora › tarjeta 7 (Datos generales de la instalación)'],
   'R-040|No cumple': ['El conductor no soporta el calentamiento de la falla (Art. 110-10)', 'Aumentar calibre o reducir el tiempo de despeje'],
-  'R-030|No evaluable': ['Falta el electrodo de tierra (Art. 250-53)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-030|No evaluable': ['Falta el electrodo de tierra (Art. 250-53)', 'Calculadora › tarjeta 7 (Datos generales de la instalación)'],
   'R-030|Advertencia': ['Resistencia del electrodo calculada: medir en sitio (Art. 250-53)', 'Telurómetro'],
   'R-034|No evaluable': ['Sistema sin conductor de tierra (Art. 250-122)', 'Verificar la canalización metálica'],
   'R-009|Advertencia': ['Protección de sobrecarga del motor por especificar (Art. 430)', 'Se especifica aparte'],
@@ -2212,9 +2215,9 @@ function actualizarResultadoElectrodoInstalacion() {
     : `<span class="hint">Captura resistividad, longitud y diámetro mayores a cero.</span>`;
 }
 
-function aplicarDatosInstalacion() {
+// Datos de la instalacion ya resueltos (cascada de cortocircuito, tiempo de despeje, electrodo), calculados una vez
+function contextoInstalacion() {
   const reg = loadRegistry();
-  if (reg.length === 0) return;
   const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
   const { arbol } = construirArbolDiagrama(tableros, alimentadores);
   const trafo = {
@@ -2223,25 +2226,45 @@ function aplicarDatosInstalacion() {
     voltage: parseFloat(document.getElementById('ccArbolVoltage').value) || 0,
     zSourcePu: parseFloat(document.getElementById('ccArbolZsource').value) || 0,
   };
-  const casc = document.getElementById('ccArbolEnabled').checked && trafo.kva > 0 && trafo.zPct > 0 && trafo.voltage > 0
-    ? calcularCortocircuitoArbol(arbol, alimentadores, trafo) : null;
-  const tSeg = parseFloat(document.getElementById('ccArbolTsc').value) || 0;
-  const el0 = electrodoInstalacion();
+  return {
+    casc: document.getElementById('ccArbolEnabled').checked && trafo.kva > 0 && trafo.zPct > 0 && trafo.voltage > 0
+      ? calcularCortocircuitoArbol(arbol, alimentadores, trafo) : null,
+    tSeg: parseFloat(document.getElementById('ccArbolTsc').value) || 0,
+    el0: electrodoInstalacion(),
+  };
+}
+// Hallazgos de UN circuito con los datos de la instalacion aplicados (conCc/conEl: false si el circuito trae su propio calculo)
+function hallazgosConInstalacionDeCircuito(hallazgos, c, ctx = contextoInstalacion()) {
+  const { casc, tSeg, el0 } = ctx;
+  return recalcularHallazgosInstalacion({
+    hallazgos,
+    circuito: { awg: c.awg, nParalelo: c.nParalelo, lengthM: c.lengthM, material: c.material, insulTemp: c.insulTemp },
+    nodo: casc ? casc.resultados[c.board] : null, iBase: casc && casc.iBase, zBase: casc && casc.zBase,
+    icuKa: icuPorTablero[c.board] || 0, tSeg, electrodo: el0, conCc: c.conCc, conEl: c.conEl,
+  });
+}
+
+function aplicarDatosInstalacion() {
+  const reg = loadRegistry();
+  if (reg.length === 0) return;
+  const ctx = contextoInstalacion();
   let cambiado = false;
   reg.forEach(r => {
     const fs = r.formSnapshot;
     if (!fs || !r.hallazgos) return;
-    const nuevos = recalcularHallazgosInstalacion({
-      hallazgos: r.hallazgos,
-      circuito: { awg: r.awg, nParalelo: parseInt(fs.nParalelo) || 1, lengthM: parseFloat(fs.length) || 0, material: fs.material, insulTemp: tempDeAislamiento(fs.insulType, fs.lugarMojado) },
-      nodo: casc ? casc.resultados[r.board] : null, iBase: casc && casc.iBase, zBase: casc && casc.zBase,
-      icuKa: icuPorTablero[r.board] || 0, tSeg, electrodo: el0, conCc: !fs.scEnabled, conEl: !fs.elEnabled,
-    });
+    const nuevos = hallazgosConInstalacionDeCircuito(r.hallazgos, {
+      board: r.board, awg: r.awg, nParalelo: parseInt(fs.nParalelo) || 1, lengthM: parseFloat(fs.length) || 0,
+      material: fs.material, insulTemp: tempDeAislamiento(fs.insulType, fs.lugarMojado), conCc: !fs.scEnabled, conEl: !fs.elEnabled,
+    }, ctx);
     if (JSON.stringify(nuevos) === JSON.stringify(r.hallazgos)) return;
-    const viejo = renderDictamen(r.hallazgos);
-    if (r.bodyHtml && r.bodyHtml.startsWith(viejo)) r.bodyHtml = renderDictamen(nuevos) + r.bodyHtml.slice(viejo.length);
+    const veredicto = veredictoGlobal(nuevos);
+    // El bloque de dictamen va primero en bodyHtml, antes de la primera seccion de resultados
+    const i = r.bodyHtml ? r.bodyHtml.indexOf('<div class="result-block">') : -1;
+    if (i > 0) r.bodyHtml = renderDictamen(nuevos) + r.bodyHtml.slice(i);
+    // y el veredicto tambien va en el encabezado de la hoja del circuito
+    if (r.summaryHtml) r.summaryHtml = r.summaryHtml.replace(/(<span class="badge )[a-z]+(" style="margin-left:8px">)[^<]+(<\/span>)/, `$1${ESTADO_BADGE[veredicto]}$2${veredicto}$3`);
     r.hallazgos = nuevos;
-    r.dictamen = veredictoGlobal(nuevos);
+    r.dictamen = veredicto;
     cambiado = true;
   });
   if (cambiado) saveRegistry(reg);

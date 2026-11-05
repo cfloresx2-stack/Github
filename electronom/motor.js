@@ -1249,7 +1249,7 @@ function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
   // Art. 110-9: capacidad interruptiva
   if (!cc) {
     h.push(hallazgo("R-CC", ESTADO.NO_EVALUABLE, "Art. 110-9",
-      `No se calculó la corriente de cortocircuito, por lo que no puede verificarse la capacidad interruptiva del dispositivo. Declara la capacidad interruptiva del tablero en Diagrama unifilar › Datos de la instalación, o activa la sección 5 de este circuito.`));
+      `No se calculó la corriente de cortocircuito, por lo que no puede verificarse la capacidad interruptiva del dispositivo. Declara la capacidad interruptiva del tablero en la tarjeta 7 de la Calculadora (Datos generales de la instalación), o activa la sección 5 de este circuito.`));
   } else if (cc.icuKa * 1000 >= cc.iccTrafo) {
     h.push(hallazgo("R-CC", ESTADO.CUMPLE, "Art. 110-9",
       `Capacidad interruptiva ${cc.icuKa} kA cubre la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA.`));
@@ -1261,13 +1261,13 @@ function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
   // R-040 / Art. 110-10: verificacion termica del conductor ante cortocircuito (I²t)
   if (!cc || cc.iccCarga === null) {
     h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
-      `No hay corriente de falla en el extremo de la carga (activar cortocircuito con longitud y calibre válidos en Tabla 9) para verificar el calentamiento del conductor.`));
+      `No hay corriente de falla en el extremo de la carga: declara la capacidad interruptiva del tablero en la tarjeta 7 de la Calculadora (o activa la sección 5 de este circuito, con longitud y calibre válidos en Tabla 9) para verificar el calentamiento del conductor.`));
   } else if (input.material !== "cu") {
     h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
       `La verificación térmica ante cortocircuito solo está implementada para cobre.`));
   } else if (!input.scTsc || input.scTsc <= 0) {
     h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
-      `Falta declarar el tiempo de despeje de la falla (curva tiempo-corriente del dispositivo de protección; en Diagrama unifilar › Datos de la instalación) para verificar el calentamiento del conductor.`));
+      `Falta declarar el tiempo de despeje de la falla (curva tiempo-corriente del dispositivo de protección; en la tarjeta 7 de la Calculadora) para verificar el calentamiento del conductor.`));
   } else if (vt) {
     const areaInstaladaMm2 = calibreFinal.mm2;
     if (areaInstaladaMm2 >= vt.areaMinMm2) {
@@ -1282,7 +1282,7 @@ function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
   // R-029 / 250-52(a)(5) y R-030 / 250-53(a)(2): electrodo de puesta a tierra
   if (!el0) {
     h.push(hallazgo("R-030", ESTADO.NO_EVALUABLE, "Art. 250-53",
-      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario. Captúralo una vez en Diagrama unifilar › Datos de la instalación, o en la sección 6 de este circuito.`));
+      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario. Captúralo una vez en la tarjeta 7 de la Calculadora (Datos generales de la instalación), o en la sección 6 de este circuito.`));
   } else {
     if (!el0.cumpleLargo || !el0.cumpleDiam) {
       const faltas = [];
