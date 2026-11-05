@@ -364,6 +364,8 @@
   <!-- ============ INPUT PANEL ============ -->
   <div data-tab="calculadora" class="tabShown">
 
+    <datalist id="listaTableros"></datalist>
+
     <div id="faltantesPanel" class="card" style="display:none; border:2px solid var(--warn)">
       <h2 style="color:var(--warn)">Falta información para ver resultados</h2>
       <ul id="faltantesLista" style="margin:0; padding-left:18px; font-size:13px; line-height:1.6"></ul>
@@ -382,7 +384,7 @@
       <div class="row2">
         <div>
           <label>Nombre del tablero</label>
-          <input type="text" id="boardName" placeholder="Ej. TAB-1">
+          <input type="text" id="boardName" list="listaTableros" autocomplete="off" placeholder="Ej. TAB-1">
         </div>
         <div>
           <label>Nombre del circuito</label>
@@ -401,8 +403,9 @@
       <p class="hint" id="circuitKindAviso" style="display:none; color:var(--warn); margin-top:6px"></p>
 
       <div id="tableroDestinoWrap" style="display:none">
-        <label style="margin-top:16px">Tablero que alimenta este alimentador <span class="hint">(nombre del tablero DESTINO, aguas abajo; usado para armar el diagrama unifilar)</span></label>
-        <input type="text" id="tableroDestino" placeholder="Ej. TAB-B">
+        <label style="margin-top:16px">Tablero que alimenta este alimentador <span class="hint">(el tablero donde TERMINA, aguas abajo)</span></label>
+        <input type="text" id="tableroDestino" list="listaTableros" autocomplete="off" placeholder="Ej. TAB-B">
+        <p class="hint" style="margin-top:4px">Ejemplo: si este alimentador sale de <b>TG</b> y llega al tablero de aspirado, arriba pones <b>TG</b> y aquí <b>TA</b>. Elige uno de la lista (o escribe uno nuevo): debe quedar igual que en "Nombre del tablero" de los circuitos de ese tablero. Si no alimenta otro tablero, cámbialo a "Circuito derivado".</p>
       </div>
 
       <div class="checkline">
@@ -1572,10 +1575,12 @@ function render(data) {
    ========================================================================= */
 document.getElementById('calc').addEventListener('click', () => {
   const projName = document.getElementById('projName').value;
-  const boardName = document.getElementById('boardName').value;
+  const boardName = nombreTableroCanonico(document.getElementById('boardName').value);
+  document.getElementById('boardName').value = boardName;
   const circName = document.getElementById('circName').value;
   const circuitKind = document.getElementById('circuitKind').value; // derivado | alimentador
-  const tableroDestino = circuitKind === 'alimentador' ? document.getElementById('tableroDestino').value.trim() : '';
+  const tableroDestino = circuitKind === 'alimentador' ? nombreTableroCanonico(document.getElementById('tableroDestino').value) : '';
+  if (circuitKind === 'alimentador') document.getElementById('tableroDestino').value = tableroDestino;
   const isMotor = document.getElementById('isMotor').checked;
   const motorPct = parseFloat(document.getElementById('motorDevice').value);
 
@@ -1860,7 +1865,26 @@ function resumenDictamenHtml(reg) {
   </details>`;
 }
 
+// Tableros ya capturados (los de los circuitos y los destinos declarados) para sugerirlos al escribir
+function nombresDeTableros() {
+  const vistos = new Map();
+  loadRegistry().forEach(r => [r.board, r.destino].forEach(n => {
+    const t = String(n || '').trim();
+    if (t && !vistos.has(t.toLowerCase())) vistos.set(t.toLowerCase(), t);
+  }));
+  return [...vistos.values()].sort((a, b) => a.localeCompare(b));
+}
+function actualizarListaTableros() {
+  document.getElementById('listaTableros').innerHTML = nombresDeTableros().map(n => `<option value="${escXml(n)}"></option>`).join('');
+}
+// "ta " o "Ta" -> "TA" si ya existe un tablero con ese nombre (evita tableros duplicados por mayusculas o espacios)
+function nombreTableroCanonico(txt) {
+  const t = String(txt || '').trim();
+  return nombresDeTableros().find(n => n.toLowerCase() === t.toLowerCase()) || t;
+}
+
 function renderRegistry() {
+  actualizarListaTableros();
   const reg = loadRegistry();
   const wrap = document.getElementById('registryTableWrap');
   if (reg.length === 0) {
