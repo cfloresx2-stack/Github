@@ -957,6 +957,98 @@ grupo("Cuadro de cargas — balanceo automático", () => {
   esIgual(balDos.length, 2, "Cada tablero (board) se balancea de forma independiente");
 });
 
+grupo("Sobrecarga de motores (Art. 430-32)", () => {
+  esIgual(breakerEstandarMaximo(17.5), 15, "El estándar máximo que no excede 17.5 A es 15 A");
+  esIgual(breakerEstandarMaximo(40), 40, "Un valor estándar exacto se conserva");
+  esIgual(breakerEstandarMaximo(39.99), 35, "Justo debajo de 40 A baja a 35 A");
+  esIgual(breakerEstandarMaximo(14), null, "Menos que el mínimo estándar → null");
+
+  // Factor de servicio 1.15 o aumento de temperatura de 40 C: 125 % (y 140 % si no arranca)
+  const a = calcularSobrecargaMotor({ flaPlaca: 15.2, flcTabla: 15.2, fs115: true });
+  esIgual(a.usaPlaca, true, "Con corriente de placa se usa la placa");
+  esCerca(a.maxA, 19, 1e-9, "15.2 A con FS 1.15 → 125 % = 19 A");
+  esCerca(a.maxAumA, 21.28, 1e-9, "Si no arranca, hasta 140 % = 21.28 A (430-32(c))");
+  // Los demas motores: 115 % (y 130 %)
+  const b = calcularSobrecargaMotor({ flaPlaca: 15.2, flcTabla: 15.2, fs115: false });
+  esCerca(b.maxA, 17.48, 1e-9, "15.2 A sin FS 1.15 → 115 % = 17.48 A");
+  esCerca(b.maxAumA, 19.76, 1e-9, "Si no arranca, hasta 130 % = 19.76 A");
+  // La placa puede diferir de la tabla: manda la placa
+  const c = calcularSobrecargaMotor({ flaPlaca: 14, flcTabla: 15.2, fs115: true });
+  esCerca(c.maxA, 17.5, 1e-9, "La sobrecarga usa la placa (14 A), no la tabla (15.2 A)");
+  // Sin placa se estima con la tabla y se avisa
+  const d = calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: 15.2, fs115: true });
+  esIgual(d.usaPlaca, false, "Sin placa: usaPlaca = false");
+  esCerca(d.maxA, 19, 1e-9, "Sin placa se estima con la corriente de tabla");
+  // Protector termico integrado: 170 / 156 / 140 % segun la corriente de plena carga
+  esIgual(calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: 9, fs115: true }).pctTermico, 170, "9 A o menos → 170 %");
+  esIgual(calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: 9.1, fs115: true }).pctTermico, 156, "9.1 A → 156 %");
+  esIgual(calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: 20, fs115: true }).pctTermico, 156, "20 A → 156 %");
+  esIgual(calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: 20.1, fs115: true }).pctTermico, 140, "Más de 20 A → 140 %");
+
+  // Dictamen
+  const base = {
+    input: { requiredAmpacity:19, circuitCite:"Art. 210-19, Nota 4", systemKey:"3F-1T", length:20 },
+    calibreIni: { awg:"14" }, calibreFinal: { awg:"14", correctedAmp:20 }, vd: { dropPct:1 }, breaker: { breaker:40 },
+    tierra: { awgTierra:"14", awgBase:"14", breakerA:40, factor:1, limitadoPorFase:false },
+    tuberia: { trade:'1/2"', totalArea:30, available:56, fillPct:40 }, cc: null, el0: null, motor: true,
+  };
+  const busca = (hs, id) => hs.find(x => x.reglaId === id);
+  const conPlaca = evaluarCumplimiento({ ...base, sobrecarga: a });
+  esIgual(busca(conPlaca, "R-045").estado, ESTADO.CUMPLE, "Motor con corriente de placa: la sobrecarga queda calculada → Cumple");
+  esIgual(busca(conPlaca, "R-009").estado, ESTADO.CUMPLE, "El interruptor contra cortocircuito del motor no es advertencia si la sobrecarga está calculada");
+  const sinPlaca = evaluarCumplimiento({ ...base, sobrecarga: d });
+  esIgual(busca(sinPlaca, "R-045").estado, ESTADO.ADVERTENCIA, "Motor sin corriente de placa → Advertencia (falta el dato)");
+  const antiguo = evaluarCumplimiento({ ...base });
+  esIgual(busca(antiguo, "R-009").estado, ESTADO.ADVERTENCIA, "Sin cálculo de sobrecarga se conserva la advertencia anterior");
+  esIgual(busca(antiguo, "R-045"), undefined, "Sin cálculo de sobrecarga no se emite R-045");
+});
+
+grupo("Aire acondicionado y refrigeración (Art. 440)", () => {
+  // Equipo con placa: MCA y MOCP
+  const p1 = calcularCircuitoAC({ modo:"placa", mca:14.2, mocp:25 });
+  esIgual(p1.breaker, 15, "MCA 14.2 A, MOCP 25 A → interruptor de 15 A (el estándar más chico ≥ MCA)");
+  esCerca(p1.ampacidadMin, 14.2, 1e-9, "El conductor se dimensiona a la MCA");
+  esIgual(calcularCircuitoAC({ modo:"placa", mca:17, mocp:25 }).breaker, 20, "MCA 17 A → 20 A");
+  esIgual(calcularCircuitoAC({ modo:"placa", mca:21, mocp:25 }).breaker, 25, "MCA 21 A, MOCP 25 A → 25 A (no excede la MOCP)");
+  const ine = calcularCircuitoAC({ modo:"placa", mca:16, mocp:18 });
+  esIgual(ine.excedeMocp, true, "MCA 16 A con MOCP 18 A: no hay estándar entre los dos → excede la MOCP");
+  esCierto(!!calcularCircuitoAC({ modo:"placa", mca:30, mocp:25 }).error, "MOCP menor que MCA es un dato de placa inconsistente");
+  esCierto(!!calcularCircuitoAC({ modo:"placa", mca:0, mocp:25 }).error, "Sin MCA no se puede calcular");
+  esCerca(calcularCircuitoAC({ modo:"placa", mca:14.2, mocp:25, rla:10 }).discMin, 11.5, 1e-9, "Desconexión ≥ 115 % de la RLA (440-12(a)(1))");
+
+  // Motocompresor individual
+  const c1 = calcularCircuitoAC({ modo:"compresor", rla:10 });
+  esCerca(c1.ampacidadMin, 12.5, 1e-9, "RLA 10 A → conductor ≥ 125 % = 12.5 A (440-32)");
+  esCerca(c1.max175, 17.5, 1e-9, "Protección máxima 175 % = 17.5 A");
+  esIgual(c1.breaker, 15, "17.5 A → estándar 15 A");
+  esIgual(c1.breakerMaxArranque, 20, "Si no arranca, hasta 225 % = 22.5 A → 20 A");
+  esCerca(c1.relevadorMaxA, 14, 1e-9, "Relevador de sobrecarga ≤ 140 % = 14 A (440-52(a)(1))");
+  esCerca(c1.discMin, 11.5, 1e-9, "Desconexión ≥ 115 % = 11.5 A");
+  const c2 = calcularCircuitoAC({ modo:"compresor", rla:7 });
+  esIgual(c2.breaker, 15, "RLA 7 A: 175 % = 12.25 A, se usa el mínimo de 15 A (excepción de 440-22(a))");
+  esIgual(c2.usaMinimo15, true, "Se indica que se usó el mínimo de 15 A");
+  const c3 = calcularCircuitoAC({ modo:"compresor", rla:20, corrienteSeleccion:24 });
+  esIgual(c3.ibase, 24, "Con corriente de selección mayor, se usa esa");
+  esCerca(c3.ampacidadMin, 30, 1e-9, "24 A → conductor ≥ 30 A");
+  esIgual(c3.breaker, 40, "175 % de 24 A = 42 A → 40 A");
+  esCierto(!!calcularCircuitoAC({ modo:"compresor", rla:0 }).error, "Sin RLA no se puede calcular");
+
+  // Dictamen
+  const base = {
+    input: { requiredAmpacity:14.2, circuitCite:"Art. 210-19, Nota 4", systemKey:"2F-1T", length:20 },
+    calibreIni: { awg:"14" }, calibreFinal: { awg:"14", correctedAmp:20, usableAmp:15 }, vd: { dropPct:1 }, breaker: { breaker:15 },
+    tierra: { awgTierra:"14", awgBase:"14", breakerA:15, factor:1, limitadoPorFase:false },
+    tuberia: { trade:'1/2"', totalArea:30, available:56, fillPct:40 }, cc: null, el0: null, motor: false,
+  };
+  const busca = (hs, id) => hs.find(x => x.reglaId === id);
+  esIgual(busca(evaluarCumplimiento({ ...base, ac: p1 }), "R-046").estado, ESTADO.CUMPLE, "Equipo con placa y protección dentro de la MOCP → Cumple");
+  esIgual(busca(evaluarCumplimiento({ ...base, ac: ine }), "R-046").estado, ESTADO.NO_CUMPLE, "Protección que no cabe en la MOCP → No cumple");
+  esIgual(busca(evaluarCumplimiento({ ...base, ac: { error:"falta dato" } }), "R-046").estado, ESTADO.NO_EVALUABLE, "Sin datos de placa → No evaluable");
+  esIgual(busca(evaluarCumplimiento({ ...base }), "R-046"), undefined, "Un circuito que no es de A/C no emite R-046");
+  const comp = evaluarCumplimiento({ ...base, breaker: { breaker:40 }, ac: c3 });
+  esIgual(busca(comp, "R-009").estado, ESTADO.CUMPLE, "Motocompresor: un interruptor hasta 175 % puede exceder la ampacidad (440-22(a))");
+});
+
 grupo("Cuadro de cargas — límite de desbalance de 5 %", () => {
   const c = (id, board, circ, va, fases) => ({ id, board, circ, va, fases, voltage:220, breakerA:20, awg:"12" });
   esIgual(LIMITE_DESBALANCE_PCT, 5, "El máximo de desbalance de diseño es 5 %");

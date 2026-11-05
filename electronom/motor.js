@@ -840,6 +840,85 @@ function calcularInterruptorMotor(flc, pct) {
   return { breaker, maxCurrent, pct };
 }
 
+// Valor estandar MAXIMO que no excede `amps` (para topes del tipo "no mayor a X"); null si X es menor al minimo estandar
+function breakerEstandarMaximo(amps) {
+  let r = null;
+  for (const b of BREAKER_SIZES) if (b <= amps + 1e-9) r = b;
+  return r;
+}
+
+/* =========================================================================
+   PROTECCION DE SOBRECARGA DE MOTORES  (Art. 430-32, Parte C del Art. 430)
+   -------------------------------------------------------------------------
+   Motor de servicio continuo de mas de 746 W (1 hp), con relevador de
+   sobrecarga separado: se dispara a no mas de 125 % de la corriente de PLACA
+   si el motor tiene factor de servicio marcado de 1.15 o mas, o aumento de
+   temperatura marcado de 40 C o menos; 115 % en los demas (430-32(a)(1)).
+   Si ese ajuste no basta para arrancar, 430-32(c) permite hasta 140 % / 130 %.
+   Protector termico integrado al motor (430-32(a)(2)): 170 % de la corriente
+   de plena carga de TABLA si es de 9 A o menos, 156 % de 9.1 a 20 A, 140 %
+   si pasa de 20 A. La proteccion de sobrecarga se basa en la corriente de
+   placa (430-6(a)(2)); la de tabla solo se usa para conductores y para el
+   interruptor contra cortocircuito. Sin placa, se estima con la de tabla y se
+   avisa.
+   ========================================================================= */
+function calcularSobrecargaMotor({ flaPlaca, flcTabla, fs115 }) {
+  const usaPlaca = flaPlaca > 0;
+  const base = usaPlaca ? flaPlaca : flcTabla;
+  const pct = fs115 ? 125 : 115;
+  const pctAum = fs115 ? 140 : 130;
+  const pctTermico = flcTabla <= 9 ? 170 : (flcTabla <= 20 ? 156 : 140);
+  return {
+    usaPlaca, base, fs115: !!fs115, pct, maxA: base * pct / 100, pctAum, maxAumA: base * pctAum / 100,
+    flcTabla, pctTermico, termicoMaxA: flcTabla * pctTermico / 100,
+  };
+}
+
+/* =========================================================================
+   AIRE ACONDICIONADO Y REFRIGERACION  (Art. 440)
+   -------------------------------------------------------------------------
+   Dos formas de capturar el equipo:
+   - "placa": equipo con varios motores o carga combinada (unidad condensadora,
+     minisplit, paquete, central). La placa trae la ampacidad minima del circuito
+     (MCA) y la proteccion maxima (MOCP): el conductor se dimensiona a la MCA
+     (440-35) y el interruptor no debe exceder la MOCP (440-22(b), 440-4(b)).
+     Se elige el valor estandar mas chico que no sea menor a la MCA; si ese
+     excede la MOCP se busca el estandar mas grande que no la exceda.
+   - "compresor": un solo motocompresor hermetico con su corriente de carga
+     nominal (RLA) y, si la placa la trae, la corriente de seleccion del
+     circuito derivado (se usa la mayor de las dos):
+       conductor >= 125 %                       (440-32)
+       interruptor <= 175 %, hasta 225 % si no arranca, minimo 15 A (440-22(a))
+       relevador de sobrecarga <= 140 %          (440-52(a)(1))
+       interruptor de tiempo inverso como sobrecarga <= 125 % (440-52(a)(3))
+       medio de desconexion >= 115 %             (440-12(a)(1))
+   ========================================================================= */
+function calcularCircuitoAC({ modo, rla, corrienteSeleccion, mca, mocp }) {
+  if (modo === "placa") {
+    if (!(mca > 0) || !(mocp > 0)) return { error: "Para un equipo con placa captura la ampacidad mínima del circuito (MCA) y la protección máxima (MOCP), ambas mayores a cero." };
+    if (mocp < mca) return { error: `Datos de placa inconsistentes: la protección máxima (MOCP ${mocp} A) es menor que la ampacidad mínima del circuito (MCA ${mca} A).` };
+    let breaker = nextStandardBreaker(mca);
+    if (breaker > mocp) {
+      const mx = breakerEstandarMaximo(mocp);
+      if (mx !== null && mx >= mca) breaker = mx;
+    }
+    return {
+      modo, mca, mocp, ampacidadMin: mca, breaker, excedeMocp: breaker > mocp + 1e-9,
+      rla: rla > 0 ? rla : null, discMin: rla > 0 ? 1.15 * rla : null,
+    };
+  }
+  const ibase = Math.max(rla || 0, corrienteSeleccion || 0);
+  if (!(ibase > 0)) return { error: "Para un motocompresor captura su corriente de carga nominal (RLA) de placa, mayor a cero." };
+  const max175 = 1.75 * ibase, max225 = 2.25 * ibase;
+  const b175 = breakerEstandarMaximo(max175);
+  return {
+    modo, rla: rla || 0, corrienteSeleccion: corrienteSeleccion || 0, ibase, ampacidadMin: 1.25 * ibase,
+    max175, max225, breaker: Math.max(b175 ?? 15, 15), usaMinimo15: b175 === null || b175 < 15,
+    breakerMaxArranque: Math.max(breakerEstandarMaximo(max225) ?? 15, 15),
+    relevadorMaxA: 1.40 * ibase, breakerSobrecargaMaxA: 1.25 * ibase, discMin: 1.15 * ibase,
+  };
+}
+
 /* =========================================================================
    PASO D: CONDUCTOR DE PUESTA A TIERRA DE EQUIPOS  (Art. 250-122)
    ========================================================================= */
@@ -1120,7 +1199,7 @@ function hallazgo(reglaId, estado, articulo, observacion) {
   return { reglaId, estado, articulo, observacion };
 }
 
-function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor }) {
+function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor, sobrecarga, ac }) {
   const h = [];
 
   // R-002 / 310-15(a)(3): ampacidad suficiente para la carga
@@ -1176,9 +1255,23 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   // Con conductores en paralelo (310-10(h)) la proteccion se compara contra la ampacidad
   // de TODOS los conductores de la fase, no la de uno solo.
   const ampTotal = ampUtil * (input.nParalelo || 1);
-  if (motor) {
+  const acCompresor = ac && !ac.error && ac.modo === "compresor";
+  if (motor && sobrecarga) {
+    h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 430-52",
+      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra y puede exceder la ampacidad del conductor (${fmt(ampTotal,2)} A), como permite la Tabla 430-52. La protección de sobrecarga del motor es otra y se evalúa en R-045.`));
+    if (sobrecarga.usaPlaca) {
+      h.push(hallazgo("R-045", ESTADO.CUMPLE, "Art. 430-32(a)(1)",
+        `Sobrecarga: con la corriente de placa de ${fmt(sobrecarga.base,2)} A${sobrecarga.fs115 ? " y factor de servicio ≥ 1.15 (o aumento de temperatura ≤ 40 °C)" : " sin factor de servicio 1.15 marcado"}, el relevador de sobrecarga debe dispararse a no más de ${sobrecarga.pct} % = ${fmt(sobrecarga.maxA,2)} A (hasta ${sobrecarga.pctAum} % = ${fmt(sobrecarga.maxAumA,2)} A solo si el motor no logra arrancar, 430-32(c)). Con protector térmico integrado el límite es ${sobrecarga.pctTermico} % de la corriente de tabla = ${fmt(sobrecarga.termicoMaxA,2)} A. El relevador se especifica dentro de ese límite; la herramienta no lo selecciona de un catálogo.`));
+    } else {
+      h.push(hallazgo("R-045", ESTADO.ADVERTENCIA, "Art. 430-32(a)(1), 430-6(a)(2)",
+        `Falta la corriente de placa del motor. La protección de sobrecarga se basa en la corriente de placa, no en la de tabla (${fmt(sobrecarga.flcTabla,2)} A). Como estimación, con ${sobrecarga.pct} % el límite sería ${fmt(sobrecarga.maxA,2)} A. Captura la corriente de placa en la sección 1 para dejar el ajuste del relevador calculado.`));
+    }
+  } else if (motor) {
     h.push(hallazgo("R-009", ESTADO.ADVERTENCIA, "Art. 430-52",
       `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(ampTotal,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
+  } else if (acCompresor) {
+    h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 440-22(a)",
+      `Motocompresor: la protección de ${breaker.breaker} A (hasta 175 % de la corriente de carga nominal) puede exceder la ampacidad del conductor (${fmt(ampTotal,2)} A), como permite el Art. 440-22(a).`));
   } else if (breaker.breaker <= ampTotal) {
     h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4",
       `Protección de ${breaker.breaker} A no excede la ampacidad utilizable del conductor (${fmt(ampTotal,2)} A).`));
@@ -1188,6 +1281,24 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   } else {
     h.push(hallazgo("R-009", ESTADO.NO_CUMPLE, "Art. 240-4(c)",
       `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampTotal,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
+  }
+
+  // R-046 / Art. 440: equipos de aire acondicionado y refrigeracion
+  if (ac) {
+    if (ac.error) {
+      h.push(hallazgo("R-046", ESTADO.NO_EVALUABLE, "Art. 440", ac.error));
+    } else if (ac.modo === "placa") {
+      if (ac.excedeMocp) {
+        h.push(hallazgo("R-046", ESTADO.NO_CUMPLE, "Art. 440-22(b), 440-4(b)",
+          `No existe un interruptor estándar que sea a la vez mayor o igual a la ampacidad mínima del circuito (MCA ${fmt(ac.mca,1)} A) y no mayor a la protección máxima de placa (MOCP ${fmt(ac.mocp,1)} A). Revisar los datos de placa con el fabricante.`));
+      } else {
+        h.push(hallazgo("R-046", ESTADO.CUMPLE, "Art. 440-35, 440-22(b)",
+          `Equipo con placa: conductor dimensionado a la ampacidad mínima del circuito (MCA = ${fmt(ac.mca,1)} A) y protección de ${ac.breaker} A, que no excede la protección máxima de placa (MOCP = ${fmt(ac.mocp,1)} A).${ac.discMin ? ` Medio de desconexión de al menos ${fmt(ac.discMin,1)} A (115 % de la corriente de carga nominal, 440-12(a)(1)).` : ""}`));
+      }
+    } else {
+      h.push(hallazgo("R-046", ESTADO.CUMPLE, "Art. 440-32, 440-22(a), 440-52",
+        `Motocompresor con corriente de carga nominal de ${fmt(ac.ibase,2)} A: conductor ≥ 125 % = ${fmt(ac.ampacidadMin,2)} A; protección de ${ac.breaker} A (máximo 175 % = ${fmt(ac.max175,1)} A${ac.usaMinimo15 ? "; se usa el mínimo de 15 A que permite la excepción de 440-22(a)" : ""}, hasta ${ac.breakerMaxArranque} A si no logra arrancar); relevador de sobrecarga a no más de 140 % = ${fmt(ac.relevadorMaxA,2)} A; medio de desconexión de al menos 115 % = ${fmt(ac.discMin,2)} A.`));
+    }
   }
 
   // R-010 / 240-6(a): valor comercial estandarizado
