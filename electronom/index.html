@@ -53,6 +53,7 @@
   }
   .tabBar button:hover { color: var(--white); }
   .tabBar button.tabActive { color: var(--white); border-bottom-color: var(--ice); }
+  .tabBar button.tabBloqueada { opacity: .5; }
   .wrap > [data-tab] { display: none; }
   .wrap > [data-tab].tabShown { display: block; }
   .card {
@@ -363,8 +364,18 @@
   <!-- ============ INPUT PANEL ============ -->
   <div data-tab="calculadora" class="tabShown">
 
+    <div id="faltantesPanel" class="card" style="display:none; border:2px solid var(--warn)">
+      <h2 style="color:var(--warn)">Falta información para ver resultados</h2>
+      <ul id="faltantesLista" style="margin:0; padding-left:18px; font-size:13px; line-height:1.6"></ul>
+      <p class="hint" style="margin-top:8px">Completa estos puntos aquí mismo; los resultados se desbloquean solos.</p>
+    </div>
+
     <div class="card">
       <h2>1. Identificación</h2>
+      <div class="checkline" style="margin:0 0 8px">
+        <button type="button" id="importarProyecto2" class="miniBtn" style="padding:8px 14px">📂 Cargar proyecto (archivo)</button>
+        <span class="hint">Si ya tienes un proyecto guardado, cárgalo aquí en vez de capturar circuito por circuito.</span>
+      </div>
       <p class="hint">Cada vez que capturas y presionas "Calcular circuito" estás definiendo <b>UN circuito</b> (un interruptor). Si el tablero tiene circuitos de distinto tipo (monofásicos, bifásicos, trifásicos), captura cada uno por separado con el <b>mismo nombre de tablero</b> — el Cuadro de Cargas los combina automáticamente, sin importar cuántos polos tenga cada uno.</p>
       <label style="margin-top:10px">Nombre del proyecto</label>
       <input type="text" id="projName" placeholder="Ej. Nave Industrial Sabritas">
@@ -723,6 +734,74 @@
       </div>
     </div>
 
+
+    <div class="card">
+      <h2>7. Datos generales de la instalación <span class="hint">(necesarios para ver resultados)</span></h2>
+      <input type="checkbox" id="ccArbolEnabled" checked style="display:none">
+      <p class="hint" style="margin-top:6px">Datos de toda la instalación, UNA sola vez (no se repiten circuito por circuito). Son necesarios para ver resultados: con ellos se calcula la falla en cada tablero (se reduce nivel por nivel según la impedancia real de cada alimentador) y se completa el dictamen de todos los circuitos.</p>
+      <div id="ccArbolPanel">
+        <div class="row2" style="margin-top:10px">
+          <div>
+            <label>Transformador <span class="hint">(kVA)</span></label>
+            <input type="number" id="ccArbolKva" value="" step="1" min="1" placeholder="Ej. 300">
+          </div>
+          <div>
+            <label>Impedancia %Z <span class="hint">(placa)</span></label>
+            <input type="number" id="ccArbolZ" value="" step="0.05" min="0.5" max="20" placeholder="Ej. 5">
+          </div>
+        </div>
+        <div class="row2">
+          <div>
+            <label>Tensión del primario <span class="hint">(kV; solo para rotular el unifilar detallado)</span></label>
+            <input type="number" id="ccArbolPrim" value="" step="0.1" min="0" placeholder="Ej. 13.8">
+          </div>
+          <div></div>
+        </div>
+        <div class="row2">
+          <div>
+            <label>Tensión del secundario <span class="hint">(V, línea a línea)</span></label>
+            <input type="number" id="ccArbolVoltage" value="" step="1" min="1" placeholder="Ej. 220">
+          </div>
+          <div>
+            <label>Impedancia de la fuente <span class="hint">(pu, 0 = conservador)</span></label>
+            <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
+          </div>
+        </div>
+        <label style="margin-top:10px">Tiempo de despeje de la falla <span class="hint">(s, de la curva del interruptor; se usa para verificar el calentamiento del conductor, Art. 110-10)</span></label>
+        <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Ej. 0.02">
+        <details open style="margin-top:10px">
+          <summary>Electrodo de puesta a tierra de la instalación (Art. 250-53)</summary>
+          <input type="checkbox" id="instElEnabled" checked style="display:none">
+          <div id="instElPanel" style="margin-top:8px">
+            <div class="row2">
+              <div>
+                <label>Resistividad del terreno <span class="hint">(Ω·m, medir en sitio)</span></label>
+                <input type="number" id="instElRho" value="" step="1" min="1" placeholder="Medir en sitio">
+              </div>
+              <div>
+                <label>Longitud enterrada <span class="hint">(m)</span></label>
+                <input type="number" id="instElLargo" value="2.44" step="0.01" min="0.5">
+              </div>
+            </div>
+            <div class="row2">
+              <div>
+                <label>Diámetro de la varilla <span class="hint">(mm)</span></label>
+                <input type="number" id="instElDiam" value="16" step="0.5" min="5">
+              </div>
+              <div class="checkline" style="margin-top:22px">
+                <input type="checkbox" id="instElComp">
+                <label for="instElComp">Se instalará un electrodo complementario</label>
+              </div>
+            </div>
+            <div class="totalsLine" id="instElResultado" style="margin-top:6px"></div>
+          </div>
+        </details>
+        <div id="ccArbolAdvertencias" style="margin-top:8px"></div>
+        <div id="ccArbolResultado" style="margin-top:8px"></div>
+        <p class="hint" style="margin-top:8px">Falla trifásica simétrica, método por unidad — mismo cálculo y mismas limitaciones que la sección 5 de la Calculadora (no resuelve redes en malla, no calcula falla línea-tierra). La capacidad interruptiva se declara por tablero porque normalmente todos los interruptores de un mismo tablero son de la misma marca/marco.</p>
+      </div>
+    </div>
+
     <div id="editandoBanner" class="checkline" style="display:none; background:var(--ice); border-radius:8px; padding:10px 12px; margin-bottom:10px">
       <span>✏️ Editando un circuito ya agregado a la memoria — al calcular y volver a agregar, <b>reemplaza al original</b>.</span>
       <button type="button" id="cancelarEdicion" class="miniBtn" style="margin-left:auto">Cancelar edición</button>
@@ -783,84 +862,11 @@
     <p class="hint" style="margin-top:6px">Lista de tablero origen → tablero destino, con el alimentador, calibre, tierra, interruptor y canalización de cada tramo — útil como base para redibujar el plano final en AutoCAD u otro programa de dibujo.</p>
 
     <h2 style="margin-top:24px">Unifilar detallado por tablero <span class="hint">(símbolos del catálogo ESCO)</span></h2>
-    <p class="hint">Una hoja por tablero: acometida, transformador e interruptor principal en la del tablero general (si el tablero raíz solo tiene el alimentador al tablero general, no se dibuja aparte), y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Si activas la verificación de cortocircuito de abajo, cada hoja muestra la falla disponible.</p>
+    <p class="hint">Una hoja por tablero: acometida, transformador e interruptor principal en la del tablero general (si el tablero raíz solo tiene el alimentador al tablero general, no se dibuja aparte), y en cada una la barra con todos sus circuitos (interruptor, conductor, tubería, longitud, caída de tensión y carga). Los circuitos idénticos con nombre numerado se dibujan una vez con "×N". Cada hoja muestra la falla disponible en sus barras.</p>
     <div id="unifilarDetalladoWrap" style="margin-top:12px; overflow-x:auto"></div>
     <button id="descargarUnifilarDxf" type="button" style="margin-top:12px">⬇️ Descargar unifilar detallado (DXF para AutoCAD)</button>
     <p id="unifilarDxfAviso" class="hint" style="display:none;color:var(--warn);margin-top:6px;font-weight:bold"></p>
     <p class="hint" style="margin-top:6px">Un solo archivo DXF con todas las hojas apiladas, usando los mismos bloques de tu catálogo ESCO (<code>ESCO_02_CB_ANSI</code>, <code>ESCO_08_M3</code>, etc.), con los atributos TAG / DATOS / TIPO llenos pero invisibles (para EATTEDIT o extracción de datos). Ábrelo en AutoCAD y guárdalo como DWG. Los textos van sin acentos.</p>
-
-    <details style="margin-top:16px">
-      <summary>Datos de la instalación: cortocircuito, tiempo de despeje y electrodo (opcional)</summary>
-      <div class="checkline" style="margin-top:10px">
-        <input type="checkbox" id="ccArbolEnabled">
-        <label for="ccArbolEnabled">Calcular la falla disponible en cada tablero y verificar la capacidad interruptiva (Art. 110-9)</label>
-      </div>
-      <p class="hint" style="margin-top:6px">Declara estos datos UNA sola vez (no hace falta repetirlos circuito por circuito): se calcula la falla en el tablero raíz y se va reduciendo tablero por tablero según la impedancia real del alimentador que los conecta. Con la capacidad interruptiva de cada tablero, el tiempo de despeje y el electrodo, el dictamen de todos los circuitos de la memoria se completa solo.</p>
-      <div id="ccArbolPanel" style="display:none">
-        <div class="row2" style="margin-top:10px">
-          <div>
-            <label>Transformador <span class="hint">(kVA)</span></label>
-            <input type="number" id="ccArbolKva" value="500" step="1" min="1">
-          </div>
-          <div>
-            <label>Impedancia %Z <span class="hint">(placa)</span></label>
-            <input type="number" id="ccArbolZ" value="5" step="0.05" min="0.5" max="20">
-          </div>
-        </div>
-        <div class="row2">
-          <div>
-            <label>Tensión del primario <span class="hint">(kV; solo para rotular el unifilar detallado)</span></label>
-            <input type="number" id="ccArbolPrim" value="" step="0.1" min="0" placeholder="Ej. 13.8">
-          </div>
-          <div></div>
-        </div>
-        <div class="row2">
-          <div>
-            <label>Tensión del secundario <span class="hint">(V, línea a línea)</span></label>
-            <input type="number" id="ccArbolVoltage" value="220" step="1" min="1">
-          </div>
-          <div>
-            <label>Impedancia de la fuente <span class="hint">(pu, 0 = conservador)</span></label>
-            <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
-          </div>
-        </div>
-        <label style="margin-top:10px">Tiempo de despeje de la falla <span class="hint">(s, de la curva del interruptor; vacío = no verificar el calentamiento del conductor, Art. 110-10)</span></label>
-        <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Ej. 0.02">
-        <details style="margin-top:10px">
-          <summary>Electrodo de puesta a tierra de la instalación (opcional)</summary>
-          <div class="checkline" style="margin-top:8px">
-            <input type="checkbox" id="instElEnabled">
-            <label for="instElEnabled">Calcular la resistencia del electrodo una sola vez para toda la instalación (Art. 250-53)</label>
-          </div>
-          <div id="instElPanel" style="display:none">
-            <div class="row2">
-              <div>
-                <label>Resistividad del terreno <span class="hint">(Ω·m, medir en sitio)</span></label>
-                <input type="number" id="instElRho" value="" step="1" min="1" placeholder="Medir en sitio">
-              </div>
-              <div>
-                <label>Longitud enterrada <span class="hint">(m)</span></label>
-                <input type="number" id="instElLargo" value="2.44" step="0.01" min="0.5">
-              </div>
-            </div>
-            <div class="row2">
-              <div>
-                <label>Diámetro de la varilla <span class="hint">(mm)</span></label>
-                <input type="number" id="instElDiam" value="16" step="0.5" min="5">
-              </div>
-              <div class="checkline" style="margin-top:22px">
-                <input type="checkbox" id="instElComp">
-                <label for="instElComp">Se instalará un electrodo complementario</label>
-              </div>
-            </div>
-            <div class="totalsLine" id="instElResultado" style="margin-top:6px"></div>
-          </div>
-        </details>
-        <div id="ccArbolAdvertencias" style="margin-top:8px"></div>
-        <div id="ccArbolResultado" style="margin-top:8px"></div>
-        <p class="hint" style="margin-top:8px">Falla trifásica simétrica, método por unidad — mismo cálculo y mismas limitaciones que la sección 5 de la Calculadora (no resuelve redes en malla, no calcula falla línea-tierra). La capacidad interruptiva se declara por tablero porque normalmente todos los interruptores de un mismo tablero son de la misma marca/marco.</p>
-      </div>
-    </details>
   </div>
 
 </div>
@@ -1801,6 +1807,7 @@ function editarCircuito(id) {
   const reg = loadRegistry();
   const r = reg.find(x => x.id === id);
   if (!r || !r.formSnapshot) return;
+  activarTab('calculadora');
   restaurarFormSnapshot(r.formSnapshot);
   editingId = id;
   document.getElementById('editandoBanner').style.display = 'flex';
@@ -2157,11 +2164,9 @@ function restaurarInstalacion(t) {
   set('ccArbolZsource', t.zSourcePu); set('ccArbolTsc', t.tDespeje);
   icuPorTablero = { ...(t.icu || {}) };
   const chk = document.getElementById('ccArbolEnabled');
-  chk.checked = !!t.verificarCc;
-  document.getElementById('ccArbolPanel').style.display = chk.checked ? 'block' : 'none';
+  chk.checked = true;   // la verificacion de cortocircuito de toda la instalacion ya no es opcional
   const e = t.electrodo || {};
-  document.getElementById('instElEnabled').checked = !!e.habilitado;
-  document.getElementById('instElPanel').style.display = e.habilitado ? 'block' : 'none';
+  document.getElementById('instElEnabled').checked = true;   // el electrodo de la instalacion ya no es opcional
   set('instElRho', e.rho); set('instElLargo', e.largo); set('instElDiam', e.diam);
   document.getElementById('instElComp').checked = !!e.comp;
   actualizarResultadoElectrodoInstalacion();
@@ -2855,9 +2860,9 @@ document.getElementById('exportarProyecto').addEventListener('click', () => {
   if (sinDatos > 0) alert(`${sinDatos} circuito(s) antiguos de la memoria no guardaron sus datos de captura y no se incluyeron en el archivo. Edítalos y vuelve a agregarlos para poder respaldarlos.`);
 });
 
-document.getElementById('importarProyecto').addEventListener('click', () => {
+['importarProyecto', 'importarProyecto2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
   document.getElementById('importarProyectoArchivo').click();
-});
+}));
 document.getElementById('importarProyectoArchivo').addEventListener('change', (e) => {
   const archivo = e.target.files[0];
   e.target.value = '';
@@ -2886,7 +2891,60 @@ document.getElementById('importarProyectoArchivo').addEventListener('change', (e
    que ya existian, para no tener que scrollear por todo para llegar a
    la memoria o al cuadro de cargas.
    ========================================================================= */
+/* =========================================================================
+   COMPUERTA DE CAPTURA
+   -------------------------------------------------------------------------
+   No se puede salir de la Calculadora hacia memoria, cuadro de cargas o
+   diagrama hasta que la informacion este completa (evaluarCompletitud, en
+   motor.js). Si falta algo, se queda en la Calculadora y se lista exactamente
+   que falta; la lista se actualiza sola y las pestanas se desbloquean.
+   ========================================================================= */
+function circuitoPendiente() {
+  if (editingId !== null) return 'Estás editando un circuito: presiona "Calcular circuito" y agrégalo de nuevo a la memoria, o cancela la edición.';
+  const f = capturarFormSnapshot();
+  if (!f.circName.trim() && !f.boardName.trim()) return null;       // formulario sin usar
+  const nombre = `${f.boardName.trim() || '?'} / ${f.circName.trim() || '?'}`;
+  const igual = lastCalc && JSON.stringify(f) === JSON.stringify(lastCalc.formSnapshot);
+  if (igual && loadRegistry().some(r => r.id === lastCalc.id)) return null;
+  if (igual) return `Calculaste el circuito ${nombre} pero no lo has agregado a la memoria: presiona "+ Agregar este circuito a la memoria del proyecto".`;
+  return `El circuito ${nombre} tiene datos sin calcular o modificados después de agregarlo: presiona "Calcular circuito" y luego "+ Agregar este circuito a la memoria del proyecto".`;
+}
+function faltantesCaptura() {
+  const reg = loadRegistry();
+  return evaluarCompletitud({
+    registro: reg.map(r => ({ id: r.id, proj: r.proj, board: r.board, circ: r.circ, kind: r.circuitKindLabel === 'Alimentador' ? 'alimentador' : 'derivado', destino: r.destino })),
+    pendiente: circuitoPendiente(),
+    instalacion: {
+      kva: parseFloat(document.getElementById('ccArbolKva').value) || 0,
+      zPct: parseFloat(document.getElementById('ccArbolZ').value) || 0,
+      voltage: parseFloat(document.getElementById('ccArbolVoltage').value) || 0,
+      tDespeje: parseFloat(document.getElementById('ccArbolTsc').value) || 0,
+      icu: icuPorTablero, electrodoValido: !!electrodoInstalacion(),
+    },
+  });
+}
+function pintarFaltantes(f) {
+  const panel = document.getElementById('faltantesPanel');
+  document.getElementById('faltantesLista').innerHTML = f.map(x => `<li>${escXml(x.texto)}${(x.circuitos || []).map(c =>
+    ` <button type="button" class="miniBtn" onclick="editarCircuito(${c.id})">Corregir ${escXml(c.etiqueta)}</button>`).join('')}</li>`).join('');
+  panel.style.display = f.length ? 'block' : 'none';
+}
+function refrescarCompuerta() {
+  const f = faltantesCaptura();
+  document.querySelectorAll('.tabBar button').forEach(btn => {
+    const bloqueada = btn.dataset.tabbtn !== 'calculadora' && f.length > 0;
+    btn.classList.toggle('tabBloqueada', bloqueada);
+    btn.title = bloqueada ? 'Completa la captura para ver esta pantalla' : '';
+  });
+  if (document.getElementById('faltantesPanel').style.display !== 'none') pintarFaltantes(f);
+}
+setInterval(refrescarCompuerta, 1000);
+
 function activarTab(nombre) {
+  if (nombre !== 'calculadora') {
+    const f = faltantesCaptura();
+    if (f.length) { pintarFaltantes(f); nombre = 'calculadora'; }
+  }
   document.querySelectorAll('.wrap > [data-tab]').forEach(el => {
     el.classList.toggle('tabShown', el.dataset.tab === nombre);
   });

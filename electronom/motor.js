@@ -1733,3 +1733,44 @@ function agruparCircuitosParaUnifilar(circuitos) {
   });
   return grupos;
 }
+
+/* =========================================================================
+   COMPUERTA DE CAPTURA: que falta antes de ver resultados
+   -------------------------------------------------------------------------
+   Logica pura (sin DOM). El programa no deja salir de la pantalla de captura
+   hacia memoria, cuadro de cargas o diagrama hasta que la informacion de la
+   instalacion este completa; esta funcion dice QUE falta, en el orden en que
+   conviene resolverlo.
+   registro: [{ proj, board, circ, kind ('alimentador'|'derivado'), destino }]
+   pendiente: texto si hay un circuito sin agregar a la memoria (o null)
+   instalacion: { kva, zPct, voltage, tDespeje, icu: { tablero: kA }, electrodoValido }
+   Devuelve [{ clave, texto }] (vacio = todo completo).
+   ========================================================================= */
+function evaluarCompletitud({ registro, pendiente, instalacion }) {
+  const f = [];
+  const reg = registro || [];
+  const lista = (arr, max = 4) => arr.slice(0, max).join(', ') + (arr.length > max ? ` y ${arr.length - max} más` : '');
+  if (pendiente) f.push({ clave: 'pendiente', texto: pendiente });
+  if (reg.length === 0) {
+    f.push({ clave: 'vacia', texto: 'La memoria no tiene circuitos: captura y agrega al menos uno, o carga un proyecto desde archivo.' });
+    return f;
+  }
+  const etiqueta = r => `${r.board || '(sin tablero)'} / ${r.circ || '(sin nombre)'}`;
+  const sinNombreR = reg.filter(r => !String(r.proj || '').trim() || !String(r.board || '').trim() || !String(r.circ || '').trim());
+  if (sinNombreR.length) f.push({ clave: 'nombres', texto: `Faltan nombres (proyecto, tablero o circuito) en ${sinNombreR.length} circuito(s): ${lista(sinNombreR.map(etiqueta))}.`, circuitos: sinNombreR.slice(0, 6).map(r => ({ id: r.id, etiqueta: etiqueta(r) })) });
+  const sinDestinoR = reg.filter(r => r.kind === 'alimentador' && !String(r.destino || '').trim());
+  if (sinDestinoR.length) f.push({ clave: 'destino', texto: `Alimentadores sin tablero destino: ${lista(sinDestinoR.map(etiqueta))}. Decláralo, o si no alimentan otro tablero cámbialos a "Circuito derivado".`, circuitos: sinDestinoR.slice(0, 6).map(r => ({ id: r.id, etiqueta: etiqueta(r) })) });
+
+  const ins = instalacion || {};
+  const faltaTr = [];
+  if (!(ins.kva > 0)) faltaTr.push('kVA');
+  if (!(ins.zPct > 0)) faltaTr.push('impedancia %Z');
+  if (!(ins.voltage > 0)) faltaTr.push('tensión del secundario');
+  if (faltaTr.length) f.push({ clave: 'transformador', texto: `Datos del transformador: falta ${faltaTr.join(', ')}.` });
+  const tableros = [...new Set(reg.map(r => r.board).filter(Boolean))];
+  const sinIcu = tableros.filter(t => !((ins.icu || {})[t] > 0));
+  if (sinIcu.length) f.push({ clave: 'icu', texto: `Capacidad interruptiva sin declarar en ${sinIcu.length} tablero(s): ${lista(sinIcu, 6)}.` });
+  if (!(ins.tDespeje > 0)) f.push({ clave: 'despeje', texto: 'Tiempo de despeje de la falla (de la curva del interruptor).' });
+  if (!ins.electrodoValido) f.push({ clave: 'electrodo', texto: 'Electrodo de puesta a tierra: resistividad del terreno, longitud y diámetro de la varilla.' });
+  return f;
+}
