@@ -1761,6 +1761,12 @@ function evaluarCompletitud({ registro, pendiente, instalacion }) {
   const sinDestinoR = reg.filter(r => r.kind === 'alimentador' && !String(r.destino || '').trim());
   if (sinDestinoR.length) f.push({ clave: 'destino', texto: `Alimentadores sin tablero destino: ${lista(sinDestinoR.map(etiqueta))}. Decláralo, o si no alimentan otro tablero cámbialos a "Circuito derivado".`, circuitos: sinDestinoR.slice(0, 6).map(r => ({ id: r.id, etiqueta: etiqueta(r) })) });
 
+  // Un destino que no coincide con ningun tablero capturado casi siempre es un error de escritura
+  const norm = t => String(t || '').trim().toLowerCase();
+  const conocidos = new Set(reg.map(r => norm(r.board)).filter(Boolean));
+  const huerfanos = reg.filter(r => r.kind === 'alimentador' && String(r.destino || '').trim() && !conocidos.has(norm(r.destino)));
+  if (huerfanos.length) f.push({ clave: 'destinoHuerfano', texto: `El tablero destino no tiene ningún circuito capturado: ${lista([...new Set(huerfanos.map(r => r.destino))])}. Revisa que esté escrito igual que en "Nombre del tablero" de sus circuitos, o captura sus circuitos.`, circuitos: huerfanos.slice(0, 6).map(r => ({ id: r.id, etiqueta: etiqueta(r) })) });
+
   const ins = instalacion || {};
   const faltaTr = [];
   if (!(ins.kva > 0)) faltaTr.push('kVA');

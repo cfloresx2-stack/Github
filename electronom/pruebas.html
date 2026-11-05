@@ -1159,6 +1159,9 @@ grupo("Compuerta de captura — qué falta antes de ver resultados", () => {
   const conId = evaluarCompletitud({ registro: [{ id:7, ...reg[0], destino:"" }, reg[1]], pendiente: null, instalacion: completa }).find(x => x.clave === "destino");
   esIgual(conId.circuitos[0].id, 7, "El faltante trae el id del circuito para poder corregirlo desde la Calculadora");
   esCierto(!claves(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: completa })).includes("destino"), "Un derivado no necesita destino");
+  const huer = evaluarCompletitud({ registro: [{ ...reg[0], destino:"Aspirado" }, reg[1]], pendiente: null, instalacion: completa });
+  esCierto(claves(huer).includes("destinoHuerfano"), "Un destino que no coincide con ningún tablero capturado se avisa (error de escritura)");
+  esCierto(!claves(evaluarCompletitud({ registro: [{ ...reg[0], destino:"ta " }, reg[1]], pendiente: null, instalacion: completa })).includes("destinoHuerfano"), "Mayúsculas y espacios no cuentan como tablero distinto");
 
   const f = evaluarCompletitud({ registro: reg, pendiente: null, instalacion: { kva:0, zPct:0, voltage:0, tDespeje:0, icu:{ TG:25 }, electrodoValido:false } });
   esIgual(claves(f).join(), "transformador,icu,despeje,electrodo", "Instalación vacía: transformador, capacidades, despeje y electrodo, en ese orden");
