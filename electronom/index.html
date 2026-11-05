@@ -2144,7 +2144,7 @@ function partirTexto(t, max) {
   const palabras = String(t || '').split(' '); const lineas = []; let cur = '';
   palabras.forEach(w => { if ((cur + ' ' + w).trim().length > max && cur) { lineas.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); });
   if (cur) lineas.push(cur);
-  return lineas.slice(0, 3);
+  return lineas.slice(0, 4);
 }
 
 function circuitosParaUnifilar(reg, tablero) {
@@ -2162,7 +2162,7 @@ function circuitosParaUnifilar(reg, tablero) {
 
 // Arma la hoja de un tablero como lista de elementos neutrales
 function hojaTablero(tablero, ctx) {
-  const PASO = 48, POR_FILA = 12, X0 = 140, ALTO_FILA = 190;
+  const PASO = 56, POR_FILA = 12, X0 = 140, ALTO_FILA = 190;
   const grupos = agruparCircuitosParaUnifilar(circuitosParaUnifilar(ctx.reg, tablero));
   const filas = []; for (let i = 0; i < grupos.length; i += POR_FILA) filas.push(grupos.slice(i, i + POR_FILA));
   if (filas.length === 0) filas.push([]);
@@ -2225,10 +2225,10 @@ function hojaTablero(tablero, ctx) {
       S(g.simbolo, x, yBus + 92, g.base, `${g.current.toFixed(1)} A${g.n > 1 ? ' x' + g.n : ''}`);
       if (g.n > 1) T(x + 9, yBus + 84, `×${g.n}`, 4.5, 'start', true);
       let nombre = g.base;
-      if (g.destino) { const h = ctx.hojaDe[g.destino]; nombre = `→ TABLERO ${g.destino}` + (h ? ` (hoja ${h})` : ''); }
-      const lineasNombre = partirTexto(nombre, 22);
-      lineasNombre.forEach((t, k) => T(x, yBus + 112 + k * 3.8, t, 3.2, 'middle', true));
-      T(x, yBus + 112 + lineasNombre.length * 3.8, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
+      if (g.destino) nombre = `→ TABLERO ${g.destino}`;
+      const lineasNombre = partirTexto(nombre, 15);
+      lineasNombre.forEach((t, k) => T(x, yBus + 112 + k * 3.6, t, 2.8, 'middle', true));
+      T(x, yBus + 112 + lineasNombre.length * 3.6, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
     });
   });
   return { tablero, ancho, alto, items: it };
