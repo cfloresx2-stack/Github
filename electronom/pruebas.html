@@ -690,6 +690,25 @@ grupo("Dictamen de cumplimiento", () => {
   esIgual(busca(excedeProteccion, "R-009").estado, ESTADO.NO_CUMPLE,
     "Protección de 1000 A sobre conductor de 500 A → No cumple (Art. 240-4c)");
 
+  // Con conductores en paralelo la proteccion se compara contra la ampacidad de TODOS los
+  // conductores de la fase: 3 juegos de 400 kcmil (335 A c/u = 1005 A) si soportan 1000 A
+  const paraleloSoporta = evaluarCumplimiento({
+    ...base,
+    input: { ...base.input, nParalelo: 3 },
+    calibreFinal: { awg:"400", correctedAmp:335, usableAmp:335 },
+    breaker: { breaker:1000 },
+  });
+  esIgual(busca(paraleloSoporta, "R-009").estado, ESTADO.CUMPLE,
+    "1000 A sobre 3 × 335 A = 1005 A en paralelo → Cumple (antes se comparaba contra 335 A de un solo conductor)");
+  const paraleloNoSoporta = evaluarCumplimiento({
+    ...base,
+    input: { ...base.input, nParalelo: 3 },
+    calibreFinal: { awg:"350", correctedAmp:310, usableAmp:310 },
+    breaker: { breaker:1000 },
+  });
+  esIgual(busca(paraleloNoSoporta, "R-009").estado, ESTADO.NO_CUMPLE,
+    "1000 A sobre 3 × 310 A = 930 A en paralelo → No cumple (arriba de 800 A, Art. 240-4c)");
+
   // Capacidad interruptiva insuficiente
   const ccMala = evaluarCumplimiento({ ...base, cc: { icuKa:10, iccTrafo:26000 } });
   esIgual(busca(ccMala, "R-CC").estado, ESTADO.NO_CUMPLE, "10 kA contra falla de 26 kA → No cumple");

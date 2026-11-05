@@ -1173,18 +1173,21 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   }
 
   // R-009 / 240-4: la proteccion no debe exceder la ampacidad del conductor
+  // Con conductores en paralelo (310-10(h)) la proteccion se compara contra la ampacidad
+  // de TODOS los conductores de la fase, no la de uno solo.
+  const ampTotal = ampUtil * (input.nParalelo || 1);
   if (motor) {
     h.push(hallazgo("R-009", ESTADO.ADVERTENCIA, "Art. 430-52",
-      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(ampUtil,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
-  } else if (breaker.breaker <= ampUtil) {
+      `Circuito de motor: la protección de ${breaker.breaker} A es contra cortocircuito y falla a tierra, y puede exceder la ampacidad del conductor (${fmt(ampTotal,2)} A). La protección de sobrecarga es independiente y NO se calcula en esta herramienta — debe especificarse por separado (Parte III del Art. 430).`));
+  } else if (breaker.breaker <= ampTotal) {
     h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4",
-      `Protección de ${breaker.breaker} A no excede la ampacidad utilizable del conductor (${fmt(ampUtil,2)} A).`));
+      `Protección de ${breaker.breaker} A no excede la ampacidad utilizable del conductor (${fmt(ampTotal,2)} A).`));
   } else if (breaker.breaker <= 800) {
     h.push(hallazgo("R-009", ESTADO.CUMPLE, "Art. 240-4(b)",
-      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampUtil,2)} A), pero se acoge a la excepción de 240-4(b): es el valor estándar inmediato superior y no rebasa 800 A. No aplica si el circuito alimenta más de un contacto para cargas portátiles.`));
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampTotal,2)} A), pero se acoge a la excepción de 240-4(b): es el valor estándar inmediato superior y no rebasa 800 A. No aplica si el circuito alimenta más de un contacto para cargas portátiles.`));
   } else {
     h.push(hallazgo("R-009", ESTADO.NO_CUMPLE, "Art. 240-4(c)",
-      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampUtil,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
+      `Protección de ${breaker.breaker} A excede la ampacidad del conductor (${fmt(ampTotal,2)} A) y supera 800 A: por 240-4(c) la ampacidad debe ser igual o mayor al valor del dispositivo.`));
   }
 
   // R-010 / 240-6(a): valor comercial estandarizado
