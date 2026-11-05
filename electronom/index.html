@@ -1956,14 +1956,24 @@ function renderDiagramaSVG(layout, infoPorDestino) {
     const midY = (y1 + y2) / 2;
     lineasHtml += `<path d="M ${x1} ${y1} V ${midY} H ${x2} V ${y2}" fill="none" stroke="#31415a" stroke-width="1.6" />`;
     const info = infoPorDestino[c.hasta];
-    const partes = [c.etiqueta, info && info.awg ? info.awg + ' AWG' : null, info && info.breakerA ? info.breakerA + ' A' : null].filter(Boolean);
-    if (partes.length) {
-      // Se ancla a x2 (la posicion del HIJO, no del punto medio) porque nunca se
-      // repite entre hermanos -- anclarla al punto medio o al maximo de x1/x2
-      // colisiona cuando el padre queda justo arriba de un hijo (caso comun con
-      // 3+ hijos: el hijo central), ya que dos ramas distintas pueden compartir
-      // esa misma coordenada y sus etiquetas quedan una encima de la otra.
-      etiquetasHtml += `<text x="${x2 + 8}" y="${y2 - 8}" font-size="10.5" fill="#31415a">${partes.join(' · ')}</text>`;
+    // Etiqueta en hasta 3 renglones CENTRADA sobre la caja del hijo (x2 nunca se repite
+    // entre hermanos y la separacion entre hijos es mayor que el ancho de la etiqueta),
+    // sobre un fondo blanco que tapa la linea vertical. Antes iba en un solo renglon a
+    // la derecha del hijo y los nombres largos se encimaban con los de los hermanos.
+    const renglones = partirTexto(c.etiqueta || '', 26).slice(0, 2);
+    const spec = [
+      info && info.awg ? `${info.nParalelo > 1 ? info.nParalelo + ' × ' : ''}${info.awg} ${unidadCalibre(info.awg)}` : null,
+      info && info.breakerA ? info.breakerA + ' A' : null,
+    ].filter(Boolean).join(' · ');
+    if (spec) renglones.push(spec);
+    if (renglones.length) {
+      const alto = renglones.length * 12 + 6;
+      const ancho = Math.max(...renglones.map(r => r.length)) * 5.6 + 10;
+      const yTop = y2 - 8 - alto;
+      etiquetasHtml += `<rect x="${x2 - ancho / 2}" y="${yTop}" width="${ancho}" height="${alto}" fill="#fff" />`;
+      renglones.forEach((r, k) => {
+        etiquetasHtml += `<text x="${x2}" y="${yTop + 12 + k * 12 - 2}" text-anchor="middle" font-size="10" fill="#31415a"${k === renglones.length - 1 ? ' font-weight="bold"' : ''}>${escXml(r)}</text>`;
+      });
     }
   });
 
@@ -2022,7 +2032,7 @@ function renderDiagramaUnifilar() {
     avisos.innerHTML = `<p class="hint" style="color:var(--warn)">${advertencias.map(a => '⚠ ' + a).join('<br>')}</p>`;
   }
 
-  const layout = calcularLayoutDiagrama(arbol);
+  const layout = calcularLayoutDiagrama(arbol, { espacioY: 150 });   // espacio vertical para las etiquetas de 3 renglones
   const infoPorDestino = {};
   alimentadores.forEach(a => { infoPorDestino[a.destino] = a; });
 
