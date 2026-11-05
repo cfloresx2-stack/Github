@@ -1143,6 +1143,29 @@ grupo("Datos de la instalación → dictamen de cada circuito", () => {
   esIgual(busca(conEl, "R-CC").estado, ESTADO.NO_EVALUABLE, "conCc=false no toca R-CC");
 });
 
+grupo("Compuerta de captura — qué falta antes de ver resultados", () => {
+  const reg = [
+    { proj:"P", board:"TG", circ:"F1", kind:"alimentador", destino:"TA" },
+    { proj:"P", board:"TA", circ:"Bomba 1", kind:"derivado", destino:"" },
+  ];
+  const completa = { kva:300, zPct:5, voltage:220, tDespeje:0.02, icu:{ TG:25, TA:14 }, electrodoValido:true };
+  const claves = r => r.map(x => x.clave);
+
+  esIgual(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: completa }).length, 0, "Todo completo → no falta nada");
+  esIgual(claves(evaluarCompletitud({ registro: [], pendiente: null, instalacion: completa })).join(), "vacia", "Memoria vacía → solo se pide capturar o cargar un proyecto");
+  esCierto(claves(evaluarCompletitud({ registro: reg, pendiente: "Calculaste X sin agregarlo", instalacion: completa })).includes("pendiente"), "Un circuito pendiente bloquea");
+  esCierto(claves(evaluarCompletitud({ registro: [{ ...reg[0], board:"" }, reg[1]], pendiente: null, instalacion: completa })).includes("nombres"), "Un circuito sin tablero bloquea");
+  esCierto(claves(evaluarCompletitud({ registro: [{ ...reg[0], destino:"" }, reg[1]], pendiente: null, instalacion: completa })).includes("destino"), "Un alimentador sin destino bloquea");
+  const conId = evaluarCompletitud({ registro: [{ id:7, ...reg[0], destino:"" }, reg[1]], pendiente: null, instalacion: completa }).find(x => x.clave === "destino");
+  esIgual(conId.circuitos[0].id, 7, "El faltante trae el id del circuito para poder corregirlo desde la Calculadora");
+  esCierto(!claves(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: completa })).includes("destino"), "Un derivado no necesita destino");
+
+  const f = evaluarCompletitud({ registro: reg, pendiente: null, instalacion: { kva:0, zPct:0, voltage:0, tDespeje:0, icu:{ TG:25 }, electrodoValido:false } });
+  esIgual(claves(f).join(), "transformador,icu,despeje,electrodo", "Instalación vacía: transformador, capacidades, despeje y electrodo, en ese orden");
+  esCierto(f.find(x => x.clave === "icu").texto.includes("TA") && !f.find(x => x.clave === "icu").texto.includes("TG"), "Solo se piden los tableros sin capacidad declarada");
+  esCierto(f.find(x => x.clave === "transformador").texto.includes("kVA") && f.find(x => x.clave === "transformador").texto.includes("%Z"), "Dice exactamente qué dato del transformador falta");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
