@@ -1073,6 +1073,30 @@ grupo("Cortocircuito en cascada por el árbol del diagrama", () => {
   esIgual(rSinDatos.advertencias.length, 1, "Se advierte la falta de datos del alimentador");
 });
 
+grupo("Unifilar detallado — símbolo y agrupación", () => {
+  esIgual(simboloDeCircuito({ motor:true, nombre:"Turbina" }), "08_M3", "Circuito de motor → símbolo de motor trifásico");
+  esIgual(simboloDeCircuito({ destino:"TT", nombre:"F2" }), "08_TAB", "Alimentador con destino → símbolo de tablero");
+  esIgual(simboloDeCircuito({ nombre:"Alumbrado exterior" }), "13_LAMP", "Alumbrado → lámpara");
+  esIgual(simboloDeCircuito({ nombre:"Contactos generales", voltage:127 }), "13_CONT110", "Contactos a 127 V → contacto duplex");
+  esIgual(simboloDeCircuito({ nombre:"Contactos de lavado", voltage:220 }), "13_CONT220", "Contactos a 220 V → contacto 220 V");
+  esIgual(simboloDeCircuito({ nombre:"A/C oficina 2 TR (supuesto)" }), "13_AC_MINISPLIT", "A/C de 2 TR → minisplit");
+  esIgual(simboloDeCircuito({ nombre:"A/C sala de espera 5 TR" }), "13_AC_CENTRAL", "A/C de 5 TR → central");
+  esIgual(simboloDeCircuito({ nombre:"Cajas de cobro" }), "08_CARGA", "Sin pista en el nombre → carga genérica");
+  esIgual(simboloDeCircuito({ simbolo:"13_LAMP", motor:true, nombre:"x" }), "13_LAMP", "El símbolo declarado manda sobre la deducción");
+
+  const t = (n, extra = {}) => ({ id:n, circ:"Turbina " + n, simbolo:"08_M3", awg:"4", breakerA:150, conduitTrade:'1"', fases:3, awgTierra:"6", lengthM:20, motor:true, ...extra });
+  const g = agruparCircuitosParaUnifilar([t(1), t(2), t(3)]);
+  esIgual(g.length, 1, "3 turbinas idénticas se dibujan una sola vez");
+  esIgual(g[0].n, 3, "con cantidad 3");
+  esIgual(g[0].base, "Turbina", "y nombre común sin el número final");
+  const g2 = agruparCircuitosParaUnifilar([t(1), t(2, { breakerA:100 }), t(3)]);
+  esIgual(g2.length, 2, "Si uno cambia de interruptor ya no se agrupa con los demás");
+  const g3 = agruparCircuitosParaUnifilar([{ id:1, circ:"F2", destino:"TT", awg:"4", breakerA:50, fases:3 }, { id:2, circ:"F3", destino:"TA", awg:"4", breakerA:50, fases:3 }]);
+  esIgual(g3.length, 2, "Los alimentadores con distinto destino nunca se agrupan");
+  const g4 = agruparCircuitosParaUnifilar([{ id:1, circ:"Contactos", awg:"12", breakerA:20, fases:1 }, { id:2, circ:"Alumbrado", awg:"12", breakerA:20, fases:1 }]);
+  esIgual(g4.length, 2, "Circuitos distintos sin número consecutivo no se agrupan aunque tengan las mismas características");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
