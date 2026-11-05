@@ -957,6 +957,37 @@ grupo("Cuadro de cargas — balanceo automático", () => {
   esIgual(balDos.length, 2, "Cada tablero (board) se balancea de forma independiente");
 });
 
+grupo("Cuadro de cargas — límite de desbalance de 5 %", () => {
+  const c = (id, board, circ, va, fases) => ({ id, board, circ, va, fases, voltage:220, breakerA:20, awg:"12" });
+  esIgual(LIMITE_DESBALANCE_PCT, 5, "El máximo de desbalance de diseño es 5 %");
+
+  // Tres cargas iguales monofásicas: 0 %, cumple
+  const igual = [ c(1,"T","C1",3000,1), c(2,"T","C2",3000,1), c(3,"T","C3",3000,1) ];
+  const ev0 = evaluarDesbalance(generarCuadroDeCargas(igual)[0], balancearCuadroDeCargas(igual)[0]);
+  esIgual(ev0.estado, "ok", "Un tablero balanceado queda dentro del límite");
+
+  // El balanceo automático arregla un tablero mal acomodado por posición
+  const arreglable = [ c(1,"T","C1",3000,1), c(2,"T","C2",2000,1), c(3,"T","C3",1000,1), c(4,"T","C4",3000,1), c(5,"T","C5",2000,1), c(6,"T","C6",1000,1) ];
+  const evPos = evaluarDesbalance(generarCuadroDeCargas(arreglable)[0], balancearCuadroDeCargas(arreglable)[0]);
+  esIgual(evPos.estado, "excede", "Por posición física este tablero excede el 5 %");
+  esCierto(evPos.mensaje.includes("quedaría en"), "El mensaje dice que el balanceo automático lo arregla", evPos.mensaje);
+  const evBal = evaluarDesbalance(balancearCuadroDeCargas(arreglable)[0], balancearCuadroDeCargas(arreglable)[0]);
+  esIgual(evBal.estado, "ok", "Con balanceo automático ese mismo tablero cumple");
+
+  // Cargas tan granulares que ni el balanceo lo logra (como TL del autolavado)
+  const granular = [ c(1,"T","A",2105,1), c(2,"T","B",1705,1), c(3,"T","C",1111,1), c(4,"T","D",1111,1), c(5,"T","E",1111,1), c(6,"T","F",8779,3) ];
+  const evG = evaluarDesbalance(balancearCuadroDeCargas(granular)[0], balancearCuadroDeCargas(granular)[0]);
+  esIgual(evG.estado, "excede", "Con cargas granulares el tablero excede aun balanceado");
+  esCierto(evG.mensaje.includes("ni con balanceo automático"), "El mensaje explica que el balanceo no alcanza", evG.mensaje);
+
+  // Un tablero de una sola fase no se evalúa
+  esIgual(evaluarDesbalance(generarCuadroDeCargas([ c(1,"U","C1",1000,1) ])[0], null).estado, "na", "Una sola fase: no aplica");
+
+  // Justo en el límite cumple
+  esIgual(evaluarDesbalance({ fasesUsadas:3, desbalancePct:5 }, null).estado, "ok", "Exactamente 5 % cumple");
+  esIgual(evaluarDesbalance({ fasesUsadas:3, desbalancePct:5.1 }, { desbalancePct:5.1 }).estado, "excede", "5.1 % excede");
+});
+
 grupo("Diagrama unifilar — armado del árbol", () => {
   // Cadena simple: TP -> B -> B1
   const cadena = construirArbolDiagrama(

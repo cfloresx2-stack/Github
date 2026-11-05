@@ -1936,21 +1936,29 @@ function renderCuadroCargas() {
   const modoBalanceado = document.getElementById('cuadroModo').value === 'balanceado';
   document.getElementById('cuadroModoHint').style.display = modoBalanceado ? 'block' : 'none';
   const cuadros = modoBalanceado ? balancearCuadroDeCargas(reg) : generarCuadroDeCargas(reg);
+  const autoPorTablero = {};
+  balancearCuadroDeCargas(reg).forEach(b => { autoPorTablero[b.tablero] = b; });
+  const evalDesb = {};
+  cuadros.forEach(q => { evalDesb[q.tablero] = evaluarDesbalance(q, autoPorTablero[q.tablero]); });
+  const excedidos = cuadros.filter(q => evalDesb[q.tablero].estado === 'excede');
+  const avisoDesb = excedidos.length
+    ? `<div class="card" style="border:2px solid var(--warn);margin-bottom:16px"><b style="color:var(--warn)">Desbalance mayor al máximo de ${LIMITE_DESBALANCE_PCT} % en ${excedidos.length} tablero(s): ${excedidos.map(q => q.tablero).join(', ')}.</b> El detalle y la sugerencia están en cada tablero.</div>`
+    : '';
 
-  wrap.innerHTML = cuadros.map((q, qi) => {
+  wrap.innerHTML = avisoDesb + cuadros.map((q, qi) => {
     const primero = q.filas[0]?.circuito;
     const voltaje = primero?.voltage || 0;
     const vFN = tensionFaseNeutro(voltaje, primero?.fases || 1);
     const iAlim = corrienteAlimentador(q.maxFase, vFN);
     const intAlim = nextStandardBreaker(iAlim);
 
-    const balanceBadge = q.fasesUsadas < 2
+    const ev = evalDesb[q.tablero];
+    const balanceBadge = ev.estado === 'na'
       ? `<span class="badge na">Una sola fase</span>`
-      : q.desbalancePct <= 5
+      : ev.estado === 'ok'
         ? `<span class="badge ok">Balance ${fmt(q.desbalancePct,1)}%</span>`
-        : q.desbalancePct <= 15
-          ? `<span class="badge adv">Desbalance ${fmt(q.desbalancePct,1)}%</span>`
-          : `<span class="badge warn">Desbalance alto ${fmt(q.desbalancePct,1)}%</span>`;
+        : `<span class="badge warn">Desbalance ${fmt(q.desbalancePct,1)}% (máx. ${LIMITE_DESBALANCE_PCT}%)</span>`;
+    const avisoTablero = ev.estado === 'excede' ? `<p class="hint" style="margin:0 0 8px;color:var(--warn)"><b>${ev.mensaje}</b></p>` : '';
 
     const filas = q.filas.map((f) => {
       const c = f.circuito;
@@ -1972,6 +1980,7 @@ function renderCuadroCargas() {
     return `
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;color:var(--navy);margin:0 0 8px">Tablero ${q.tablero} ${balanceBadge}</h3>
+        ${avisoTablero}
         <table class="printTable" id="cuadroFasesTable">
           <thead><tr>
             <th>CT.</th><th>Circuito</th><th>Polos</th><th>Interruptor</th><th>Calibre</th>
@@ -1996,7 +2005,7 @@ function renderCuadroCargas() {
           ${modoBalanceado
             ? `<br>La fase de cada circuito la elige el <b>balanceo automático</b>: se ordenan de mayor a menor VA y cada uno cae en la fase (o par/terna de fases) con menos carga acumulada hasta ese momento. La posición mostrada es solo una etiqueta de espacio, no indica la fase.`
             : `<br>La fase de cada circuito la define su <b>posición física</b> en el tablero: las barras alternan por pares de espacios (1 y 2 → A, 3 y 4 → B, 5 y 6 → C, 7 y 8 → A…), así que un interruptor de varios polos cae en fases consecutivas. Si no capturaste la posición, se asignan espacios impares en orden.`}
-          <br>La NOM exige <b>reportar</b> el porcentaje de desbalance entre fases en el cuadro de cargas del proyecto eléctrico (Apéndice, numeral 7.1, sección II), pero no fija un máximo permitido para cargas de tablero — los colores de esta insignia (≤5% / ≤15% / mayor) son criterio propio de la herramienta, no un límite normativo.
+          <br>La NOM exige <b>reportar</b> el porcentaje de desbalance entre fases en el cuadro de cargas del proyecto eléctrico (Apéndice, numeral 7.1, sección II), pero no fija un máximo permitido para cargas de tablero — el máximo de ${LIMITE_DESBALANCE_PCT} % de esta insignia es un criterio de diseño del proyecto, no un límite normativo.
         </p>
 
         <details style="margin-top:8px">
@@ -2814,6 +2823,8 @@ document.getElementById('descargarCuadroExcel').addEventListener('click', () => 
   const proj = nombreDelProyecto();
   const modoBalanceado = document.getElementById('cuadroModo').value === 'balanceado';
   const cuadros = modoBalanceado ? balancearCuadroDeCargas(reg) : generarCuadroDeCargas(reg);
+  const autoExcel = {};
+  balancearCuadroDeCargas(reg).forEach(b => { autoExcel[b.tablero] = b; });
 
   const tablasHtml = cuadros.map(q => `
     <h3>Tablero ${q.tablero}</h3>
@@ -2827,6 +2838,9 @@ document.getElementById('descargarCuadroExcel').addEventListener('click', () => 
         <td colspan="5"><b>Carga por fase (VA)</b></td>
         <td><b>${fmt(q.totalVA,0)}</b></td><td><b>${fmt(q.cargaPorFase.A,0)}</b></td>
         <td><b>${fmt(q.cargaPorFase.B,0)}</b></td><td><b>${fmt(q.cargaPorFase.C,0)}</b></td>
+      </tr><tr>
+        <td colspan="5"><b>Desbalance entre fases (máx. ${LIMITE_DESBALANCE_PCT} %)</b></td>
+        <td colspan="4">${(() => { const e = evaluarDesbalance(q, autoExcel[q.tablero]); return e.estado === 'na' ? 'No aplica (una sola fase)' : `${fmt(q.desbalancePct,1)} % — ${e.estado === 'ok' ? 'cumple' : 'EXCEDE: ' + e.mensaje}`; })()}</td>
       </tr></tfoot>
     </table><br>`).join('');
 

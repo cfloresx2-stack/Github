@@ -1515,6 +1515,30 @@ function balancearCuadroDeCargas(circuitos) {
   });
 }
 
+/* -------------------------------------------------------------------------
+   LIMITE DE DESBALANCE ENTRE FASES (criterio de diseno del proyecto)
+   La NOM no fija un maximo; Cesar establecio 5 % como maximo de diseno para
+   cada tablero. evaluarDesbalance compara el cuadro de un tablero contra ese
+   limite y, si lo excede, dice si el balanceo automatico lo arregla.
+   "cuadro" es el cuadro del tablero en el modo vigente y "balanceado" el del
+   mismo tablero con balancearCuadroDeCargas.
+   ------------------------------------------------------------------------- */
+const LIMITE_DESBALANCE_PCT = 5;
+function evaluarDesbalance(cuadro, balanceado, limite = LIMITE_DESBALANCE_PCT) {
+  if (!cuadro || cuadro.fasesUsadas < 2) return { estado: "na", pct: 0, limite, mensaje: "" };
+  const pct = cuadro.desbalancePct;
+  if (pct <= limite + 1e-9) return { estado: "ok", pct, limite, mensaje: "" };
+  const mejor = balanceado ? balanceado.desbalancePct : pct;
+  const f = v => (Math.round(v * 10) / 10).toFixed(1);
+  const lograAuto = mejor <= limite + 1e-9;
+  const mejora = mejor < pct - 0.05;
+  let mensaje;
+  if (lograAuto && mejora) mensaje = `Excede el máximo de ${limite} %. Con el balanceo automático quedaría en ${f(mejor)} %: cambia el cuadro a modo "Balanceado" y acomoda los interruptores en las fases que indica.`;
+  else if (mejora) mensaje = `Excede el máximo de ${limite} %. El balanceo automático lo baja a ${f(mejor)} %, pero sigue arriba del máximo: reparte algunas cargas monofásicas o bifásicas en otro tablero.`;
+  else mensaje = `Excede el máximo de ${limite} %, y ni con balanceo automático se logra (mejor caso ${f(mejor)} %) por el tamaño de las cargas monofásicas o bifásicas. Redistribuye cargas entre tableros o divide las más grandes en circuitos más chicos.`;
+  return { estado: "excede", pct, limite, mejorPct: mejor, mensaje };
+}
+
 // Tension de fase a neutro de un circuito, a partir de su tension nominal.
 // En sistemas en estrella (127/220, 254/440, 277/480) la tension nominal de un
 // circuito de 2 o 3 fases se da ENTRE FASES, asi que la de fase a neutro es
