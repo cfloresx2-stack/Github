@@ -1886,6 +1886,12 @@ function nombreTableroCanonico(txt) {
   return nombresDeTableros().find(n => n.toLowerCase() === t.toLowerCase()) || t;
 }
 
+// Nombre del proyecto para titulos y nombres de archivo: el de la memoria (lo que se cargo o calculo), no el del formulario, que queda vacio tras cargar un proyecto
+function nombreDelProyecto(porDefecto = 'Proyecto') {
+  const reg = loadRegistry();
+  return (reg[0] && reg[0].proj) || document.getElementById('projName').value || porDefecto;
+}
+
 function renderRegistry() {
   actualizarListaTableros();
   const reg = loadRegistry();
@@ -2679,7 +2685,7 @@ document.getElementById('descargarDiagramaCsv').addEventListener('click', () => 
   const alimentadores = reg.filter(r => r.circuitKindLabel === 'Alimentador' && r.destino);
   if (alimentadores.length === 0) { alert('No hay alimentadores con tablero destino declarado para exportar. Edita un circuito tipo "Alimentador" y llena el campo de tablero destino.'); return; }
 
-  const proj = document.getElementById('projName').value || 'Proyecto';
+  const proj = nombreDelProyecto();
   const encabezado = ['Tablero origen', 'Tablero destino', 'Alimentador', 'Calibre (AWG)', 'Tierra (AWG)', 'Interruptor (A)', 'Canalización'];
   const filas = alimentadores.map(a => [
     a.board || '', a.destino || '', a.circ || '', a.awg || '', a.awgTierra || '', a.breakerA || '',
@@ -2730,7 +2736,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
   }
   aviso.style.display = 'none';
 
-  const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto sin nombre';
+  const proj = nombreDelProyecto('Proyecto sin nombre');
   const today = new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
 
   const summaryRows = reg.map((r, i) => `
@@ -2805,7 +2811,7 @@ function armarFilaExcel(f) {
 document.getElementById('descargarCuadroExcel').addEventListener('click', () => {
   const reg = loadRegistry();
   if (reg.length === 0) { alert('Agrega circuitos a la memoria antes de descargar el cuadro de cargas.'); return; }
-  const proj = document.getElementById('projName').value || 'Proyecto';
+  const proj = nombreDelProyecto();
   const modoBalanceado = document.getElementById('cuadroModo').value === 'balanceado';
   const cuadros = modoBalanceado ? balancearCuadroDeCargas(reg) : generarCuadroDeCargas(reg);
 
@@ -2894,7 +2900,7 @@ document.getElementById('exportarProyecto').addEventListener('click', () => {
   if (reg.length === 0) { alert('La memoria está vacía: no hay nada que guardar.'); return; }
   const circuitos = reg.map(r => r.formSnapshot).filter(Boolean);
   const sinDatos = reg.length - circuitos.length;
-  const proj = reg[0].proj || document.getElementById('projName').value || 'Proyecto';
+  const proj = nombreDelProyecto();
   const blob = new Blob([JSON.stringify({ app: 'ElectroNOM', version: 1, proyecto: proj, transformador: capturarTransformador(), circuitos }, null, 1)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2923,6 +2929,8 @@ document.getElementById('importarProyectoArchivo').addEventListener('change', (e
     const existentes = loadRegistry().length;
     if (existentes > 0 && !confirm(`La memoria ya tiene ${existentes} circuito(s). Se agregarán ${lista.length} más del archivo (no se borra nada). ¿Continuar?`)) return;
     const { agregados, errores } = importarCircuitos(lista);
+    const nombreCargado = (lista.find(s => s && s.projName) || {}).projName || (!Array.isArray(datos) && datos.proyecto) || '';
+    if (nombreCargado && !document.getElementById('projName').value.trim()) document.getElementById('projName').value = nombreCargado;
     if (!Array.isArray(datos) && datos.transformador) restaurarTransformador(datos.transformador);
     activarTab('memoria');
     alert(`Se cargaron ${agregados} de ${lista.length} circuito(s).` + (errores.length ? `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}` : ''));
