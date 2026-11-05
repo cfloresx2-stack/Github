@@ -1292,6 +1292,81 @@ grupo("Compuerta de captura — qué falta antes de ver resultados", () => {
   esCierto(f.find(x => x.clave === "transformador").texto.includes("kVA") && f.find(x => x.clave === "transformador").texto.includes("%Z"), "Dice exactamente qué dato del transformador falta");
 });
 
+grupo("Importar circuitos desde CSV", () => {
+  const enc = "Tablero,Circuito,Carga (W)";
+  // --- lectura del CSV
+  const p1 = csvParsear('a,"b, c","d ""e"""\r\n1,2,3\r\n');
+  esIgual(JSON.stringify(p1.filas), JSON.stringify([["a", "b, c", 'd "e"'], ["1", "2", "3"]]), "El CSV respeta comas y comillas dentro de comillas");
+  esIgual(csvParsear("a;b;c\n1;2;3").delimitador, ";", "Detecta el punto y coma (Excel en español)");
+  esIgual(csvParsear("﻿a\tb\n1\t2").delimitador, "\t", "Detecta el tabulador y descarta el BOM");
+  esIgual(csvParsear('a,b\n"x\ny",2').filas[1][0], "x\ny", "Un salto de línea entre comillas no parte el renglón");
+
+  // --- un circuito sencillo toma los valores de partida de la calculadora
+  const r1 = circuitosDesdeCSV(enc + "\nTL,Contactos,1500");
+  esIgual(r1.errores.length, 0, "Con solo Tablero, Circuito y Carga alcanza");
+  const s1 = r1.circuitos[0];
+  esIgual(s1.boardName + "/" + s1.circName, "TL/Contactos", "Respeta tablero y circuito");
+  esIgual(s1.voltage + s1.phaseType + s1.systemType, "127mono1F-1N-1T", "Sin tensión ni fases: 127 V, 1 fase, 1F-1N-1T");
+  esIgual(s1.loads[0].fp, 0.9, "FP de partida 0.9");
+  esIgual(s1.loads[0].cont, false, "Carga no continua si no se dice");
+  esCierto(r1.avisos.some(a => a.includes("Longitud no indicada")), "Avisa lo que se supuso (longitud)");
+  esCierto(Object.keys(CSV_BASE_SNAPSHOT).every(k => k in s1), "La captura trae todos los campos que espera la calculadora");
+
+  // --- varios renglones del mismo circuito suman cargas
+  const r2 = circuitosDesdeCSV(enc + ",FP,Continua,Longitud (m)\nTA,Alumbrado,1200,0.95,sí,30\nTA,Alumbrado,900,,no,\nTA,Otro,500,,,\n");
+  esIgual(r2.circuitos.length, 2, "Dos circuitos distintos");
+  esIgual(r2.circuitos[0].loads.length, 2, "Los renglones con el mismo tablero y circuito se juntan");
+  esIgual(r2.circuitos[0].loads[0].cont, true, "«sí» es carga continua");
+  esIgual(r2.circuitos[0].length, "30", "La longitud viene del primer renglón");
+  esIgual(circuitosDesdeCSV(enc + "\nta,alumbrado,1\nTA,Alumbrado,2").circuitos.length, 1, "Tablero y circuito no distinguen mayúsculas");
+  esCierto(circuitosDesdeCSV(enc + ",Longitud (m)\nTA,C1,100,20\nTA,C1,100,35").avisos.some(a => a.includes("se ignora")), "Un dato que contradice al primer renglón del circuito se avisa");
+
+  // --- decimales con coma y encabezados con otro nombre
+  const r3 = circuitosDesdeCSV("Nombre del tablero;nombre del circuito;Potencia;Factor de potencia;Longitud\nTA;C1;1.500,5;0,85;22,5");
+  esIgual(r3.errores.length, 0, "Reconoce encabezados alternos y separador ;");
+  esIgual(r3.circuitos[0].loads[0].watts, 1500.5, "1.500,5 se lee como 1500.5");
+  esIgual(r3.circuitos[0].loads[0].fp, 0.85, "0,85 se lee como 0.85");
+  esIgual(r3.circuitos[0].length, "22.5", "22,5 m");
+  esCierto(circuitosDesdeCSV(enc + ",Color\nTA,C1,100,rojo").avisos.some(a => a.includes("Color")), "Una columna desconocida se avisa y se ignora");
+
+  // --- tensión, fases y sistema
+  const sis = (extra, vals) => circuitosDesdeCSV(enc + "," + extra + "\nTA,C1,1000," + vals).circuitos[0];
+  esIgual(sis("Tensión (V),Fases", "220,3").systemType, "3F-1T", "220 V trifásico sin sistema: 3F-1T");
+  esIgual(sis("Tensión (V),Fases", "220,2").systemType, "2F-1T", "220 V con 2 fases sin sistema: 2F-1T");
+  esIgual(sis("Tensión (V)", "480").phaseType, "tri", "480 V sin fases: trifásico");
+  esIgual(sis("Tensión (V),Fases,Sistema", "220,3,3f-1n-1t").systemType, "3F-1N-1T", "El sistema se acepta en minúsculas");
+  esCierto(circuitosDesdeCSV(enc + ",Sistema\nTA,C1,1000,3F-1T").errores.length === 1, "Sistema trifásico sin tensión (queda en 127 V) se rechaza: hay que declarar la tensión");
+  const e1 = circuitosDesdeCSV(enc + ",Tensión (V),Fases\nTA,C1,1000,220,1");
+  esCierto(e1.errores.length === 1 && e1.circuitos.length === 0, "1 fase a 220 V es un error y no se importa nada");
+  esCierto(circuitosDesdeCSV(enc + ",Tensión (V)\nTA,C1,1000,380").errores[0].texto.includes("380"), "Una tensión que no existe se rechaza");
+  esCierto(circuitosDesdeCSV(enc + ",Tensión (V),Fases,Sistema\nTA,C1,1000,220,3,1F-1N").errores.length === 1, "Un sistema que no corresponde a las fases se rechaza");
+
+  // --- motor y aire acondicionado
+  const m2 = circuitosDesdeCSV(enc + ",Motor,Corriente de placa (A)\nTA,Bomba,2238,sí,8.6").circuitos[0];
+  esCierto(m2.isMotor && m2.motorFla === "8.6", "Motor con corriente de placa");
+  const ac = circuitosDesdeCSV(enc + ",MCA (A),MOCP (A)\nTA,Mini,2400,15.8,25").circuitos[0];
+  esCierto(ac.isAC && ac.acModo === "placa" && ac.acMca === "15.8" && ac.acMocp === "25", "MCA y MOCP crean un circuito de aire acondicionado");
+  esCierto(circuitosDesdeCSV(enc + ",MCA (A)\nTA,Mini,2400,15.8").errores.length === 1, "MCA sin MOCP se rechaza");
+  esCierto(circuitosDesdeCSV(enc + ",Corriente de placa (A)\nTA,Bomba,2238,8.6").errores.length === 1, "Corriente de placa sin «Motor = sí» se rechaza");
+  esCierto(circuitosDesdeCSV(enc + ",Motor,MCA (A),MOCP (A)\nTA,X,2400,sí,15.8,25").errores.length === 1, "Motor y A/C a la vez se rechaza");
+
+  // --- errores: no se importa nada y se dice en qué fila
+  const e2 = circuitosDesdeCSV(enc + ",Material\nTA,C1,abc,cobre\nTA,C2,500,plomo\n,C3,100,cobre\n");
+  esIgual(e2.circuitos.length, 0, "Con un error de formato no se importa ningún circuito");
+  esIgual(e2.errores.map(e => e.fila).join(), "2,3,4", "Cada error dice su fila (el encabezado es la fila 1)");
+  esCierto(circuitosDesdeCSV("Circuito,Carga (W)\nC1,100").errores[0].texto.includes("Tablero"), "Falta una columna obligatoria → lo dice");
+  esCierto(circuitosDesdeCSV("").errores.length === 1, "Archivo vacío");
+  esCierto(circuitosDesdeCSV(enc + "\n").errores.length === 1, "Solo encabezados → no hay circuitos");
+  esIgual(circuitosDesdeCSV(enc + "\nTA,C1,100\n,,\n\nTA,C2,200\n").circuitos.length, 2, "Los renglones vacíos se saltan");
+  esIgual(circuitosDesdeCSV(enc + "\nTA,C1,100", { proyecto: "Mi obra" }).circuitos[0].projName, "Mi obra", "Sin columna Proyecto se usa el nombre del formulario");
+
+  // --- la plantilla se puede volver a leer sin errores
+  const pl = circuitosDesdeCSV(plantillaCSV());
+  esIgual(pl.errores.length, 0, "La plantilla descargable se importa sin errores");
+  esIgual(pl.circuitos.length, 4, "La plantilla trae 4 circuitos de ejemplo");
+  esIgual(pl.circuitos.filter(s => s.loads.length === 2).length, 1, "…uno de ellos con dos cargas");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */

@@ -378,6 +378,11 @@
         <button type="button" id="importarProyecto2" class="miniBtn" style="padding:8px 14px">📂 Cargar proyecto (archivo)</button>
         <span class="hint">Si ya tienes un proyecto guardado, cárgalo aquí en vez de capturar circuito por circuito.</span>
       </div>
+      <div class="checkline" style="margin:0 0 8px">
+        <button type="button" id="importarCsv2" class="miniBtn" style="padding:8px 14px">📊 Importar circuitos de una hoja (CSV)</button>
+        <button type="button" id="plantillaCsv2" class="miniBtn" style="padding:8px 14px">⬇ Plantilla CSV</button>
+        <span class="hint">Si ya tienes tu cuadro de cargas en Excel, guárdalo como CSV y súbelo aquí.</span>
+      </div>
       <p class="hint">Cada vez que capturas y presionas "Calcular circuito" estás definiendo <b>UN circuito</b> (un interruptor). Si el tablero tiene circuitos de distinto tipo (monofásicos, bifásicos, trifásicos), captura cada uno por separado con el <b>mismo nombre de tablero</b> — el Cuadro de Cargas los combina automáticamente, sin importar cuántos polos tenga cada uno.</p>
       <label style="margin-top:10px">Nombre del proyecto</label>
       <input type="text" id="projName" placeholder="Ej. Nave Industrial Sabritas">
@@ -877,9 +882,12 @@
       <button id="clearRegistry" type="button">Vaciar memoria</button>
       <button id="exportarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">💾 Guardar proyecto (archivo)</button>
       <button id="importarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">📂 Cargar proyecto (archivo)</button>
+      <button id="importarCsv" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">📊 Importar circuitos (CSV)</button>
+      <button id="plantillaCsv" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">⬇ Plantilla CSV</button>
       <input type="file" id="importarProyectoArchivo" accept=".json,application/json" style="display:none">
+      <input type="file" id="importarCsvArchivo" accept=".csv,.txt,text/csv,text/plain" style="display:none">
     </div>
-    <p class="hint" style="margin-top:8px">"Guardar proyecto" descarga un archivo con los datos de captura de todos los circuitos de la memoria (para respaldarlos o pasarlos a otra computadora). "Cargar proyecto" los vuelve a calcular uno por uno con el motor actual y los agrega a la memoria.</p>
+    <p class="hint" style="margin-top:8px">"Guardar proyecto" descarga un archivo con los datos de captura de todos los circuitos de la memoria (para respaldarlos o pasarlos a otra computadora). "Cargar proyecto" los vuelve a calcular uno por uno con el motor actual y los agrega a la memoria. "Importar circuitos (CSV)" crea los circuitos desde una hoja de cálculo: un renglón por carga, y los renglones con el mismo tablero y circuito se juntan en un solo circuito. Descarga la plantilla para ver las columnas (solo Tablero, Circuito y Carga son obligatorias).</p>
     <p id="memoriaAviso" class="hint" style="display:none;color:var(--warn);margin-top:8px;font-weight:bold"></p>
     <p class="hint" style="margin-top:8px">Se abre el diálogo de impresión del navegador. Si no se abre, verifica que la memoria tenga circuitos y abre ElectroNOM directamente en Chrome o Edge (no desde un visor integrado). Para obtener un PDF (en vez de imprimir en papel), elige <b>"Guardar como PDF"</b> en el destino/impresora — es una opción que ya trae el navegador, no hace falta nada más.</p>
   </div>
@@ -1025,12 +1033,13 @@ function addLoadRow(name="", watts=1000, fp=0.9, cont=false) {
   const tbody = document.getElementById('loadsBody');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input type="text" class="ld-name" value="${name}" placeholder="Ej. Contactos"></td>
+    <td><input type="text" class="ld-name" placeholder="Ej. Contactos"></td>
     <td><input type="number" class="ld-w" value="${watts}" min="0" step="1" style="width:80px"></td>
     <td><input type="number" class="ld-fp" value="${fp}" min="0.1" max="1" step="0.01" style="width:60px"></td>
     <td style="text-align:center"><input type="checkbox" class="ld-cont" ${cont?'checked':''}></td>
     <td><button type="button" class="rmRow">&times;</button></td>
   `;
+  tr.querySelector('.ld-name').value = name;
   tr.querySelector('.rmRow').addEventListener('click', () => { tr.remove(); updateLoadTotals(); });
   tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateLoadTotals));
   tbody.appendChild(tr);
@@ -3075,6 +3084,57 @@ document.getElementById('importarProyectoArchivo').addEventListener('change', (e
     alert(`Se cargaron ${agregados} de ${lista.length} circuito(s).` + (errores.length ? `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}` : ''));
   };
   lector.readAsText(archivo);
+});
+
+/* ---- Importar circuitos desde un CSV (hoja de calculo) ---- */
+function descargarTexto(nombre, contenido, tipo) {
+  const blob = new Blob(['\uFEFF' + contenido], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombre;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+['plantillaCsv', 'plantillaCsv2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
+  descargarTexto('Plantilla de circuitos ElectroNOM.csv', plantillaCSV(), 'text/csv;charset=utf-8');
+}));
+['importarCsv', 'importarCsv2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
+  document.getElementById('importarCsvArchivo').click();
+}));
+function procesarCsv(texto) {
+  const res = circuitosDesdeCSV(texto, { proyecto: document.getElementById('projName').value.trim() });
+  if (res.errores.length) {
+    const lista = res.errores.slice(0, 15).map(e => `Fila ${e.fila}: ${e.texto}`).join('\n- ');
+    const mas = res.errores.length > 15 ? `\n… y ${res.errores.length - 15} error(es) más.` : '';
+    alert(`No se importó nada: el archivo tiene ${res.errores.length} error(es). Corrígelos y vuelve a cargarlo.\n\n- ${lista}${mas}`);
+    return;
+  }
+  const existentes = loadRegistry().length;
+  if (existentes > 0 && !confirm(`La memoria ya tiene ${existentes} circuito(s). Se agregarán ${res.circuitos.length} circuito(s) del archivo (no se borra nada). ¿Continuar?`)) return;
+  const { agregados, errores } = importarCircuitos(res.circuitos);
+  const nombre = (res.circuitos.find(s => s.projName) || {}).projName || '';
+  if (nombre && !document.getElementById('projName').value.trim()) document.getElementById('projName').value = nombre;
+  activarTab('memoria');
+  let msg = `Se importaron ${agregados} de ${res.circuitos.length} circuito(s) (${res.leidos} renglón(es) del archivo).`;
+  if (errores.length) msg += `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}`;
+  if (res.avisos.length) msg += `\n\nRevisa:\n- ${res.avisos.slice(0, 12).join('\n- ')}`;
+  msg += '\n\nTodo lo que no venía en el archivo (tensión, longitud, aislamiento, etc.) usó el valor de partida de la calculadora: abre el circuito con "Editar" para ajustarlo.';
+  alert(msg);
+}
+document.getElementById('importarCsvArchivo').addEventListener('change', (e) => {
+  const archivo = e.target.files[0];
+  e.target.value = '';
+  if (!archivo) return;
+  const leer = (codif, siFalla) => {
+    const lector = new FileReader();
+    lector.onload = () => {
+      // Excel en español guarda "CSV" en ANSI (Windows-1252): si salen caracteres rotos, se relee asi
+      if (siFalla && lector.result.includes('\uFFFD')) { leer('windows-1252', null); return; }
+      procesarCsv(lector.result);
+    };
+    lector.readAsText(archivo, codif);
+  };
+  leer('utf-8', true);
 });
 
 /* =========================================================================
