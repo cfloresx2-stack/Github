@@ -790,12 +790,12 @@
     <p class="hint" style="margin-top:6px">Un solo archivo DXF con todas las hojas apiladas, usando los mismos bloques de tu catálogo ESCO (<code>ESCO_02_CB_ANSI</code>, <code>ESCO_08_M3</code>, etc.), con los atributos TAG / DATOS / TIPO llenos pero invisibles (para EATTEDIT o extracción de datos). Ábrelo en AutoCAD y guárdalo como DWG. Los textos van sin acentos.</p>
 
     <details style="margin-top:16px">
-      <summary>Verificar cortocircuito de todos los tableros (opcional)</summary>
+      <summary>Datos de la instalación: cortocircuito, tiempo de despeje y electrodo (opcional)</summary>
       <div class="checkline" style="margin-top:10px">
         <input type="checkbox" id="ccArbolEnabled">
         <label for="ccArbolEnabled">Calcular la falla disponible en cada tablero y verificar la capacidad interruptiva (Art. 110-9)</label>
       </div>
-      <p class="hint" style="margin-top:6px">Declara los datos del transformador UNA sola vez (no hace falta repetirlos circuito por circuito): se calcula la falla en el tablero raíz y se va reduciendo tablero por tablero según la impedancia real del alimentador que los conecta (mismo árbol del diagrama de arriba).</p>
+      <p class="hint" style="margin-top:6px">Declara estos datos UNA sola vez (no hace falta repetirlos circuito por circuito): se calcula la falla en el tablero raíz y se va reduciendo tablero por tablero según la impedancia real del alimentador que los conecta. Con la capacidad interruptiva de cada tablero, el tiempo de despeje y el electrodo, el dictamen de todos los circuitos de la memoria se completa solo.</p>
       <div id="ccArbolPanel" style="display:none">
         <div class="row2" style="margin-top:10px">
           <div>
@@ -824,6 +824,38 @@
             <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
           </div>
         </div>
+        <label style="margin-top:10px">Tiempo de despeje de la falla <span class="hint">(s, de la curva del interruptor; vacío = no verificar el calentamiento del conductor, Art. 110-10)</span></label>
+        <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Ej. 0.02">
+        <details style="margin-top:10px">
+          <summary>Electrodo de puesta a tierra de la instalación (opcional)</summary>
+          <div class="checkline" style="margin-top:8px">
+            <input type="checkbox" id="instElEnabled">
+            <label for="instElEnabled">Calcular la resistencia del electrodo una sola vez para toda la instalación (Art. 250-53)</label>
+          </div>
+          <div id="instElPanel" style="display:none">
+            <div class="row2">
+              <div>
+                <label>Resistividad del terreno <span class="hint">(Ω·m, medir en sitio)</span></label>
+                <input type="number" id="instElRho" value="" step="1" min="1" placeholder="Medir en sitio">
+              </div>
+              <div>
+                <label>Longitud enterrada <span class="hint">(m)</span></label>
+                <input type="number" id="instElLargo" value="2.44" step="0.01" min="0.5">
+              </div>
+            </div>
+            <div class="row2">
+              <div>
+                <label>Diámetro de la varilla <span class="hint">(mm)</span></label>
+                <input type="number" id="instElDiam" value="16" step="0.5" min="5">
+              </div>
+              <div class="checkline" style="margin-top:22px">
+                <input type="checkbox" id="instElComp">
+                <label for="instElComp">Se instalará un electrodo complementario</label>
+              </div>
+            </div>
+            <div class="totalsLine" id="instElResultado" style="margin-top:6px"></div>
+          </div>
+        </details>
         <div id="ccArbolAdvertencias" style="margin-top:8px"></div>
         <div id="ccArbolResultado" style="margin-top:8px"></div>
         <p class="hint" style="margin-top:8px">Falla trifásica simétrica, método por unidad — mismo cálculo y mismas limitaciones que la sección 5 de la Calculadora (no resuelve redes en malla, no calcula falla línea-tierra). La capacidad interruptiva se declara por tablero porque normalmente todos los interruptores de un mismo tablero son de la misma marca/marco.</p>
@@ -1755,6 +1787,7 @@ function addToMemoria() {
   renderCuadroCargas();
   renderDiagramaUnifilar();
   renderCortocircuitoArbol();
+  aplicarDatosInstalacion();
   const btn = document.getElementById('addToMemoria');
   btn.textContent = "✓ Agregado a la memoria del proyecto";
   btn.disabled = true;
@@ -1779,6 +1812,47 @@ document.getElementById('cancelarEdicion').addEventListener('click', () => {
   document.getElementById('editandoBanner').style.display = 'none';
 });
 
+// Motivo corto (y donde resolverlo) de cada hallazgo que no es "Cumple", para que el usuario
+// sepa QUE falta sin abrir el detalle de cada circuito.
+const MOTIVOS_DICTAMEN = {
+  'R-CC|No evaluable': ['Falta la capacidad interruptiva del tablero (Art. 110-9)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-CC|No cumple': ['Capacidad interruptiva insuficiente (Art. 110-9)', 'Subir la capacidad del interruptor'],
+  'R-040|No evaluable': ['Falta el tiempo de despeje de la falla (Art. 110-10)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-040|No cumple': ['El conductor no soporta el calentamiento de la falla (Art. 110-10)', 'Aumentar calibre o reducir el tiempo de despeje'],
+  'R-030|No evaluable': ['Falta el electrodo de tierra (Art. 250-53)', 'Diagrama unifilar › Datos de la instalación'],
+  'R-030|Advertencia': ['Resistencia del electrodo calculada: medir en sitio (Art. 250-53)', 'Telurómetro'],
+  'R-034|No evaluable': ['Sistema sin conductor de tierra (Art. 250-122)', 'Verificar la canalización metálica'],
+  'R-009|Advertencia': ['Protección de sobrecarga del motor por especificar (Art. 430)', 'Se especifica aparte'],
+  'R-039|Advertencia': ['Confirmar en obra los conductores en paralelo (Art. 310-10h)', 'Revisar en campo'],
+  'R-VD|Advertencia': ['Caída de tensión mayor a 3 %', 'Aumentar calibre o reducir longitud'],
+  'R-VD|No evaluable': ['Calibre fuera de la Tabla 9: sin caída de tensión', ''],
+  'R-110-14c|Advertencia': ['Confirmar terminales de 75 °C (Art. 110-14c)', 'Revisar la placa del equipo'],
+};
+function motivosDeCircuito(r) {
+  return (r.hallazgos || []).filter(h => h.estado !== 'Cumple').map(h => {
+    const m = MOTIVOS_DICTAMEN[h.reglaId + '|' + h.estado];
+    return { estado: h.estado, texto: m ? m[0] : `${h.reglaId} (${h.articulo})`, accion: m ? m[1] : '' };
+  });
+}
+function resumenDictamenHtml(reg) {
+  const n = { 'Cumple': 0, 'Advertencia': 0, 'No evaluable': 0, 'No cumple': 0 };
+  const grupos = {};
+  reg.forEach(r => {
+    if (r.dictamen in n) n[r.dictamen]++;
+    new Set(motivosDeCircuito(r).map(m => m.estado + '|' + m.texto + '|' + m.accion)).forEach(k => { grupos[k] = (grupos[k] || 0) + 1; });
+  });
+  if (n['Advertencia'] + n['No evaluable'] + n['No cumple'] === 0) return '';
+  const orden = { 'No cumple': 0, 'No evaluable': 1, 'Advertencia': 2 };
+  const items = Object.entries(grupos).map(([k, c]) => { const [estado, texto, accion] = k.split('|'); return { estado, texto, accion, c }; })
+    .sort((a, b) => orden[a.estado] - orden[b.estado] || b.c - a.c);
+  const partes = [`${n['Cumple']} cumplen`, n['Advertencia'] ? `${n['Advertencia']} con advertencia` : null, n['No evaluable'] ? `${n['No evaluable']} sin evaluar` : null, n['No cumple'] ? `${n['No cumple']} no cumplen` : null].filter(Boolean);
+  return `<details class="resumenDictamen" style="margin-bottom:10px">
+    <summary style="cursor:pointer;font-size:13px"><b>Dictamen:</b> ${partes.join(' · ')} <span class="hint">(ver qué falta)</span></summary>
+    <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.55">${items.map(i =>
+      `<li><span class="badge ${ESTADO_BADGE[i.estado]}" style="margin-right:4px">${i.estado}</span><b>${i.c}</b> circ. — ${escXml(i.texto)}${i.accion ? ` <span class="hint">→ ${escXml(i.accion)}</span>` : ''}</li>`).join('')}</ul>
+  </details>`;
+}
+
 function renderRegistry() {
   const reg = loadRegistry();
   const wrap = document.getElementById('registryTableWrap');
@@ -1798,13 +1872,13 @@ function renderRegistry() {
       <td>${r.breakerA} A</td>
       <td>${r.conduitTrade ?? '—'}</td>
       <td>${fmt(r.dropPct,2)}%</td>
-      <td>${r.dictamen ? `<span class="badge ${ESTADO_BADGE[r.dictamen]}">${r.dictamen}</span>` : '—'}</td>
+      <td>${r.dictamen ? `<span class="badge ${ESTADO_BADGE[r.dictamen]}" title="${escXml(motivosDeCircuito(r).map(m => m.texto).join(' • ') || 'Cumple todas las revisiones')}" style="cursor:help">${r.dictamen}</span>` : '—'}</td>
       <td>
         ${r.formSnapshot ? `<button class="miniBtn" onclick="editarCircuito(${r.id})">Editar</button>` : ''}
         <button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button>
       </td>
     </tr>`).join("");
-  wrap.innerHTML = `
+  wrap.innerHTML = resumenDictamenHtml(reg) + `
     <table class="printTable" id="registryTable">
       <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -2052,6 +2126,99 @@ function renderDiagramaUnifilar() {
    La capacidad interruptiva SI se declara por tablero (normalmente todos
    los interruptores de un mismo tablero son de la misma marca/marco).
    ========================================================================= */
+/* =========================================================================
+   DATOS DE LA INSTALACION -> DICTAMEN DE CADA CIRCUITO
+   -------------------------------------------------------------------------
+   El transformador, la capacidad interruptiva de cada tablero, el tiempo de
+   despeje y el electrodo son datos de la INSTALACION, no de un circuito. Se
+   declaran una vez (y se guardan en el navegador y en el archivo del proyecto)
+   y de ahi se rehacen los hallazgos R-CC, R-040, R-029 y R-030 de todos los
+   circuitos de la memoria. Un circuito que trae su propio calculo de
+   cortocircuito o de electrodo (secciones 5 y 6) conserva el suyo.
+   ========================================================================= */
+let icuPorTablero = {};
+const INSTALACION_KEY = 'nomica_instalacion_v1';
+
+function capturarInstalacion() {
+  const v = id => document.getElementById(id).value;
+  return {
+    kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
+    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), icu: { ...icuPorTablero },
+    electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked },
+  };
+}
+function guardarInstalacion() {
+  try { localStorage.setItem(INSTALACION_KEY, JSON.stringify(capturarInstalacion())); } catch (e) {}
+}
+function restaurarInstalacion(t) {
+  if (!t) return;
+  const set = (id, val) => { if (val !== undefined && val !== null) document.getElementById(id).value = val; };
+  set('ccArbolKva', t.kva); set('ccArbolZ', t.zPct); set('ccArbolVoltage', t.voltage); set('ccArbolPrim', t.primario);
+  set('ccArbolZsource', t.zSourcePu); set('ccArbolTsc', t.tDespeje);
+  icuPorTablero = { ...(t.icu || {}) };
+  const chk = document.getElementById('ccArbolEnabled');
+  chk.checked = !!t.verificarCc;
+  document.getElementById('ccArbolPanel').style.display = chk.checked ? 'block' : 'none';
+  const e = t.electrodo || {};
+  document.getElementById('instElEnabled').checked = !!e.habilitado;
+  document.getElementById('instElPanel').style.display = e.habilitado ? 'block' : 'none';
+  set('instElRho', e.rho); set('instElLargo', e.largo); set('instElDiam', e.diam);
+  document.getElementById('instElComp').checked = !!e.comp;
+  actualizarResultadoElectrodoInstalacion();
+}
+
+function electrodoInstalacion() {
+  if (!document.getElementById('instElEnabled').checked) return null;
+  const rho = parseFloat(document.getElementById('instElRho').value) || 0;
+  const largoM = parseFloat(document.getElementById('instElLargo').value) || 0;
+  const diamMm = parseFloat(document.getElementById('instElDiam').value) || 0;
+  const complementario = document.getElementById('instElComp').checked;
+  return rho > 0 && largoM > 0 && diamMm > 0 ? calcularElectrodo({ rho, largoM, diamMm, complementario }) : null;
+}
+function actualizarResultadoElectrodoInstalacion() {
+  const el = document.getElementById('instElResultado');
+  const e0 = electrodoInstalacion();
+  el.innerHTML = e0
+    ? `Resistencia estimada: <b>${fmt(e0.R, 2)} Ω</b> — ${e0.cumple25 ? 'cumple los 25 Ω (confirmar con telurómetro)' : (e0.complementario ? 'excede 25 Ω y se declara electrodo complementario' : 'excede 25 Ω: falta electrodo complementario')}`
+    : `<span class="hint">Captura resistividad, longitud y diámetro mayores a cero.</span>`;
+}
+
+function aplicarDatosInstalacion() {
+  const reg = loadRegistry();
+  if (reg.length === 0) return;
+  const { tableros, alimentadores } = obtenerTablerosYAlimentadores(reg);
+  const { arbol } = construirArbolDiagrama(tableros, alimentadores);
+  const trafo = {
+    kva: parseFloat(document.getElementById('ccArbolKva').value) || 0,
+    zPct: parseFloat(document.getElementById('ccArbolZ').value) || 0,
+    voltage: parseFloat(document.getElementById('ccArbolVoltage').value) || 0,
+    zSourcePu: parseFloat(document.getElementById('ccArbolZsource').value) || 0,
+  };
+  const casc = document.getElementById('ccArbolEnabled').checked && trafo.kva > 0 && trafo.zPct > 0 && trafo.voltage > 0
+    ? calcularCortocircuitoArbol(arbol, alimentadores, trafo) : null;
+  const tSeg = parseFloat(document.getElementById('ccArbolTsc').value) || 0;
+  const el0 = electrodoInstalacion();
+  let cambiado = false;
+  reg.forEach(r => {
+    const fs = r.formSnapshot;
+    if (!fs || !r.hallazgos) return;
+    const nuevos = recalcularHallazgosInstalacion({
+      hallazgos: r.hallazgos,
+      circuito: { awg: r.awg, nParalelo: parseInt(fs.nParalelo) || 1, lengthM: parseFloat(fs.length) || 0, material: fs.material, insulTemp: tempDeAislamiento(fs.insulType, fs.lugarMojado) },
+      nodo: casc ? casc.resultados[r.board] : null, iBase: casc && casc.iBase, zBase: casc && casc.zBase,
+      icuKa: icuPorTablero[r.board] || 0, tSeg, electrodo: el0, conCc: !fs.scEnabled, conEl: !fs.elEnabled,
+    });
+    if (JSON.stringify(nuevos) === JSON.stringify(r.hallazgos)) return;
+    const viejo = renderDictamen(r.hallazgos);
+    if (r.bodyHtml && r.bodyHtml.startsWith(viejo)) r.bodyHtml = renderDictamen(nuevos) + r.bodyHtml.slice(viejo.length);
+    r.hallazgos = nuevos;
+    r.dictamen = veredictoGlobal(nuevos);
+    cambiado = true;
+  });
+  if (cambiado) saveRegistry(reg);
+  renderRegistry();
+}
+
 function renderCortocircuitoArbol() {
   const reg = loadRegistry();
   const wrap = document.getElementById('ccArbolResultado');
@@ -2107,31 +2274,49 @@ function renderCortocircuitoArbol() {
 
   filas.forEach(f => {
     const sel = document.getElementById(`${f.slug}Icu`);
+    const vacio = document.createElement('option');
+    vacio.value = ''; vacio.textContent = '— declarar —';
+    sel.appendChild(vacio);
     INTERRUPTING_CAPACITIES_KA.forEach(ka => {
       const o = document.createElement('option');
       o.value = ka; o.textContent = `${ka} kA`;
       sel.appendChild(o);
     });
+    const minimo = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= f.iccKA);
+    if (icuPorTablero[f.nombre]) sel.value = icuPorTablero[f.nombre];
     function actualizar() {
       const icu = parseFloat(sel.value) || 0;
-      const cumple = icu >= f.iccKA;
-      document.getElementById(`${f.slug}Badge`).innerHTML = cumple
-        ? `<span class="badge ok">Cumple Art. 110-9</span>`
-        : `<span class="badge warn">NO CUMPLE</span>`;
+      document.getElementById(`${f.slug}Badge`).innerHTML = !icu
+        ? `<span class="badge na">Sin declarar · mín. ${minimo ?? '>200'} kA</span>`
+        : icu >= f.iccKA
+          ? `<span class="badge ok">Cumple Art. 110-9</span>`
+          : `<span class="badge warn">NO CUMPLE · mín. ${minimo ?? '>200'} kA</span>`;
     }
-    sel.addEventListener('change', actualizar);
-    // Selecciona el primer valor de catalogo que ya cumple, como sugerencia inicial
-    const sugerido = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= f.iccKA);
-    if (sugerido) sel.value = sugerido;
+    // La capacidad interruptiva NO se sugiere sola: la declara el usuario (si no, siempre "cumpliria")
+    sel.addEventListener('change', () => {
+      if (sel.value) icuPorTablero[f.nombre] = parseFloat(sel.value); else delete icuPorTablero[f.nombre];
+      guardarInstalacion(); actualizar(); aplicarDatosInstalacion();
+    });
     actualizar();
   });
 }
+
 document.getElementById('ccArbolEnabled').addEventListener('change', (e) => {
   document.getElementById('ccArbolPanel').style.display = e.target.checked ? 'block' : 'none';
   if (e.target.checked) renderCortocircuitoArbol();
+  guardarInstalacion(); aplicarDatosInstalacion();
 });
 ['ccArbolKva','ccArbolZ','ccArbolVoltage','ccArbolZsource','ccArbolPrim'].forEach(id => {
-  document.getElementById(id).addEventListener('input', renderCortocircuitoArbol);
+  document.getElementById(id).addEventListener('input', () => { renderCortocircuitoArbol(); guardarInstalacion(); aplicarDatosInstalacion(); });
+});
+document.getElementById('ccArbolTsc').addEventListener('input', () => { guardarInstalacion(); aplicarDatosInstalacion(); });
+document.getElementById('instElEnabled').addEventListener('change', (e) => {
+  document.getElementById('instElPanel').style.display = e.target.checked ? 'block' : 'none';
+  actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion();
+});
+['instElRho','instElLargo','instElDiam','instElComp'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
+  document.getElementById(id).addEventListener('change', () => { actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
 });
 
 /* =========================================================================
@@ -2641,19 +2826,14 @@ function importarCircuitos(lista) {
   return { agregados, errores };
 }
 
-// Datos del transformador (seccion de cortocircuito del diagrama): se guardan con el proyecto
-function capturarTransformador() {
-  const v = id => document.getElementById(id).value;
-  return { kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'), verificarCc: document.getElementById('ccArbolEnabled').checked };
-}
+// Datos de la instalacion (transformador, capacidades interruptivas, tiempo de despeje, electrodo): viajan con el proyecto
+function capturarTransformador() { return capturarInstalacion(); }
 function restaurarTransformador(t) {
   if (!t) return;
-  const set = (id, val) => { if (val !== undefined && val !== null) document.getElementById(id).value = val; };
-  set('ccArbolKva', t.kva); set('ccArbolZ', t.zPct); set('ccArbolVoltage', t.voltage); set('ccArbolPrim', t.primario); set('ccArbolZsource', t.zSourcePu);
-  const chk = document.getElementById('ccArbolEnabled');
-  chk.checked = !!t.verificarCc;
-  document.getElementById('ccArbolPanel').style.display = chk.checked ? 'block' : 'none';
+  restaurarInstalacion(t);
+  guardarInstalacion();
   renderCortocircuitoArbol();
+  aplicarDatosInstalacion();
   renderUnifilarDetallado();
 }
 
@@ -2735,6 +2915,7 @@ function actualizarAvisoTabBar() {
 new ResizeObserver(actualizarAvisoTabBar).observe(document.querySelector('.tabBar'));
 actualizarAvisoTabBar();
 
+try { restaurarInstalacion(JSON.parse(localStorage.getItem(INSTALACION_KEY))); } catch (e) {}
 renderRegistry();
 renderCuadroCargas();
 renderDiagramaUnifilar();

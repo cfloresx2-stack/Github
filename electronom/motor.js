@@ -1229,10 +1229,27 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
       `Ninguna tubería del tipo seleccionado aloja ${fmt(tuberia.totalArea,2)} mm² sin exceder el ${tuberia.fillPct}% de ocupación. Dividir en varias canalizaciones o cambiar de tipo.`));
   }
 
+  h.push(...hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }));
+
+  return h;
+}
+
+/* =========================================================================
+   HALLAZGOS QUE DEPENDEN DE DATOS DE LA INSTALACION (no del circuito solo)
+   -------------------------------------------------------------------------
+   Capacidad interruptiva (R-CC, Art. 110-9), calentamiento del conductor ante
+   falla (R-040, Art. 110-10) y electrodo de tierra (R-029/R-030, Art. 250-5x).
+   Se separaron de evaluarCumplimiento para poder recalcularlos despues, cuando
+   el usuario declara una sola vez el transformador, la capacidad interruptiva
+   de cada tablero, el tiempo de despeje y el electrodo, sin repetirlos
+   circuito por circuito.
+   ========================================================================= */
+function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
+  const h = [];
   // Art. 110-9: capacidad interruptiva
   if (!cc) {
     h.push(hallazgo("R-CC", ESTADO.NO_EVALUABLE, "Art. 110-9",
-      `No se calculó la corriente de cortocircuito, por lo que no puede verificarse la capacidad interruptiva del dispositivo. Activar la sección de cortocircuito para evaluarlo.`));
+      `No se calculó la corriente de cortocircuito, por lo que no puede verificarse la capacidad interruptiva del dispositivo. Declara la capacidad interruptiva del tablero en Diagrama unifilar › Datos de la instalación, o activa la sección 5 de este circuito.`));
   } else if (cc.icuKa * 1000 >= cc.iccTrafo) {
     h.push(hallazgo("R-CC", ESTADO.CUMPLE, "Art. 110-9",
       `Capacidad interruptiva ${cc.icuKa} kA cubre la falla disponible de ${fmt(cc.iccTrafo/1000,2)} kA.`));
@@ -1250,7 +1267,7 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
       `La verificación térmica ante cortocircuito solo está implementada para cobre.`));
   } else if (!input.scTsc || input.scTsc <= 0) {
     h.push(hallazgo("R-040", ESTADO.NO_EVALUABLE, "Art. 110-10",
-      `Falta declarar el tiempo de despeje de la falla (curva tiempo-corriente del dispositivo de protección) para verificar el calentamiento del conductor.`));
+      `Falta declarar el tiempo de despeje de la falla (curva tiempo-corriente del dispositivo de protección; en Diagrama unifilar › Datos de la instalación) para verificar el calentamiento del conductor.`));
   } else if (vt) {
     const areaInstaladaMm2 = calibreFinal.mm2;
     if (areaInstaladaMm2 >= vt.areaMinMm2) {
@@ -1265,7 +1282,7 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   // R-029 / 250-52(a)(5) y R-030 / 250-53(a)(2): electrodo de puesta a tierra
   if (!el0) {
     h.push(hallazgo("R-030", ESTADO.NO_EVALUABLE, "Art. 250-53",
-      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario.`));
+      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario. Captúralo una vez en Diagrama unifilar › Datos de la instalación, o en la sección 6 de este circuito.`));
   } else {
     if (!el0.cumpleLargo || !el0.cumpleDiam) {
       const faltas = [];
@@ -1291,6 +1308,44 @@ function evaluarCumplimiento({ input, calibreIni, calibreFinal, vd, breaker, tie
   }
 
   return h;
+}
+
+// Corriente de falla al final de un conductor, partiendo de la impedancia
+// acumulada (en pu) del tablero donde nace el circuito. Es la misma formula
+// "iccCarga" de calcularCortocircuito, aplicada desde un punto cualquiera del
+// arbol (calcularCortocircuitoArbol entrega zAcumuladaPu, iBase y zBase).
+function iccAlFinalDeCircuito({ zAcumuladaPu, iBase, zBase }, awg, lengthM, nParalelo) {
+  const t9 = TABLE9_PVC_CU[awg];
+  if (!t9 || !(lengthM > 0) || !(zBase > 0)) return null;
+  const n = nParalelo || 1;
+  const zCondPu = (Math.sqrt(t9.r * t9.r + t9.xl * t9.xl) * (lengthM / 1000) / n) / zBase;
+  return iBase / (zAcumuladaPu + zCondPu);
+}
+
+// Rehace los hallazgos de instalacion de un circuito ya calculado.
+//   hallazgos: los que ya tiene.  circuito: { awg, nParalelo, lengthM, material, insulTemp }.
+//   nodo: { zAcumuladaPu, iccKA } del tablero donde nace (cascada) o null.  iBase/zBase: de la cascada.
+//   icuKa: capacidad interruptiva declarada del tablero (0/null = sin declarar).
+//   tSeg: tiempo de despeje declarado.  electrodo: resultado de calcularElectrodo o null.
+//   conCc / conEl: que grupos reemplazar (si el circuito trae su propio calculo, no se pisa).
+function recalcularHallazgosInstalacion({ hallazgos, circuito, nodo, iBase, zBase, icuKa, tSeg, electrodo, conCc, conEl }) {
+  let cc = null, vt = null;
+  if (conCc && nodo && icuKa > 0) {
+    const iccBarra = nodo.iccKA * 1000;
+    const iccCarga = iccAlFinalDeCircuito({ zAcumuladaPu: nodo.zAcumuladaPu, iBase, zBase }, circuito.awg, circuito.lengthM, circuito.nParalelo);
+    cc = { icuKa, iccTrafo: iccBarra, iccCarga };
+    if (iccCarga && tSeg > 0) vt = calcularVerificacionTermica({ iccA: iccCarga, tSeg, insulTemp: circuito.insulTemp, material: circuito.material, nParalelo: circuito.nParalelo });
+  }
+  const ids = [].concat(conCc ? ['R-CC', 'R-040'] : [], conEl ? ['R-029', 'R-030'] : []);
+  const nuevos = hallazgosInstalacion({
+    input: { material: circuito.material, scTsc: tSeg },
+    calibreFinal: { awg: circuito.awg, mm2: mm2DeAwg(circuito.awg) },
+    cc: conCc ? cc : null, vt, el0: conEl ? electrodo : null,
+  }).filter(x => ids.includes(x.reglaId));
+  const pos = hallazgos.findIndex(x => ids.includes(x.reglaId));
+  const resto = hallazgos.filter(x => !ids.includes(x.reglaId));
+  resto.splice(pos < 0 ? resto.length : pos, 0, ...nuevos);
+  return resto;
 }
 
 /* =========================================================================
