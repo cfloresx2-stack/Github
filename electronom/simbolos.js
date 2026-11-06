@@ -4,7 +4,8 @@
    Convertidos del catalogo Simbolos_Unifilares_ESCO.dxf (geometria identica:
    centrados en 0,0, orientacion vertical, terminales en y = +-14) mas 5
    simbolos nuevos (CONT110, CONT220, CONT_GFCI_WP, AC_MINISPLIT, AC_CENTRAL)
-   redibujados en el mismo estilo y aprobados por Cesar.
+   redibujados en el mismo estilo y aprobados por Cesar. CONTACTOR (KM) y
+   REL_SOBRECARGA (OL) son del arranque de motor: pendientes de aprobacion.
    Primitivas: ['L',x1,y1,x2,y2] linea; ['C',x,y,r] circulo; ['P',[[x,y],...],cerrada]
    polilinea; ['T',x,y,alto,texto] texto; ['D'] punto de union relleno.
    Los nombres llevan el mismo sufijo que los bloques del DXF (ESCO_02_CB_ANSI -> 02_CB_ANSI).
@@ -25,5 +26,7 @@ const SIMBOLOS_ESCO = {
   '13_CONT220': [['C',0,0,6],['L',-9,2,9,2],['L',-9,0,9,0],['L',-9,-2,9,-2],['T',0,-10.5,2.4,"220"],['L',0,6,0,14]],
   '13_CONT_GFCI_WP': [['P',[[-7,-4],[7,-4],[7,4],[-7,4]],1],['L',-10,1.5,10,1.5],['L',-10,-1.5,10,-1.5],['T',0,-8.5,2.2,"WP"],['L',0,4,0,14]],
   '13_AC_MINISPLIT': [['P',[[-9,-3.5],[9,-3.5],[9,3.5],[-9,3.5]],1],['L',-13,0,13,0],['L',0,3.5,0,14]],
+  '14_CONTACTOR': [['P',[[-6,-5],[6,-5],[6,5],[-6,5]],1],['L',0,5,0,14],['L',0,-5,0,-14],['T',0,0,3.2,"KM"]],
+  '14_REL_SOBRECARGA': [['P',[[-6,-5],[6,-5],[6,5],[-6,5]],1],['L',0,5,0,14],['L',0,-5,0,-14],['T',0,0,3.2,"OL"]],
   '13_AC_CENTRAL': [['P',[[-9,-7],[9,-7],[9,7],[-9,7]],1],['C',0,0,4],['L',-2.8,-2.8,2.8,2.8],['L',-2.8,2.8,2.8,-2.8],['L',0,7,0,14]],
 };

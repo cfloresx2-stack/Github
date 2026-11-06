@@ -1857,7 +1857,7 @@ function agruparCircuitosParaUnifilar(circuitos) {
   const grupos = [];
   const porFirma = {};
   (circuitos || []).forEach(c => {
-    const firma = [c.simbolo, c.awg, c.nParalelo || 1, c.breakerA, c.conduitTrade, c.fases, c.awgTierra, c.lengthM, c.destino || '', c.motor ? 1 : 0].join('|');
+    const firma = [c.simbolo, c.awg, c.nParalelo || 1, c.breakerA, c.conduitTrade, c.fases, c.awgTierra, c.lengthM, c.destino || '', c.motor ? 1 : 0, c.arranque ? c.arranque.relevador.texto + c.arranque.contactor.texto : ''].join('|');
     // Solo se agrupan los que terminan con un numero consecutivo en el nombre
     const base = (c.circ || '').replace(/\s*\d+$/, '');
     const agrupable = base !== (c.circ || '') && !c.destino;
@@ -2359,4 +2359,27 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
   if (!el0) faltantes.push('Electrodo de puesta a tierra (resistividad, longitud y diámetro)');
 
   return { transformador, tableros, tDespeje: tSeg > 0 ? tSeg : null, electrodo, faltantes };
+}
+
+/* =========================================================================
+   ARRANQUE DEL MOTOR EN EL UNIFILAR: interruptor -> contactor -> relevador
+   -------------------------------------------------------------------------
+   Datos que se rotulan junto a los simbolos del contactor (KM) y del relevador
+   de sobrecarga (OL) en la hoja del tablero. El ajuste maximo del relevador sale
+   de calcularSobrecargaMotor (Art. 430-32); con corriente de placa se basa en
+   ella y, sin placa, se estima con la corriente de tabla y se rotula "sin placa".
+   El contactor se rotula con la corriente de plena carga de tabla como valor
+   minimo de seleccion (criterio de ingenieria, no un valor de la NOM).
+   ========================================================================= */
+function _amperesCorto(n) { return (Math.round(n * 10) / 10).toString(); }
+function cadenaArranqueMotor({ flcTabla, flaPlaca, fs115 }) {
+  const s = calcularSobrecargaMotor({ flaPlaca, flcTabla, fs115 });
+  return {
+    contactor: { etiqueta: 'KM', texto: `≥ ${_amperesCorto(flcTabla)} A` },
+    relevador: {
+      etiqueta: 'OL', texto: `≤ ${_amperesCorto(s.maxA)} A`,
+      base: s.usaPlaca ? `(${s.pct} % de placa)` : '(sin placa)',
+      usaPlaca: s.usaPlaca, maxA: s.maxA, pct: s.pct,
+    },
+  };
 }

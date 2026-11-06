@@ -1455,6 +1455,30 @@ grupo("Memoria — datos generales de la instalación", () => {
   esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
 });
 
+grupo("Unifilar — arranque del motor (contactor y relevador)", () => {
+  const a = cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 30, fs115: true });
+  esIgual(a.contactor.etiqueta + a.relevador.etiqueta, "KMOL", "Rótulos KM (contactor) y OL (relevador)");
+  esIgual(a.contactor.texto, "≥ 34 A", "El contactor se rotula con la corriente de plena carga de tabla");
+  esIgual(a.relevador.texto, "≤ 37.5 A", "Con placa y FS ≥ 1.15: 125 % de 30 A = 37.5 A (Art. 430-32(a)(1))");
+  esIgual(a.relevador.base, "(125 % de placa)", "Dice sobre qué se calculó");
+  esCierto(a.relevador.usaPlaca, "Marca que usó la placa");
+  const b = cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 30, fs115: false });
+  esIgual(b.relevador.texto, "≤ 34.5 A", "Sin marca de FS: 115 % de 30 A = 34.5 A");
+  const c = cadenaArranqueMotor({ flcTabla: 14, flaPlaca: 0, fs115: false });
+  esIgual(c.relevador.base, "(sin placa)", "Sin placa se avisa en el rótulo");
+  esIgual(c.relevador.texto, "≤ 16.1 A", "Sin placa se estima con la corriente de tabla (115 % de 14 A)");
+  esIgual(cadenaArranqueMotor({ flcTabla: 7.6, flaPlaca: 0, fs115: true }).contactor.texto, "≥ 7.6 A", "Un decimal en el contactor");
+
+  // agrupación: dos motores iguales se juntan; con distinto ajuste de relevador, no
+  const base = { circ: "Bomba 1", motor: true, simbolo: "08_M3", awg: "8", breakerA: 40, conduitTrade: '3/4"', fases: 3, awgTierra: "10", lengthM: 20 };
+  const m1 = { ...base, id: 1, arranque: cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 30, fs115: true }) };
+  const m2 = { ...base, id: 2, circ: "Bomba 2", arranque: cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 30, fs115: true }) };
+  const m3 = { ...base, id: 3, circ: "Bomba 3", arranque: cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 28, fs115: true }) };
+  const g = agruparCircuitosParaUnifilar([m1, m2, m3]);
+  esIgual(g.length, 2, "Dos motores iguales se juntan y el de otra placa queda aparte");
+  esIgual(g[0].n, 2, "El grupo de iguales lleva ×2");
+  esCierto(g[0].arranque && g[0].arranque.relevador.texto === "≤ 37.5 A", "El grupo conserva el rótulo del relevador");});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
