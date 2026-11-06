@@ -2213,3 +2213,76 @@ function plantillaCSV() {
   const esc = v => { const t = String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   return [enc, ...ejemplos.map(fila)].map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
 }
+
+/* =========================================================================
+   DUPLICAR UN CIRCUITO x N
+   -------------------------------------------------------------------------
+   Nombres consecutivos para las copias ("Motor 1" -> "Motor 2", "Motor 3";
+   "Contactos" -> "Contactos 2", "Contactos 3") sin repetir ninguno de los que
+   ya existen en el tablero, y posiciones libres si el original tiene una
+   posicion fija en el tablero.
+   ========================================================================= */
+function nombresDeCopias(nombre, n, existentes) {
+  const usados = new Set((existentes || []).map(x => String(x || '').trim().toLowerCase()));
+  const base = String(nombre || '').trim();
+  const m = base.match(/^(.*?)(\d+)\s*$/);
+  const prefijo = m ? m[1] : base + ' ';
+  const digitos = m ? m[2] : '';
+  let k = m ? parseInt(digitos, 10) + 1 : 2;
+  const ancho = digitos.length > 1 && digitos[0] === '0' ? digitos.length : 0;     // 01 -> 02
+  const nombres = [];
+  while (nombres.length < n) {
+    const num = ancho ? String(k).padStart(ancho, '0') : String(k);
+    const candidato = (prefijo + num).trim();
+    k++;
+    if (usados.has(candidato.toLowerCase())) continue;
+    usados.add(candidato.toLowerCase());
+    nombres.push(candidato);
+  }
+  return nombres;
+}
+
+// Posiciones del tablero que ocupa un interruptor de nPolos que arranca en `pos`: pos, pos+2, pos+4...
+function posicionesOcupadas(pos, nPolos) {
+  const r = [];
+  for (let i = 0; i < Math.min(Math.max(nPolos || 1, 1), 3); i++) r.push(pos + i * 2);
+  return r;
+}
+
+// Posiciones para n copias de un interruptor de nPolos que esta en posBase: las siguientes libres del
+// mismo lado del tablero (de 2 en 2 polos), saltando las ya ocupadas por otros circuitos.
+// `ocupados` = [{ posicion, fases }] de los demas circuitos del tablero.
+function posicionesParaCopias(posBase, nPolos, n, ocupados) {
+  const tomadas = new Set();
+  (ocupados || []).forEach(o => { if (o.posicion > 0) posicionesOcupadas(o.posicion, o.fases).forEach(p => tomadas.add(p)); });
+  posicionesOcupadas(posBase, nPolos).forEach(p => tomadas.add(p));
+  const salida = [];
+  let pos = posBase + 2;
+  while (salida.length < n) {
+    const ocupa = posicionesOcupadas(pos, nPolos);
+    if (ocupa.every(p => !tomadas.has(p))) {
+      salida.push(pos);
+      ocupa.forEach(p => tomadas.add(p));
+      pos += 2 * Math.min(Math.max(nPolos || 1, 1), 3);
+    } else pos += 2;
+  }
+  return salida;
+}
+
+// Capturas de las n copias de un circuito de la memoria (listas para importarCircuitos).
+// `registro` = toda la memoria (para no repetir nombres ni posiciones del mismo tablero).
+function copiasDeCircuito(original, n, registro) {
+  const snap = original.formSnapshot;
+  const mismoTablero = (registro || []).filter(r => String(r.board || '').trim().toLowerCase() === String(snap.boardName || '').trim().toLowerCase());
+  const nombres = nombresDeCopias(snap.circName, n, mismoTablero.map(r => r.circ));
+  const pos0 = parseInt(snap.circPos, 10);
+  const posiciones = pos0 > 0
+    ? posicionesParaCopias(pos0, original.fases || 1, n, mismoTablero.filter(r => r.id !== original.id).map(r => ({ posicion: r.posicion, fases: r.fases })))
+    : null;
+  return nombres.map((nombre, i) => {
+    const c = JSON.parse(JSON.stringify(snap));
+    c.circName = nombre;
+    c.circPos = posiciones ? String(posiciones[i]) : '';
+    return c;
+  });
+}
