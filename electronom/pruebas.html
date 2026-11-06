@@ -1421,6 +1421,40 @@ grupo("Respaldo del proyecto — textos de estado", () => {
   esIgual(estadoRespaldo({ circuitos: 3, ultimaDescarga: ahora - H, ultimoCambio: null, ahora }).nivel, "ok", "Sin marca de cambio y con descarga → al día");
 });
 
+grupo("Memoria — datos generales de la instalación", () => {
+  const trafo = { kva: 300, zPct: 5, voltage: 220, primario: 13.8, zSourcePu: 0 };
+  const arbol = [{ nombre: "TG", hijos: [{ nombre: "TA", hijos: [] }] }];
+  const alim = [{ destino: "TA", awg: "1/0", lengthM: 40, nParalelo: 1 }];
+  const casc = calcularCortocircuitoArbol(arbol, alim, trafo);
+  const el0 = calcularElectrodo({ rho: 30, largoM: 2.44, diamMm: 16, complementario: false });
+  const a = datosAnexoInstalacion({ trafo, casc, icu: { TG: 25, TA: 10 }, tSeg: 0.1, el0 });
+
+  esCierto(Math.abs(a.transformador.iNominalA - 787.3) < 0.5, "Corriente nominal del secundario: 300 kVA a 220 V ≈ 787 A");
+  esCierto(Math.abs(a.transformador.iccBornesKA - 15.75) < 0.05, "Falla en bornes: 787 A ÷ 5 % ≈ 15.75 kA");
+  esIgual(a.transformador.primario, 13.8, "Conserva la tensión del primario");
+  esIgual(a.tableros.map(x => x.nombre).join(), "TG,TA", "Tableros ordenados por nivel en la cascada");
+  esCierto(a.tableros[0].iccKA > a.tableros[1].iccKA, "La falla baja aguas abajo (impedancia del alimentador)");
+  esIgual(a.tableros[0].estado, "Cumple", "25 kA ≥ falla de TG → Cumple");
+  esIgual(a.tableros[1].estado, "Cumple", "10 kA ≥ falla de TA → Cumple");
+  esIgual(datosAnexoInstalacion({ trafo, casc, icu: { TG: 10, TA: 10 }, tSeg: 0.1, el0 }).tableros[0].estado, "No cumple", "10 kA < 15.7 kA en TG → No cumple");
+  const sinIcu = datosAnexoInstalacion({ trafo, casc, icu: { TG: 25 }, tSeg: 0.1, el0 });
+  esIgual(sinIcu.tableros[1].estado, "Sin declarar", "Tablero sin capacidad declarada");
+  esCierto(sinIcu.faltantes.length === 1 && sinIcu.faltantes[0].includes("TA"), "Dice cuál tablero no tiene capacidad interruptiva");
+  esIgual(a.faltantes.length, 0, "Con todo declarado no falta nada");
+  esIgual(a.tDespeje, 0.1, "Tiempo de despeje");
+  esCierto(Math.abs(a.electrodo.R - el0.R) < 1e-9 && a.electrodo.cumpleLargo && a.electrodo.cumpleDiam, "Electrodo: resistencia y dimensiones mínimas");
+  esCierto(a.electrodo.verificacion.includes("≤ 25"), "Electrodo que cumple 25 Ω lo dice");
+  const malo = datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, el0: calcularElectrodo({ rho: 500, largoM: 2.44, diamMm: 16, complementario: false }) });
+  esCierto(malo.electrodo.verificacion.includes("FALTA electrodo complementario"), "R > 25 Ω sin complementario → lo advierte");
+  esCierto(datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, el0: calcularElectrodo({ rho: 500, largoM: 2.44, diamMm: 16, complementario: true }) }).electrodo.verificacion.includes("complementario (Art."), "R > 25 Ω con complementario declarado → lo indica");
+
+  const vacio = datosAnexoInstalacion({ trafo: { kva: 0, zPct: 0, voltage: 0 }, casc: null, icu: {}, tSeg: 0, el0: null });
+  esIgual(vacio.transformador, null, "Sin datos del transformador no se inventa nada");
+  esIgual(vacio.tableros.length, 0, "…ni falla por tablero");
+  esIgual(vacio.electrodo, null, "…ni electrodo");
+  esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
