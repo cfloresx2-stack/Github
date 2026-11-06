@@ -1078,6 +1078,17 @@ grupo("Cuadro de cargas — límite de desbalance de 5 %", () => {
   // Justo en el límite cumple
   esIgual(evaluarDesbalance({ fasesUsadas:3, desbalancePct:5 }, null).estado, "ok", "Exactamente 5 % cumple");
   esIgual(evaluarDesbalance({ fasesUsadas:3, desbalancePct:5.1 }, { desbalancePct:5.1 }).estado, "excede", "5.1 % excede");
+
+  // --- aviso en el dictamen: tableros que exceden, tal como están acomodados
+  const mezcla = [ ...igual, ...arreglable.map(x => ({ ...x, id: x.id + 10, board: "MAL" })), ...granular.map(x => ({ ...x, id: x.id + 20, board: "GRAN" })), c(99,"UNA","C1",1000,1) ];
+  const av = desbalancePorTablero(mezcla);
+  esIgual(av.map(x => x.tablero).sort().join(), "GRAN,MAL", "Solo se avisan los tableros que exceden (el balanceado y el de una fase no)");
+  const mal = av.find(x => x.tablero === "MAL");
+  esCierto(mal.pct > LIMITE_DESBALANCE_PCT && mal.mensaje.includes("quedaría en"), "Trae el porcentaje y la sugerencia de balanceo automático");
+  esCierto(/sigue arriba|ni con balanceo/.test(av.find(x => x.tablero === "GRAN").mensaje), "Si el balanceo no alcanza, lo dice");
+  esIgual(desbalancePorTablero([]).length, 0, "Memoria vacía: sin avisos");
+  esIgual(desbalancePorTablero(igual).length, 0, "Todo balanceado: sin avisos");
+  esIgual(desbalancePorTablero(arreglable, 70).length, 0, "Respeta un límite distinto (por posición queda en 66.7 %)");
 });
 
 grupo("Diagrama unifilar — armado del árbol", () => {

@@ -1650,6 +1650,18 @@ function evaluarDesbalance(cuadro, balanceado, limite = LIMITE_DESBALANCE_PCT) {
   return { estado: "excede", pct, limite, mejorPct: mejor, mensaje };
 }
 
+// Tableros que exceden el maximo de desbalance, evaluados como estan acomodados (por posicion fisica) y
+// comparados con el balanceo automatico. Es lo que se avisa en el dictamen; no depende del modo que este
+// mostrando la pantalla del cuadro de cargas.
+function desbalancePorTablero(registro, limite = LIMITE_DESBALANCE_PCT) {
+  if (!registro || registro.length === 0) return [];
+  const auto = {};
+  balancearCuadroDeCargas(registro).forEach(b => { auto[b.tablero] = b; });
+  return generarCuadroDeCargas(registro)
+    .map(q => ({ tablero: q.tablero, ...evaluarDesbalance(q, auto[q.tablero], limite) }))
+    .filter(x => x.estado === "excede");
+}
+
 // Tension de fase a neutro de un circuito, a partir de su tension nominal.
 // En sistemas en estrella (127/220, 254/440, 277/480) la tension nominal de un
 // circuito de 2 o 3 fases se da ENTRE FASES, asi que la de fase a neutro es
