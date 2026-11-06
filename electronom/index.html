@@ -383,6 +383,8 @@
         <button type="button" id="plantillaCsv2" class="miniBtn" style="padding:8px 14px">⬇ Plantilla CSV</button>
         <span class="hint">Si ya tienes tu cuadro de cargas en Excel, guárdalo como CSV y súbelo aquí.</span>
       </div>
+      <div class="borradorAviso hint" style="display:none; margin:0 0 8px"></div>
+      <div class="estadoRespaldo hint" style="display:none; margin:0 0 8px"></div>
       <p class="hint">Cada vez que capturas y presionas "Calcular circuito" estás definiendo <b>UN circuito</b> (un interruptor). Si el tablero tiene circuitos de distinto tipo (monofásicos, bifásicos, trifásicos), captura cada uno por separado con el <b>mismo nombre de tablero</b> — el Cuadro de Cargas los combina automáticamente, sin importar cuántos polos tenga cada uno.</p>
       <label style="margin-top:10px">Nombre del proyecto</label>
       <input type="text" id="projName" placeholder="Ej. Nave Industrial Sabritas">
@@ -877,6 +879,7 @@
     <div id="registryTableWrap">
       <div class="emptyRegistry">Aún no has agregado ningún circuito a la memoria. Calcula un circuito y presiona "Agregar a la memoria" para empezar a construir el registro del proyecto.</div>
     </div>
+    <div class="estadoRespaldo hint" style="display:none; margin:0 0 10px"></div>
     <div class="registryActions">
       <button id="generateMemoria" type="button">🖨️ Generar memoria completa (imprimir / PDF)</button>
       <button id="clearRegistry" type="button">Vaciar memoria</button>
@@ -1916,6 +1919,198 @@ function loadRegistry() {
 }
 function saveRegistry(reg) {
   localStorage.setItem(REGISTRY_KEY, JSON.stringify(reg));
+  programarAutoguardado();
+}
+
+/* =========================================================================
+   AUTOGUARDADO
+   -------------------------------------------------------------------------
+   La memoria y los datos de la instalacion ya viven en el navegador
+   (localStorage), pero eso se pierde al borrar los datos del sitio o al
+   cambiar de computadora. Aqui hay dos protecciones mas:
+
+   1) Archivo vinculado (Chrome / Edge): el usuario elige UNA vez un archivo
+      .json y, mientras la pagina este abierta, cada cambio de la memoria o de
+      los datos de la instalacion lo reescribe solo (con una pausa corta para no
+      escribir en cada tecla). El navegador guarda el permiso del archivo; al
+      volver a abrir la pagina pide un clic para reanudar. Nunca se pisa el
+      archivo con una memoria vacia.
+   2) Borrador del circuito en captura: lo que se va escribiendo en el
+      formulario se guarda y se recupera si se cierra la pestana a la mitad.
+
+   Ademas, una linea de estado indica cuando fue la ultima descarga del
+   proyecto y si hay cambios sin respaldar.
+   ========================================================================= */
+const ULTIMA_DESCARGA_KEY = 'nomica_ultima_descarga_v1';
+const ULTIMO_CAMBIO_KEY = 'nomica_ultimo_cambio_v1';
+const BORRADOR_KEY = 'nomica_borrador_v1';
+const AUTO_SOPORTADO = typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+// estado: 'sin' (no vinculado) | 'activo' | 'pendiente' (vinculado, falta aprobar el permiso) | 'error'
+const AUTO = { handle: null, estado: 'sin', ultimo: null, error: '', timer: null };
+
+function proyectoComoJson() {
+  const reg = loadRegistry();
+  const circuitos = reg.map(r => r.formSnapshot).filter(Boolean);
+  return {
+    datos: { app: 'ElectroNOM', version: 1, proyecto: nombreDelProyecto(), transformador: capturarTransformador(), circuitos },
+    sinDatos: reg.length - circuitos.length,
+  };
+}
+function leerMarca(clave) { try { return parseInt(localStorage.getItem(clave), 10) || null; } catch (e) { return null; } }
+
+// ---- IndexedDB (solo para recordar el archivo vinculado entre sesiones)
+function idbAbrir() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open('electronom', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbLeer(clave) {
+  const db = await idbAbrir();
+  return new Promise((res, rej) => { const rq = db.transaction('kv').objectStore('kv').get(clave); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); });
+}
+async function idbEscribir(clave, valor) {
+  const db = await idbAbrir();
+  return new Promise((res, rej) => {
+    const st = db.transaction('kv', 'readwrite').objectStore('kv');
+    const rq = valor === undefined ? st.delete(clave) : st.put(valor, clave);
+    rq.onsuccess = () => res(); rq.onerror = () => rej(rq.error);
+  });
+}
+
+// ---- Estado en pantalla
+function pintarEstadoRespaldo() {
+  const html = (() => {
+    const btn = (txt, fn) => ` <button type="button" class="miniBtn" onclick="${fn}()">${txt}</button>`;
+    const nombre = AUTO.handle ? escXml(AUTO.handle.name) : '';
+    if (AUTO.estado === 'activo') {
+      const hora = AUTO.ultimo ? new Date(AUTO.ultimo).toLocaleTimeString('es-MX') : 'esperando el primer cambio';
+      return `<span class="badge ok">Autoguardado</span> en «${nombre}» — último guardado: ${hora}${btn('Dejar de autoguardar', 'desvincularArchivo')}`;
+    }
+    if (AUTO.estado === 'pendiente') return `<span class="badge adv">En pausa</span> El autoguardado en «${nombre}» necesita que confirmes el permiso del navegador.${btn('Reanudar autoguardado', 'reanudarAutoguardado')}${btn('Dejar de autoguardar', 'desvincularArchivo')}`;
+    if (AUTO.estado === 'error') return `<span class="badge warn">Error</span> No se pudo autoguardar en «${nombre}»: ${escXml(AUTO.error)}.${btn('Reintentar', 'reanudarAutoguardado')}${btn('Elegir otro archivo', 'vincularArchivo')}`;
+    const e = estadoRespaldo({ circuitos: loadRegistry().length, ultimaDescarga: leerMarca(ULTIMA_DESCARGA_KEY), ultimoCambio: leerMarca(ULTIMO_CAMBIO_KEY), ahora: Date.now() });
+    if (e.nivel === 'vacio') return '';
+    const insignia = e.nivel === 'ok' ? '<span class="badge ok">Respaldo</span>' : '<span class="badge adv">Respaldo</span>';
+    const auto = AUTO_SOPORTADO ? btn('🔗 Autoguardar en un archivo', 'vincularArchivo') : ' <span class="hint">(Este navegador no puede autoguardar en un archivo: usa Chrome o Edge, o descarga el proyecto con "Guardar proyecto".)</span>';
+    return `${insignia} ${e.texto}${auto}`;
+  })();
+  document.querySelectorAll('.estadoRespaldo').forEach(el => { el.innerHTML = html; el.style.display = html ? 'block' : 'none'; });
+}
+setInterval(() => { if (AUTO.estado === 'sin') pintarEstadoRespaldo(); }, 60000);   // refresca el "hace X min"
+
+// ---- Escritura en el archivo vinculado
+async function escribirArchivoVinculado() {
+  if (!AUTO.handle || (AUTO.estado !== 'activo' && AUTO.estado !== 'error')) return;
+  if (loadRegistry().length === 0) return;                 // nunca pisar el archivo con una memoria vacia
+  try {
+    const w = await AUTO.handle.createWritable();
+    await w.write(JSON.stringify(proyectoComoJson().datos, null, 1));
+    await w.close();
+    AUTO.estado = 'activo'; AUTO.ultimo = Date.now(); AUTO.error = '';
+  } catch (e) {
+    AUTO.estado = 'error'; AUTO.error = (e && e.message) || String(e);
+  }
+  pintarEstadoRespaldo();
+}
+// Se llama cada vez que cambia la memoria o los datos de la instalacion
+function programarAutoguardado() {
+  try { localStorage.setItem(ULTIMO_CAMBIO_KEY, String(Date.now())); } catch (e) {}
+  clearTimeout(AUTO.timer);
+  if (AUTO.handle && AUTO.estado === 'activo') AUTO.timer = setTimeout(escribirArchivoVinculado, 800);
+  pintarEstadoRespaldo();
+}
+
+// Si la memoria esta vacia y el archivo vinculado trae circuitos, ofrece cargarlos
+async function ofrecerRestaurarDesdeArchivo() {
+  if (!AUTO.handle || loadRegistry().length > 0) return;
+  try {
+    const texto = await (await AUTO.handle.getFile()).text();
+    if (!texto.trim()) return;
+    const datos = JSON.parse(texto);
+    const n = Array.isArray(datos.circuitos) ? datos.circuitos.length : 0;
+    if (n > 0 && confirm(`La memoria está vacía y el archivo «${AUTO.handle.name}» tiene ${n} circuito(s). ¿Cargarlos para continuar con ese proyecto?`)) cargarProyectoDesdeTexto(texto);
+  } catch (e) { /* archivo nuevo o ilegible: no hay nada que restaurar */ }
+}
+
+async function vincularArchivo() {
+  if (!AUTO_SOPORTADO) return;
+  let h;
+  try {
+    const memoriaVacia = loadRegistry().length === 0;
+    if (memoriaVacia && confirm('La memoria está vacía. ¿Ya tienes un archivo de proyecto guardado para continuar?\n\nAceptar: elegir ese archivo (se cargará y seguirá guardándose en él).\nCancelar: crear un archivo nuevo.')) {
+      [h] = await window.showOpenFilePicker({ types: [{ description: 'Proyecto ElectroNOM', accept: { 'application/json': ['.json'] } }] });
+    } else {
+      h = await window.showSaveFilePicker({ suggestedName: `Proyecto ElectroNOM - ${nombreDelProyecto()}.json`, types: [{ description: 'Proyecto ElectroNOM', accept: { 'application/json': ['.json'] } }] });
+    }
+    if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+  } catch (e) { return; }                                  // cancelo el selector
+  AUTO.handle = h; AUTO.estado = 'activo'; AUTO.error = '';
+  try { await idbEscribir('handle', h); } catch (e) { /* sin IndexedDB: funciona esta sesion nada mas */ }
+  await ofrecerRestaurarDesdeArchivo();
+  await escribirArchivoVinculado();
+  pintarEstadoRespaldo();
+}
+async function reanudarAutoguardado() {
+  if (!AUTO.handle) return;
+  try {
+    if ((await AUTO.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+  } catch (e) { AUTO.estado = 'error'; AUTO.error = (e && e.message) || String(e); pintarEstadoRespaldo(); return; }
+  AUTO.estado = 'activo'; AUTO.error = '';
+  await ofrecerRestaurarDesdeArchivo();
+  await escribirArchivoVinculado();
+  pintarEstadoRespaldo();
+}
+async function desvincularArchivo() {
+  AUTO.handle = null; AUTO.estado = 'sin'; AUTO.error = ''; clearTimeout(AUTO.timer);
+  try { await idbEscribir('handle', undefined); } catch (e) {}
+  pintarEstadoRespaldo();
+}
+
+// ---- Borrador del circuito que se esta capturando
+let _timerBorrador = null;
+function guardarBorrador() {
+  try {
+    const f = capturarFormSnapshot();
+    if (editingId !== null || (!f.circName.trim() && !f.boardName.trim())) { localStorage.removeItem(BORRADOR_KEY); return; }
+    localStorage.setItem(BORRADOR_KEY, JSON.stringify({ t: Date.now(), f }));
+  } catch (e) {}
+}
+function borrarBorrador() {
+  try { localStorage.removeItem(BORRADOR_KEY); } catch (e) {}
+  document.querySelectorAll('.borradorAviso').forEach(el => { el.style.display = 'none'; });
+}
+function recuperarBorrador() {
+  try {
+    const b = JSON.parse(localStorage.getItem(BORRADOR_KEY));
+    const f = capturarFormSnapshot();
+    if (!b || !b.f || f.circName.trim() || f.boardName.trim()) return;       // el formulario ya tiene algo: no se pisa
+    restaurarFormSnapshot(b.f);
+    document.querySelectorAll('.borradorAviso').forEach(el => {
+      el.style.display = 'block';
+      el.innerHTML = `<span class="badge adv">Borrador</span> Se recuperó el circuito que estabas capturando (${tiempoRelativo(Date.now() - b.t)}): «${escXml(b.f.boardName || '?')} / ${escXml(b.f.circName || '?')}». <button type="button" class="miniBtn" onclick="descartarBorrador()">Descartar</button>`;
+    });
+  } catch (e) {}
+}
+function descartarBorrador() { borrarBorrador(); location.reload(); }
+document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('[data-tab="calculadora"]')) { clearTimeout(_timerBorrador); _timerBorrador = setTimeout(guardarBorrador, 600); } });
+document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('[data-tab="calculadora"]')) { clearTimeout(_timerBorrador); _timerBorrador = setTimeout(guardarBorrador, 600); } });
+
+// Al abrir la pagina
+async function iniciarAutoguardado() {
+  recuperarBorrador();
+  pintarEstadoRespaldo();
+  if (!AUTO_SOPORTADO) return;
+  try {
+    const h = await idbLeer('handle');
+    if (!h) return;
+    AUTO.handle = h;
+    AUTO.estado = (await h.queryPermission({ mode: 'readwrite' })) === 'granted' ? 'activo' : 'pendiente';
+  } catch (e) { AUTO.handle = null; AUTO.estado = 'sin'; }
+  pintarEstadoRespaldo();
+  if (AUTO.estado === 'activo') await ofrecerRestaurarDesdeArchivo();
 }
 
 // Identificador unico de circuito: Date.now() solo se repite si dos circuitos se calculan en el mismo milisegundo
@@ -1937,6 +2132,7 @@ function addToMemoria() {
   }
   reg.push(lastCalc);
   saveRegistry(reg);
+  borrarBorrador();
   renderRegistry();
   renderCuadroCargas();
   renderDiagramaUnifilar();
@@ -2370,6 +2566,7 @@ function capturarInstalacion() {
 }
 function guardarInstalacion() {
   try { localStorage.setItem(INSTALACION_KEY, JSON.stringify(capturarInstalacion())); } catch (e) {}
+  programarAutoguardado();
 }
 function restaurarInstalacion(t) {
   if (!t) return;
@@ -3084,10 +3281,11 @@ function restaurarTransformador(t) {
 document.getElementById('exportarProyecto').addEventListener('click', () => {
   const reg = loadRegistry();
   if (reg.length === 0) { alert('La memoria está vacía: no hay nada que guardar.'); return; }
-  const circuitos = reg.map(r => r.formSnapshot).filter(Boolean);
-  const sinDatos = reg.length - circuitos.length;
-  const proj = nombreDelProyecto();
-  const blob = new Blob([JSON.stringify({ app: 'ElectroNOM', version: 1, proyecto: proj, transformador: capturarTransformador(), circuitos }, null, 1)], { type: 'application/json' });
+  const { datos, sinDatos } = proyectoComoJson();
+  const proj = datos.proyecto;
+  const blob = new Blob([JSON.stringify(datos, null, 1)], { type: 'application/json' });
+  try { localStorage.setItem(ULTIMA_DESCARGA_KEY, String(Date.now())); } catch (e) {}
+  pintarEstadoRespaldo();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -3099,17 +3297,9 @@ document.getElementById('exportarProyecto').addEventListener('click', () => {
   if (sinDatos > 0) alert(`${sinDatos} circuito(s) antiguos de la memoria no guardaron sus datos de captura y no se incluyeron en el archivo. Edítalos y vuelve a agregarlos para poder respaldarlos.`);
 });
 
-['importarProyecto', 'importarProyecto2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
-  document.getElementById('importarProyectoArchivo').click();
-}));
-document.getElementById('importarProyectoArchivo').addEventListener('change', (e) => {
-  const archivo = e.target.files[0];
-  e.target.value = '';
-  if (!archivo) return;
-  const lector = new FileReader();
-  lector.onload = () => {
+function cargarProyectoDesdeTexto(texto) {
     let datos;
-    try { datos = JSON.parse(lector.result); } catch (err) { alert('El archivo no es un proyecto válido (no se pudo leer como JSON).'); return; }
+    try { datos = JSON.parse(texto); } catch (err) { alert('El archivo no es un proyecto válido (no se pudo leer como JSON).'); return; }
     const lista = Array.isArray(datos) ? datos : datos && datos.circuitos;
     if (!Array.isArray(lista) || lista.length === 0) { alert('El archivo no trae circuitos para cargar.'); return; }
     const existentes = loadRegistry().length;
@@ -3120,7 +3310,17 @@ document.getElementById('importarProyectoArchivo').addEventListener('change', (e
     if (!Array.isArray(datos) && datos.transformador) restaurarTransformador(datos.transformador);
     activarTab('memoria');
     alert(`Se cargaron ${agregados} de ${lista.length} circuito(s).` + (errores.length ? `\n\nNo se pudieron calcular:\n- ${errores.join('\n- ')}` : ''));
-  };
+}
+
+['importarProyecto', 'importarProyecto2'].forEach(id => document.getElementById(id).addEventListener('click', () => {
+  document.getElementById('importarProyectoArchivo').click();
+}));
+document.getElementById('importarProyectoArchivo').addEventListener('change', (e) => {
+  const archivo = e.target.files[0];
+  e.target.value = '';
+  if (!archivo) return;
+  const lector = new FileReader();
+  lector.onload = () => cargarProyectoDesdeTexto(lector.result);
   lector.readAsText(archivo);
 });
 
@@ -3270,6 +3470,7 @@ renderRegistry();
 renderCuadroCargas();
 renderDiagramaUnifilar();
 renderCortocircuitoArbol();
+iniciarAutoguardado();
 </script>
 
 </body>
