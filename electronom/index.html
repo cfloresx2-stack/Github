@@ -2787,6 +2787,8 @@ function circuitosParaUnifilar(reg, tablero) {
       breakerA: r.breakerA, conduitTrade: r.conduitTrade, fases: r.fases, systemKey: r.systemKey, voltage: r.voltage,
       lengthM: parseFloat(fs.length) || 0, destino: r.destino || '', dropPct: r.dropPct, current: r.current,
       simbolo: simboloDeCircuito({ simbolo: fs.simbolo, motor: !!r.motor, nombre: r.circ + ' ' + nombreCarga, voltage: r.voltage, destino: r.destino }),
+      // interruptor -> contactor (KM) -> relevador de sobrecarga (OL) -> motor; en el unifilar, current del motor = FLC de tabla
+      arranque: r.motor && !r.destino ? cadenaArranqueMotor({ flcTabla: r.current, flaPlaca: parseFloat(fs.motorFla) || 0, fs115: !!fs.motorFs115 }) : null,
     };
   });
 }
@@ -2862,18 +2864,31 @@ function hojaTablero(tablero, ctx) {
       const x = X0 + i * PASO;
       const par = (g.nParalelo > 1 ? g.nParalelo + '×' : '') + `${g.awg} ${unidadCalibre(g.awg)}`;
       S('02_CB_ANSI', x, yBus + 14, g.base, `${g.breakerA} A ${g.fases}P`);
-      L(x, yBus + 28, x, yBus + 78);   // conductor entre el interruptor y la carga
       T(x + 7, yBus + 13, `${g.breakerA} A`, 3.4, 'start', true);
       T(x + 7, yBus + 17, `${g.fases}P`, 3, 'start');
+      // Motor: el interruptor (cortocircuito) va seguido del contactor (KM) y del relevador de sobrecarga (OL);
+      // la carga baja 14 unidades y los rotulos del conductor se recorren a la derecha de los simbolos.
+      const arr = g.arranque;
+      const dy = arr ? 14 : 0;
+      if (arr) {
+        S('14_CONTACTOR', x, yBus + 42, arr.contactor.etiqueta, `Contactor ${arr.contactor.texto}`);
+        S('14_REL_SOBRECARGA', x, yBus + 70, arr.relevador.etiqueta, `Relevador de sobrecarga ${arr.relevador.texto} ${arr.relevador.base}`);
+        L(x, yBus + 84, x, yBus + 92);
+        T(x - 8, yBus + 41, arr.contactor.texto, 2.6, 'end');
+        T(x - 8, yBus + 69, arr.relevador.texto, 2.6, 'end', true);
+        T(x - 8, yBus + 73, arr.relevador.base, 2.3, 'end');
+      } else {
+        L(x, yBus + 28, x, yBus + 78);   // conductor entre el interruptor y la carga
+      }
       const lin = [par, g.systemKey, `T ${g.awgTierra ?? '—'}`, `Ø ${g.conduitTrade ?? '—'}`, `${g.lengthM} m`, `ΔV ${(g.dropPct ?? 0).toFixed(2)}%`];
-      lin.forEach((t, k) => T(x + 3, yBus + 36 + k * 3.7, t, 2.8, 'start'));
-      S(g.simbolo, x, yBus + 92, g.base, `${g.current.toFixed(1)} A${g.n > 1 ? ' x' + g.n : ''}`);
-      if (g.n > 1) T(x + 9, yBus + 84, `×${g.n}`, 4.5, 'start', true);
+      lin.forEach((t, k) => T(x + (arr ? 8 : 3), yBus + 36 + k * 3.7, t, 2.8, 'start'));
+      S(g.simbolo, x, yBus + 92 + dy, g.base, `${g.current.toFixed(1)} A${g.n > 1 ? ' x' + g.n : ''}`);
+      if (g.n > 1) T(x + 9, yBus + 84 + dy, `×${g.n}`, 4.5, 'start', true);
       let nombre = g.base;
       if (g.destino) nombre = `→ TABLERO ${g.destino}`;
       const lineasNombre = partirTexto(nombre, 15);
-      lineasNombre.forEach((t, k) => T(x, yBus + 112 + k * 3.6, t, 2.8, 'middle', true));
-      T(x, yBus + 112 + lineasNombre.length * 3.6, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
+      lineasNombre.forEach((t, k) => T(x, yBus + 112 + dy + k * 3.6, t, 2.8, 'middle', true));
+      T(x, yBus + 112 + dy + lineasNombre.length * 3.6, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
     });
   });
   return { tablero, ancho, alto, items: it };
@@ -2909,7 +2924,7 @@ function svgDeHoja(h) {
 // pagina de codigos); los datos de ingenieria tambien viajan en los atributos
 // TAG/DATOS/TIPO de cada bloque (invisibles, para EATTEDIT o extraccion).
 function asciiDxf(t) {
-  return String(t ?? '').replace(/Δ/g, 'D').replace(/Ø/g, 'dia.').replace(/×/g, 'x').replace(/→/g, '->').replace(/[—–]/g, '-').replace(/°/g, ' grados')
+  return String(t ?? '').replace(/·/g, '-').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/Δ/g, 'D').replace(/Ø/g, 'dia.').replace(/×/g, 'x').replace(/→/g, '->').replace(/[—–]/g, '-').replace(/°/g, ' grados')
     .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '?');
 }
 function dxfDeHojas(hojas) {
