@@ -2223,16 +2223,26 @@ function resumenDictamenHtml(reg) {
     if (r.dictamen in n) n[r.dictamen]++;
     new Set(motivosDeCircuito(r).map(m => m.estado + '|' + m.texto + '|' + m.accion)).forEach(k => { grupos[k] = (grupos[k] || 0) + 1; });
   });
-  if (n['Advertencia'] + n['No evaluable'] + n['No cumple'] === 0) return '';
+  const desb = desbalancePorTablero(reg);
+  if (n['Advertencia'] + n['No evaluable'] + n['No cumple'] === 0 && desb.length === 0) return '';
   const orden = { 'No cumple': 0, 'No evaluable': 1, 'Advertencia': 2 };
   const items = Object.entries(grupos).map(([k, c]) => { const [estado, texto, accion] = k.split('|'); return { estado, texto, accion, c }; })
     .sort((a, b) => orden[a.estado] - orden[b.estado] || b.c - a.c);
-  const partes = [`${n['Cumple']} cumplen`, n['Advertencia'] ? `${n['Advertencia']} con advertencia` : null, n['No evaluable'] ? `${n['No evaluable']} sin evaluar` : null, n['No cumple'] ? `${n['No cumple']} no cumplen` : null].filter(Boolean);
+  const partes = [`${n['Cumple']} cumplen`, n['Advertencia'] ? `${n['Advertencia']} con advertencia` : null, n['No evaluable'] ? `${n['No evaluable']} sin evaluar` : null, n['No cumple'] ? `${n['No cumple']} no cumplen` : null,
+    desb.length ? `${desb.length} tablero(s) con desbalance` : null].filter(Boolean);
   return `<details class="resumenDictamen" style="margin-bottom:10px">
     <summary style="cursor:pointer;font-size:13px"><b>Dictamen:</b> ${partes.join(' · ')} <span class="hint">(ver qué falta)</span></summary>
     <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.55">${items.map(i =>
-      `<li><span class="badge ${ESTADO_BADGE[i.estado]}" style="margin-right:4px">${i.estado}</span><b>${i.c}</b> circ. — ${escXml(i.texto)}${i.accion ? ` <span class="hint">→ ${escXml(i.accion)}</span>` : ''}</li>`).join('')}</ul>
+      `<li><span class="badge ${ESTADO_BADGE[i.estado]}" style="margin-right:4px">${i.estado}</span><b>${i.c}</b> circ. — ${escXml(i.texto)}${i.accion ? ` <span class="hint">→ ${escXml(i.accion)}</span>` : ''}</li>`).join('')}${desb.map(d =>
+      `<li><span class="badge adv" style="margin-right:4px">Desbalance</span>Tablero <b>${escXml(d.tablero)}</b>: ${fmt(d.pct, 1)} % entre fases (máx. ${d.limite} %) <span class="hint">→ ${escXml(d.mensaje)} Ver Cuadro de cargas.</span></li>`).join('')}</ul>
   </details>`;
+}
+
+// Nota para la memoria impresa: tableros que se pasan del maximo de desbalance (criterio de diseno del proyecto, no de la NOM)
+function avisoDesbalanceResumenHtml(reg) {
+  const desb = desbalancePorTablero(reg);
+  if (!desb.length) return '';
+  return `<p style="margin-top:10px"><b>Desbalance entre fases mayor al máximo de ${LIMITE_DESBALANCE_PCT} %</b> <span class="hint">(criterio de diseño del proyecto)</span> en ${desb.length} tablero(s): ${desb.map(d => `${escXml(d.tablero)} (${fmt(d.pct, 1)} %)`).join(', ')}. El detalle y la sugerencia están en el cuadro de cargas de cada tablero.</p>`;
 }
 
 // Tableros ya capturados (los de los circuitos y los destinos declarados) para sugerirlos al escribir
@@ -3211,6 +3221,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
         <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th></tr></thead>
         <tbody>${summaryRows}</tbody>
       </table>
+      ${avisoDesbalanceResumenHtml(reg)}
     </div>
     ${anexoInstalacionHtml()}
     <div class="card">
