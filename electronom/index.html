@@ -1663,7 +1663,7 @@ function render(data) {
     </details>`;
 
   lastCalc = {
-    id: Date.now(),
+    id: nuevoIdCircuito(),
     proj: header.proj, board: header.board, circ: header.circ, destino: header.destino || null,
     circuitKindLabel: input.circuitKindLabel, motor, ac: !!ac, systemKey: input.systemKey, voltage: input.voltage,
     awg: calibreFinal.awg, awgTierra: tierra ? tierra.awgTierra : null,
@@ -1918,6 +1918,15 @@ function saveRegistry(reg) {
   localStorage.setItem(REGISTRY_KEY, JSON.stringify(reg));
 }
 
+// Identificador unico de circuito: Date.now() solo se repite si dos circuitos se calculan en el mismo milisegundo
+// (importar un CSV o duplicar x N lo hacen), asi que se garantiza que sea mayor que cualquier otro ya usado.
+let _ultimoIdCircuito = 0;
+function nuevoIdCircuito() {
+  const mayor = loadRegistry().reduce((m, r) => Math.max(m, r.id || 0), 0);
+  _ultimoIdCircuito = Math.max(Date.now(), _ultimoIdCircuito + 1, mayor + 1);
+  return _ultimoIdCircuito;
+}
+
 function addToMemoria() {
   if (!lastCalc) return;
   let reg = loadRegistry();
@@ -1953,6 +1962,34 @@ function editarCircuito(id) {
   document.getElementById('resultsWrap').innerHTML = `<div class="placeholder">Revisa los datos y presiona <b>Calcular circuito</b> para actualizar este circuito.</div>`;
   document.getElementById('projName').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+// Crea N copias de un circuito de la memoria (nombres consecutivos; mismas cargas, calibre, longitud, etc.).
+// Cada copia se recalcula con el motor y queda justo despues del original; luego se puede editar por separado.
+function duplicarCircuito(id, copias) {
+  const reg = loadRegistry();
+  const original = reg.find(x => x.id === id);
+  if (!original || !original.formSnapshot) return;
+  if (copias === undefined) {
+    const txt = prompt(`¿Cuántas copias de "${original.circ}" (tablero ${original.board}) quieres crear?\n\nLas copias llevan nombres consecutivos y quedan iguales al original; después puedes editar cada una.`, '1');
+    if (txt === null) return;
+    copias = Number(String(txt).trim());
+  }
+  if (!Number.isInteger(copias) || copias < 1 || copias > MAX_COPIAS) {
+    alert(`Escribe un número entero de copias entre 1 y ${MAX_COPIAS}.`);
+    return;
+  }
+  const lista = copiasDeCircuito(original, copias, reg);
+  const { agregados, errores } = importarCircuitos(lista);
+  // las copias quedan junto al original, no al final de la memoria
+  const reg2 = loadRegistry();
+  const nuevos = reg2.splice(reg2.length - agregados, agregados);
+  const pos = reg2.findIndex(x => x.id === id);
+  reg2.splice(pos + 1, 0, ...nuevos);
+  saveRegistry(reg2);
+  renderRegistry(); renderCuadroCargas(); renderDiagramaUnifilar(); renderCortocircuitoArbol(); aplicarDatosInstalacion();
+  if (errores.length) alert(`No se pudieron crear ${errores.length} copia(s):\n- ${errores.join('\n- ')}`);
+  return { agregados, nombres: lista.map(s => s.circName) };
+}
+const MAX_COPIAS = 50;
 document.getElementById('cancelarEdicion').addEventListener('click', () => {
   editingId = null;
   document.getElementById('editandoBanner').style.display = 'none';
@@ -2048,7 +2085,8 @@ function renderRegistry() {
       <td>${fmt(r.dropPct,2)}%</td>
       <td>${r.dictamen ? `<span class="badge ${ESTADO_BADGE[r.dictamen]}" title="${escXml(motivosDeCircuito(r).map(m => m.texto).join(' • ') || 'Cumple todas las revisiones')}" style="cursor:help">${r.dictamen}</span>` : '—'}</td>
       <td>
-        ${r.formSnapshot ? `<button class="miniBtn" onclick="editarCircuito(${r.id})">Editar</button>` : ''}
+        ${r.formSnapshot ? `<button class="miniBtn" onclick="editarCircuito(${r.id})">Editar</button>
+        <button class="miniBtn" onclick="duplicarCircuito(${r.id})" title="Crear copias de este circuito con nombres consecutivos">Duplicar</button>` : ''}
         <button class="miniBtn danger" onclick="removeFromRegistry(${r.id})">Eliminar</button>
       </td>
     </tr>`).join("");

@@ -1367,6 +1367,40 @@ grupo("Importar circuitos desde CSV", () => {
   esIgual(pl.circuitos.filter(s => s.loads.length === 2).length, 1, "…uno de ellos con dos cargas");
 });
 
+grupo("Duplicar un circuito × N", () => {
+  const j = a => a.join("|");
+  // --- nombres
+  esIgual(j(nombresDeCopias("Motor 1", 3, [])), "Motor 2|Motor 3|Motor 4", "«Motor 1» continúa la numeración");
+  esIgual(j(nombresDeCopias("Contactos", 2, [])), "Contactos 2|Contactos 3", "Un nombre sin número empieza en 2");
+  esIgual(j(nombresDeCopias("F4", 2, [])), "F5|F6", "Un número pegado a la letra no lleva espacio");
+  esIgual(j(nombresDeCopias("Motor 08", 3, [])), "Motor 09|Motor 10|Motor 11", "Conserva los ceros a la izquierda");
+  esIgual(j(nombresDeCopias("Motor 1", 3, ["Motor 2", "motor 4 "])), "Motor 3|Motor 5|Motor 6", "Salta los nombres que ya existen (sin distinguir mayúsculas ni espacios)");
+  esIgual(nombresDeCopias("Bomba", 0, []).length, 0, "Cero copias → ninguna");
+  esIgual(j(nombresDeCopias("Alumbrado 3er piso 2", 1, [])), "Alumbrado 3er piso 3", "Solo cuenta el número del final");
+
+  // --- posiciones
+  esIgual(j(posicionesOcupadas(5, 1)), "5", "Un polo ocupa una posición");
+  esIgual(j(posicionesOcupadas(1, 3)), "1|3|5", "Tres polos ocupan 1, 3 y 5");
+  esIgual(j(posicionesParaCopias(1, 1, 3, [])), "3|5|7", "Monopolares: siguen en el mismo lado del tablero");
+  esIgual(j(posicionesParaCopias(1, 2, 2, [])), "5|9", "Bipolares: cada copia ocupa dos espacios del mismo lado");
+  esIgual(j(posicionesParaCopias(1, 1, 3, [{ posicion: 3, fases: 1 }, { posicion: 7, fases: 1 }])), "5|9|11", "Salta las posiciones ocupadas por otros circuitos");
+  esIgual(j(posicionesParaCopias(1, 1, 2, [{ posicion: 3, fases: 2 }])), "7|9", "Un circuito de 2 polos ocupa también la posición siguiente de su lado");
+
+  // --- capturas de las copias
+  const orig = { id: 1, board: "TA", circ: "Motor 1", fases: 3, posicion: 1, formSnapshot: { boardName: "TA", circName: "Motor 1", circPos: "1", loads: [{ name: "M", watts: 1000, fp: 0.85, cont: true }], length: "30" } };
+  const otro = { id: 2, board: "TA", circ: "Motor 2", fases: 1, posicion: 7, formSnapshot: {} };
+  const c = copiasDeCircuito(orig, 2, [orig, otro]);
+  esIgual(j(c.map(x => x.circName)), "Motor 3|Motor 4", "Los nombres no repiten los del tablero");
+  esIgual(j(c.map(x => x.circPos)), "9|15", "Trifásico en 1 (ocupa 1, 3, 5) con «Motor 2» en 7: las copias van a 9-13 y 15-19");
+  esCierto(c[0].length === "30" && c[0].loads[0].watts === 1000, "Las copias llevan las mismas cargas y datos");
+  c[0].loads[0].watts = 5;
+  esIgual(orig.formSnapshot.loads[0].watts, 1000, "Cambiar una copia no toca al original");
+  const sinPos = copiasDeCircuito({ ...orig, formSnapshot: { ...orig.formSnapshot, circPos: "" } }, 2, [orig]);
+  esIgual(j(sinPos.map(x => x.circPos)), "|", "Sin posición fija en el original, las copias tampoco la llevan");
+  const otroTablero = copiasDeCircuito(orig, 1, [orig, { id: 3, board: "TB", circ: "Motor 2", fases: 1, posicion: null, formSnapshot: {} }]);
+  esIgual(otroTablero[0].circName, "Motor 2", "Los nombres solo se comparan dentro del mismo tablero");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */
