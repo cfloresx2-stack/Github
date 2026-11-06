@@ -1401,6 +1401,26 @@ grupo("Duplicar un circuito × N", () => {
   esIgual(otroTablero[0].circName, "Motor 2", "Los nombres solo se comparan dentro del mismo tablero");
 });
 
+grupo("Respaldo del proyecto — textos de estado", () => {
+  const MIN = 60000, H = 60 * MIN, D = 24 * H;
+  esIgual(tiempoRelativo(5000), "hace unos segundos", "Menos de un minuto");
+  esIgual(tiempoRelativo(5 * MIN), "hace 5 min", "Minutos");
+  esIgual(tiempoRelativo(3 * H + 20 * MIN), "hace 3 h", "Horas");
+  esIgual(tiempoRelativo(D), "hace 1 día", "Un día (singular)");
+  esIgual(tiempoRelativo(3 * D), "hace 3 días", "Días");
+  esIgual(tiempoRelativo(-50), "hace unos segundos", "Un reloj desfasado no da tiempos negativos");
+
+  const ahora = 10 * D;
+  esIgual(estadoRespaldo({ circuitos: 0, ultimaDescarga: null, ultimoCambio: null, ahora }).nivel, "vacio", "Sin circuitos no hay nada que respaldar ni que avisar");
+  const nunca = estadoRespaldo({ circuitos: 12, ultimaDescarga: null, ultimoCambio: ahora - H, ahora });
+  esCierto(nunca.nivel === "aviso" && nunca.texto.includes("todavía no se ha guardado"), "Con circuitos y sin ninguna descarga → aviso");
+  const sucio = estadoRespaldo({ circuitos: 12, ultimaDescarga: ahora - 3 * D, ultimoCambio: ahora - H, ahora });
+  esCierto(sucio.nivel === "aviso" && sucio.texto.includes("cambios sin respaldar") && sucio.texto.includes("hace 3 días"), "Cambios después de la última descarga → aviso con la fecha de la descarga");
+  const limpio = estadoRespaldo({ circuitos: 12, ultimaDescarga: ahora - H, ultimoCambio: ahora - 2 * H, ahora });
+  esCierto(limpio.nivel === "ok" && limpio.texto.includes("hace 1 h"), "Descarga posterior al último cambio → al día");
+  esIgual(estadoRespaldo({ circuitos: 3, ultimaDescarga: ahora - H, ultimoCambio: null, ahora }).nivel, "ok", "Sin marca de cambio y con descarga → al día");
+});
+
 /* =========================================================================
    Pintar resultados
    ========================================================================= */

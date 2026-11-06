@@ -2286,3 +2286,28 @@ function copiasDeCircuito(original, n, registro) {
     return c;
   });
 }
+
+/* =========================================================================
+   RESPALDO DEL PROYECTO: textos de estado (puras, probadas)
+   ========================================================================= */
+// "hace 5 min", "hace 3 h", "hace 2 días" a partir de una diferencia en milisegundos
+function tiempoRelativo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return 'hace unos segundos';
+  const min = Math.floor(s / 60);
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? 'hace 1 día' : `hace ${d} días`;
+}
+
+// Estado del respaldo en archivo cuando NO hay autoguardado vinculado.
+// ultimaDescarga / ultimoCambio: marcas de tiempo (ms) o null si nunca.
+function estadoRespaldo({ circuitos, ultimaDescarga, ultimoCambio, ahora }) {
+  if (!(circuitos > 0)) return { nivel: 'vacio', texto: '' };
+  if (!ultimaDescarga) return { nivel: 'aviso', texto: 'Este proyecto todavía no se ha guardado en un archivo: si se borran los datos del navegador, se pierde.' };
+  const cuando = tiempoRelativo(ahora - ultimaDescarga);
+  if (ultimoCambio && ultimoCambio > ultimaDescarga) return { nivel: 'aviso', texto: `Hay cambios sin respaldar en archivo (última descarga: ${cuando}).` };
+  return { nivel: 'ok', texto: `Respaldo en archivo al día (última descarga: ${cuando}).` };
+}
