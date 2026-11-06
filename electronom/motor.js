@@ -1915,3 +1915,301 @@ function evaluarCompletitud({ registro, pendiente, instalacion }) {
   if (!ins.electrodoValido) f.push({ clave: 'electrodo', texto: 'Electrodo de puesta a tierra: resistividad del terreno, longitud y diámetro de la varilla.' });
   return f;
 }
+
+/* =========================================================================
+   IMPORTAR CIRCUITOS DESDE UN CSV (hoja de calculo)
+   -------------------------------------------------------------------------
+   Un renglon por carga; los renglones con el mismo Tablero + Circuito se
+   juntan en UN circuito con varias cargas. Solo son obligatorias las columnas
+   Tablero, Circuito y Carga (W); lo demas toma el valor que tiene la
+   calculadora al abrirla. Si el archivo trae un error de formato NO se importa
+   nada (se corrige el archivo y se vuelve a cargar, asi no se duplican
+   circuitos). Devuelve capturas (formSnapshot) iguales a las del archivo de
+   proyecto, que luego se calculan con el motor vigente.
+   ========================================================================= */
+const CSV_BASE_SNAPSHOT = {
+  projName: '', boardName: '', circName: '', circPos: '', circuitKind: 'derivado', tableroDestino: '',
+  isMotor: false, motorDevice: '250', motorFla: '', motorFs115: false,
+  isAC: false, acModo: 'placa', acMca: '', acMocp: '', acRlaPlaca: '', acRla: '', acSel: '',
+  voltage: '127', phaseType: 'mono', systemType: '1F-1N-1T', demandFactor: '1',
+  loads: [], material: 'cu', insulType: 'THWN-2', calibreMinimo: '', lugarMojado: false,
+  terminalMarcada: false, neutroNoCuenta: false, ambient: '30', nParalelo: '1',
+  installMethod: 'conduit', chCubierta: false, chCapaUnica: false, length: '20', conduitType: 'pvc40',
+  scEnabled: false, scKva: '500', scZ: '5', scIcu: '10', scZsource: '0', scTsc: '0',
+  elEnabled: false, elRho: '100', elLargo: '2.44', elDiam: '16', elComplementario: false,
+};
+
+// grupo: 'carga' = columna propia de cada renglon; 'circuito' = se toma del primer renglon del circuito
+const CSV_COLUMNAS = [
+  { clave: 'proyecto',    titulo: 'Proyecto',                grupo: 'circuito', alias: ['proyecto', 'nombre del proyecto'] },
+  { clave: 'tablero',     titulo: 'Tablero',                 grupo: 'circuito', obligatoria: true, alias: ['tablero', 'nombre del tablero'] },
+  { clave: 'circuito',    titulo: 'Circuito',                grupo: 'circuito', obligatoria: true, alias: ['circuito', 'nombre del circuito'] },
+  { clave: 'posicion',    titulo: 'Posición',                grupo: 'circuito', alias: ['posicion', 'pos', 'ct', 'no de circuito', 'posicion en el tablero'] },
+  { clave: 'tipo',        titulo: 'Tipo',                    grupo: 'circuito', alias: ['tipo', 'tipo de circuito'] },
+  { clave: 'destino',     titulo: 'Tablero destino',         grupo: 'circuito', alias: ['tablero destino', 'destino'] },
+  { clave: 'tension',     titulo: 'Tensión (V)',             grupo: 'circuito', alias: ['tension v', 'tension', 'voltaje', 'v'] },
+  { clave: 'fases',       titulo: 'Fases',                   grupo: 'circuito', alias: ['fases', 'no de fases', 'numero de fases'] },
+  { clave: 'sistema',     titulo: 'Sistema',                 grupo: 'circuito', alias: ['sistema', 'tipo de sistema'] },
+  { clave: 'descripcion', titulo: 'Descripción de la carga', grupo: 'carga',    alias: ['descripcion de la carga', 'descripcion', 'nombre de la carga'] },
+  { clave: 'watts',       titulo: 'Carga (W)',               grupo: 'carga',    obligatoria: true, alias: ['carga w', 'carga', 'watts', 'w', 'potencia w', 'potencia'] },
+  { clave: 'fp',          titulo: 'FP',                      grupo: 'carga',    alias: ['fp', 'factor de potencia'] },
+  { clave: 'continua',    titulo: 'Continua',                grupo: 'carga',    alias: ['continua', 'carga continua', 'cont'] },
+  { clave: 'demanda',     titulo: 'Factor de demanda',       grupo: 'circuito', alias: ['factor de demanda', 'demanda', 'fd'] },
+  { clave: 'longitud',    titulo: 'Longitud (m)',            grupo: 'circuito', alias: ['longitud m', 'longitud', 'largo'] },
+  { clave: 'material',    titulo: 'Material',                grupo: 'circuito', alias: ['material', 'material del conductor'] },
+  { clave: 'aislamiento', titulo: 'Aislamiento',             grupo: 'circuito', alias: ['aislamiento', 'tipo de aislamiento'] },
+  { clave: 'ambiente',    titulo: 'Temp. ambiente (°C)',     grupo: 'circuito', alias: ['temp ambiente c', 'temp ambiente', 'temperatura ambiente', 'ambiente'] },
+  { clave: 'paralelos',   titulo: 'Paralelos',               grupo: 'circuito', alias: ['paralelos', 'conductores en paralelo', 'conductores por fase'] },
+  { clave: 'instalacion', titulo: 'Instalación',             grupo: 'circuito', alias: ['instalacion', 'metodo de instalacion', 'metodo'] },
+  { clave: 'canalizacion', titulo: 'Canalización',           grupo: 'circuito', alias: ['canalizacion', 'tuberia', 'tipo de tuberia'] },
+  { clave: 'mojado',      titulo: 'Lugar mojado',            grupo: 'circuito', alias: ['lugar mojado', 'mojado'] },
+  { clave: 'terminal75',  titulo: 'Terminales 75 °C',        grupo: 'circuito', alias: ['terminales 75 c', 'terminales 75', 'terminal 75 c', 'terminal marcada'] },
+  { clave: 'motor',       titulo: 'Motor',                   grupo: 'circuito', alias: ['motor', 'es motor'] },
+  { clave: 'placa',       titulo: 'Corriente de placa (A)',  grupo: 'circuito', alias: ['corriente de placa a', 'corriente de placa', 'placa a', 'placa', 'fla'] },
+  { clave: 'mca',         titulo: 'MCA (A)',                 grupo: 'circuito', alias: ['mca a', 'mca'] },
+  { clave: 'mocp',        titulo: 'MOCP (A)',                grupo: 'circuito', alias: ['mocp a', 'mocp'] },
+];
+
+function _csvNorm(t) {
+  return String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Lee texto CSV (comillas, comillas dobles escapadas, saltos de linea dentro de comillas, BOM).
+// Separador: el que mas aparezca en el primer renglon entre coma, punto y coma y tabulador.
+function csvParsear(texto) {
+  const t = String(texto == null ? '' : texto).replace(/^﻿/, '');
+  const primera = t.split(/\r?\n/)[0] || '';
+  let delimitador = ',', mejor = -1;
+  [',', ';', '\t'].forEach(d => {
+    let n = 0, enc = false;
+    for (const ch of primera) { if (ch === '"') enc = !enc; else if (!enc && ch === d) n++; }
+    if (n > mejor) { mejor = n; delimitador = d; }
+  });
+  const filas = [];
+  let fila = [], campo = '', enc = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (enc) {
+      if (ch === '"') { if (t[i + 1] === '"') { campo += '"'; i++; } else enc = false; }
+      else campo += ch;
+    } else if (ch === '"') enc = true;
+    else if (ch === delimitador) { fila.push(campo); campo = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && t[i + 1] === '\n') i++;
+      fila.push(campo); campo = '';
+      filas.push(fila); fila = [];
+    } else campo += ch;
+  }
+  if (campo !== '' || fila.length) { fila.push(campo); filas.push(fila); }
+  return { filas, delimitador };
+}
+
+function _csvNumero(s) {
+  let x = String(s).replace(/\s/g, '');
+  if (x === '') return null;
+  if (x.includes(',') && x.includes('.')) {
+    // con ambos signos, el que va al final es el decimal y el otro separa miles (1.500,5 o 1,500.5)
+    x = x.lastIndexOf(',') > x.lastIndexOf('.') ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+  } else x = x.replace(',', '.');
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(x) ? parseFloat(x) : NaN;
+}
+function _csvBool(s) {
+  const n = _csvNorm(s);
+  if (n === '' || ['no', 'n', '0', 'false', 'falso'].includes(n)) return false;
+  if (['si', 's', 'x', '1', 'true', 'verdadero', 'yes', 'y'].includes(n)) return true;
+  return undefined;
+}
+
+// Devuelve { circuitos, errores:[{fila, texto}], avisos:[texto], leidos } ; con errores NO hay circuitos.
+function circuitosDesdeCSV(texto, opciones) {
+  const op = opciones || {};
+  const errores = [], avisos = [];
+  const { filas } = csvParsear(texto);
+  const vacio = () => ({ circuitos: [], errores, avisos, leidos: 0 });
+  if (filas.length === 0 || filas[0].every(c => String(c).trim() === '')) {
+    errores.push({ fila: 1, texto: 'El archivo está vacío o no trae el renglón de encabezados.' });
+    return vacio();
+  }
+
+  // Encabezados -> columnas
+  const idx = {};
+  filas[0].forEach((h, i) => {
+    const n = _csvNorm(h);
+    if (n === '') return;
+    const def = CSV_COLUMNAS.find(c => c.alias.includes(n));
+    if (!def) { avisos.push(`La columna "${String(h).trim()}" no se reconoce y se ignora.`); return; }
+    if (idx[def.clave] !== undefined) { avisos.push(`La columna "${def.titulo}" aparece repetida: se usa la primera.`); return; }
+    idx[def.clave] = i;
+  });
+  const faltan = CSV_COLUMNAS.filter(c => c.obligatoria && idx[c.clave] === undefined).map(c => c.titulo);
+  if (faltan.length) {
+    errores.push({ fila: 1, texto: `Faltan columnas obligatorias: ${faltan.join(', ')}. Descarga la plantilla para ver los encabezados.` });
+    return vacio();
+  }
+
+  const grupos = new Map();      // clave del circuito -> { snap, crudo, fila }
+  const supuestos = {};          // texto -> cantidad de circuitos
+  const suponer = t => { supuestos[t] = (supuestos[t] || 0) + 1; };
+  let leidos = 0;
+
+  for (let r = 1; r < filas.length; r++) {
+    const row = filas[r];
+    if (row.every(c => String(c).trim() === '')) continue;
+    leidos++;
+    const fila = r + 1;
+    const g = c => (idx[c] === undefined ? '' : String(row[idx[c]] == null ? '' : row[idx[c]]).trim());
+    const err = t => errores.push({ fila, texto: t });
+    const antes = errores.length;
+
+    const tablero = g('tablero'), circuito = g('circuito');
+    if (!tablero) err('Falta el nombre del tablero.');
+    if (!circuito) err('Falta el nombre del circuito.');
+
+    // ---- carga de este renglon
+    const watts = _csvNumero(g('watts'));
+    if (watts === null) err('Falta la carga en W.');
+    else if (Number.isNaN(watts) || watts <= 0) err(`La carga en W "${g('watts')}" no es un número mayor que cero.`);
+    let fp = _csvNumero(g('fp'));
+    if (fp === null) fp = 0.9;
+    else if (Number.isNaN(fp) || fp < 0.1 || fp > 1) { err(`El FP "${g('fp')}" debe estar entre 0.1 y 1.`); fp = 0.9; }
+    const cont = _csvBool(g('continua'));
+    if (cont === undefined) err(`"Continua" debe ser sí o no (se leyó "${g('continua')}").`);
+    const carga = { name: g('descripcion') || circuito || 'Carga', watts: watts > 0 ? watts : 0, fp, cont: !!cont };
+
+    const clave = _csvNorm(tablero) + '|' + _csvNorm(circuito);
+    const previo = grupos.get(clave);
+    if (previo) {
+      // renglon adicional del mismo circuito: solo aporta su carga; avisa si contradice al primero
+      CSV_COLUMNAS.filter(c => c.grupo === 'circuito' && c.clave !== 'tablero' && c.clave !== 'circuito').forEach(c => {
+        const v = g(c.clave);
+        if (v !== '' && _csvNorm(v) !== _csvNorm(previo.crudo[c.clave] || '')) {
+          avisos.push(`Fila ${fila} (${tablero} / ${circuito}): "${c.titulo}" = "${v}" se ignora; el circuito usa lo del renglón de la fila ${previo.fila}.`);
+        }
+      });
+      if (errores.length === antes) previo.snap.loads.push(carga);
+      continue;
+    }
+
+    // ---- primer renglon del circuito: datos del circuito
+    const s = JSON.parse(JSON.stringify(CSV_BASE_SNAPSHOT));
+    s.projName = g('proyecto') || op.proyecto || '';
+    s.boardName = tablero; s.circName = circuito;
+    s.circPos = g('posicion');
+    if (s.circPos !== '') {
+      const p = _csvNumero(s.circPos);
+      if (p === null || Number.isNaN(p) || p < 1 || p !== Math.floor(p)) err(`La posición "${s.circPos}" debe ser un entero desde 1.`);
+      else s.circPos = String(p);
+    }
+
+    const tipo = _csvNorm(g('tipo'));
+    if (tipo === '' || ['derivado', 'circuito derivado'].includes(tipo)) s.circuitKind = 'derivado';
+    else if (tipo === 'alimentador') s.circuitKind = 'alimentador';
+    else err(`El tipo "${g('tipo')}" debe ser derivado o alimentador.`);
+    s.tableroDestino = s.circuitKind === 'alimentador' ? g('destino') : '';
+
+    // tension, fases y sistema
+    let tension = _csvNumero(g('tension'));
+    if (tension === null) { tension = 127; suponer('Tensión no indicada: se usaron 127 V'); }
+    else if (!VOLTAGE_OPTIONS.includes(tension)) { err(`La tensión "${g('tension')}" no está disponible (usa ${VOLTAGE_OPTIONS.join(', ')} V).`); tension = null; }
+    let fases = _csvNumero(g('fases'));
+    if (fases !== null && ![1, 2, 3].includes(fases)) { err(`Las fases "${g('fases')}" deben ser 1, 2 o 3.`); fases = null; }
+    let sistema = g('sistema').toUpperCase().replace(/\s+/g, '');
+    if (sistema && !SYSTEM_TYPES[sistema]) { err(`El sistema "${g('sistema')}" no existe (opciones: ${Object.keys(SYSTEM_TYPES).join(', ')}).`); sistema = ''; }
+    if (tension !== null) {
+      if (fases === null) {
+        if (sistema) fases = SYSTEM_TYPES[sistema].fases;
+        else {
+          fases = tension === 127 ? 1 : 3;
+          suponer(`Fases no indicadas: se supuso ${tension === 127 ? 'monofásico (1 fase)' : 'trifásico (3 fases)'} según la tensión`);
+        }
+      }
+      const alim = fases === 3 ? 'tri' : 'mono';
+      const permitidos = alim === 'tri' ? PHASE_SYSTEM_MAP.tri : (PHASE_SYSTEM_MAP.mono[tension] || []);
+      if (!VOLTAGE_PHASE_MAP[tension].includes(alim) || (fases === 1 && tension !== 127) || (fases === 2 && tension === 127)) {
+        err(`${fases} fase(s) a ${tension} V no es una combinación disponible (127 V es de 1 fase; 220 V monofásico se captura como 2 fases; 440 y 480 V son trifásicos).`);
+      } else {
+        if (!sistema) {
+          sistema = fases === 3 ? '3F-1T' : (fases === 2 ? '2F-1T' : '1F-1N-1T');
+          suponer(`Sistema no indicado: se usó ${sistema} (${fases === 1 ? 'fase + neutro + tierra' : 'sin neutro'})`);
+        }
+        if (!permitidos.includes(sistema) || SYSTEM_TYPES[sistema].fases !== fases) err(`El sistema ${sistema} no corresponde a ${fases} fase(s) a ${tension} V (opciones: ${permitidos.join(', ')}).`);
+        else { s.voltage = String(tension); s.phaseType = alim; s.systemType = sistema; }
+      }
+    }
+
+    const dem = _csvNumero(g('demanda'));
+    if (dem !== null) { if (Number.isNaN(dem) || dem < 0.1 || dem > 1) err(`El factor de demanda "${g('demanda')}" debe estar entre 0.1 y 1.`); else s.demandFactor = String(dem); }
+    const lon = _csvNumero(g('longitud'));
+    if (lon !== null) { if (Number.isNaN(lon) || lon <= 0) err(`La longitud "${g('longitud')}" debe ser mayor que cero.`); else s.length = String(lon); }
+    else suponer('Longitud no indicada: se usaron 20 m');
+    const mat = _csvNorm(g('material'));
+    if (mat !== '') {
+      if (['cobre', 'cu', 'copper'].includes(mat)) s.material = 'cu';
+      else if (['aluminio', 'al', 'aluminum'].includes(mat)) s.material = 'al';
+      else err(`El material "${g('material')}" debe ser cobre o aluminio.`);
+    }
+    const ais = g('aislamiento');
+    if (ais !== '') {
+      const k = Object.keys(INSULATION_TYPES).find(x => x.toLowerCase() === ais.toLowerCase());
+      if (k) s.insulType = k; else err(`El aislamiento "${ais}" no existe (opciones: ${Object.keys(INSULATION_TYPES).join(', ')}).`);
+    }
+    const amb = _csvNumero(g('ambiente'));
+    if (amb !== null) { if (Number.isNaN(amb)) err(`La temperatura ambiente "${g('ambiente')}" no es un número.`); else s.ambient = String(amb); }
+    const par = _csvNumero(g('paralelos'));
+    if (par !== null) { if (Number.isNaN(par) || par < 1 || par !== Math.floor(par)) err(`Los conductores en paralelo "${g('paralelos')}" deben ser un entero desde 1.`); else s.nParalelo = String(par); }
+    const inst = _csvNorm(g('instalacion'));
+    if (inst !== '') {
+      if (['tuberia', 'conduit', 'tubo'].includes(inst)) s.installMethod = 'conduit';
+      else if (inst === 'charola') s.installMethod = 'charola';
+      else err(`La instalación "${g('instalacion')}" debe ser tubería o charola.`);
+    }
+    const can = g('canalizacion');
+    if (can !== '') {
+      const k = Object.keys(CONDUIT_TABLES).find(x => x.toLowerCase() === can.toLowerCase() || _csvNorm(CONDUIT_TABLES[x].name) === _csvNorm(can));
+      if (k) s.conduitType = k; else err(`La canalización "${can}" no existe (opciones: ${Object.keys(CONDUIT_TABLES).join(', ')}).`);
+    }
+    [['mojado', 'lugarMojado', 'Lugar mojado'], ['terminal75', 'terminalMarcada', 'Terminales 75 °C']].forEach(([col, campo, tit]) => {
+      const b = _csvBool(g(col));
+      if (b === undefined) err(`"${tit}" debe ser sí o no (se leyó "${g(col)}").`); else s[campo] = b;
+    });
+
+    // motor / aire acondicionado
+    const mot = _csvBool(g('motor'));
+    if (mot === undefined) err(`"Motor" debe ser sí o no (se leyó "${g('motor')}").`);
+    const placa = _csvNumero(g('placa')), mca = _csvNumero(g('mca')), mocp = _csvNumero(g('mocp'));
+    const malo = v => v !== null && (Number.isNaN(v) || v <= 0);
+    if (malo(placa) || malo(mca) || malo(mocp)) err('La corriente de placa, MCA y MOCP deben ser números mayores que cero.');
+    else {
+      if ((mca === null) !== (mocp === null)) err('El equipo de aire acondicionado necesita MCA y MOCP juntos (o ninguno).');
+      else if (mca !== null) {
+        if (mot) err('Un circuito no puede ser motor y aire acondicionado a la vez: usa Motor o MCA/MOCP.');
+        else { s.isAC = true; s.acModo = 'placa'; s.acMca = String(mca); s.acMocp = String(mocp); }
+      }
+      if (mot) { s.isMotor = true; if (placa !== null) s.motorFla = String(placa); }
+      else if (placa !== null) err('Hay corriente de placa pero Motor no es "sí": márcalo como motor o quita la corriente.');
+    }
+
+    s.loads = [carga];
+    grupos.set(clave, { snap: s, fila, crudo: Object.fromEntries(CSV_COLUMNAS.map(c => [c.clave, g(c.clave)])) });
+  }
+
+  if (leidos === 0) errores.push({ fila: 2, texto: 'El archivo no trae circuitos debajo de los encabezados.' });
+  Object.entries(supuestos).forEach(([t, n]) => avisos.push(`${t} en ${n} circuito(s).`));
+  if (errores.length) return { circuitos: [], errores, avisos, leidos };
+  return { circuitos: [...grupos.values()].map(x => x.snap), errores, avisos, leidos };
+}
+
+// Plantilla para descargar: encabezados + ejemplos (alimentador, circuito con dos cargas, motor y A/C)
+function plantillaCSV() {
+  const enc = CSV_COLUMNAS.map(c => c.titulo);
+  const fila = obj => CSV_COLUMNAS.map(c => (obj[c.clave] === undefined ? '' : obj[c.clave]));
+  const ejemplos = [
+    { proyecto: 'Mi proyecto', tablero: 'TG', circuito: 'Alimentador a TA', tipo: 'alimentador', destino: 'TA', tension: 220, fases: 3, sistema: '3F-1T', descripcion: 'Carga total de TA', watts: 18000, fp: 0.9, continua: 'sí', longitud: 25, material: 'cobre', aislamiento: 'THWN-2', ambiente: 40, canalizacion: 'pvc40', terminal75: 'sí' },
+    { proyecto: 'Mi proyecto', tablero: 'TA', circuito: 'Alumbrado nave', posicion: 1, tension: 127, fases: 1, sistema: '1F-1N-1T', descripcion: 'Luminarias LED', watts: 1200, fp: 0.95, continua: 'sí', longitud: 30, material: 'cobre' },
+    { proyecto: 'Mi proyecto', tablero: 'TA', circuito: 'Alumbrado nave', descripcion: 'Contactos de la nave', watts: 900, fp: 0.9, continua: 'no' },
+    { proyecto: 'Mi proyecto', tablero: 'TA', circuito: 'Bomba 3 HP', posicion: 3, tension: 220, fases: 3, sistema: '3F-1T', descripcion: 'Motor de bomba', watts: 2238, fp: 0.85, continua: 'sí', longitud: 18, motor: 'sí', placa: 8.6 },
+    { proyecto: 'Mi proyecto', tablero: 'TA', circuito: 'Minisplit oficina', posicion: 4, tension: 220, fases: 2, sistema: '2F-1T', descripcion: 'Minisplit 24 000 BTU', watts: 2400, fp: 0.9, continua: 'sí', longitud: 15, mca: 15.8, mocp: 25 },
+  ];
+  const esc = v => { const t = String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  return [enc, ...ejemplos.map(fila)].map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
+}
