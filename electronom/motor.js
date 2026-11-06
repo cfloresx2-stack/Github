@@ -2311,3 +2311,52 @@ function estadoRespaldo({ circuitos, ultimaDescarga, ultimoCambio, ahora }) {
   if (ultimoCambio && ultimoCambio > ultimaDescarga) return { nivel: 'aviso', texto: `Hay cambios sin respaldar en archivo (última descarga: ${cuando}).` };
   return { nivel: 'ok', texto: `Respaldo en archivo al día (última descarga: ${cuando}).` };
 }
+
+/* =========================================================================
+   DATOS GENERALES DE LA INSTALACION PARA LA MEMORIA
+   -------------------------------------------------------------------------
+   Junta en un solo lugar los datos que sustentan las verificaciones de
+   cortocircuito (110-9, 110-10) y de puesta a tierra (250-53): transformador,
+   falla disponible y capacidad interruptiva declarada por tablero, tiempo de
+   despeje y electrodo. Pura: recibe lo ya calculado y devuelve datos, sin DOM.
+   ========================================================================= */
+function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
+  const t = trafo || {};
+  const hayTrafo = t.kva > 0 && t.zPct > 0 && t.voltage > 0;
+  let transformador = null;
+  if (hayTrafo) {
+    const zTotalPu = (t.zSourcePu || 0) + t.zPct / 100;
+    const iNominalA = (t.kva * 1000) / (Math.sqrt(3) * t.voltage);
+    transformador = {
+      kva: t.kva, zPct: t.zPct, voltage: t.voltage, primario: t.primario > 0 ? t.primario : null,
+      zSourcePu: t.zSourcePu || 0, iNominalA, iccBornesKA: iNominalA / zTotalPu / 1000,
+    };
+  }
+
+  const tableros = casc ? Object.entries(casc.resultados)
+    .sort((a, b) => a[1].profundidad - b[1].profundidad || a[0].localeCompare(b[0]))
+    .map(([nombre, r]) => {
+      const declarada = (icu || {})[nombre];
+      const icuKA = declarada > 0 ? declarada : null;
+      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
+    }) : [];
+
+  let electrodo = null;
+  if (el0) {
+    electrodo = {
+      rho: el0.rho, largoM: el0.largoM, diamMm: el0.diamMm, R: el0.R, complementario: !!el0.complementario,
+      cumple25: el0.cumple25, cumpleLargo: el0.cumpleLargo, cumpleDiam: el0.cumpleDiam,
+      verificacion: el0.cumple25 ? 'R ≤ 25 Ω (Art. 250-53(a)(2)); confirmar con telurómetro en sitio'
+        : (el0.complementario ? 'R > 25 Ω: se declara electrodo complementario (Art. 250-53(a)(2))' : 'R > 25 Ω: FALTA electrodo complementario (Art. 250-53(a)(2))'),
+    };
+  }
+
+  const faltantes = [];
+  if (!hayTrafo) faltantes.push('Datos del transformador (kVA, %Z y tensión)');
+  const sinIcu = tableros.filter(x => x.estado === 'Sin declarar').map(x => x.nombre);
+  if (sinIcu.length) faltantes.push(`Capacidad interruptiva de: ${sinIcu.join(', ')}`);
+  if (!(tSeg > 0)) faltantes.push('Tiempo de despeje de la falla');
+  if (!el0) faltantes.push('Electrodo de puesta a tierra (resistividad, longitud y diámetro)');
+
+  return { transformador, tableros, tDespeje: tSeg > 0 ? tSeg : null, electrodo, faltantes };
+}

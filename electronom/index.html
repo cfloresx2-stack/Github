@@ -3103,6 +3103,61 @@ document.getElementById('clearRegistry').addEventListener('click', () => {
   }
 });
 
+// Seccion "Datos generales de la instalacion" de la memoria impresa
+function anexoInstalacionHtml() {
+  const num = id => parseFloat(document.getElementById(id).value) || 0;
+  const ctx = contextoInstalacion();
+  const a = datosAnexoInstalacion({
+    trafo: { kva: num('ccArbolKva'), zPct: num('ccArbolZ'), voltage: num('ccArbolVoltage'), primario: num('ccArbolPrim'), zSourcePu: num('ccArbolZsource') },
+    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, el0: ctx.el0,
+  });
+  const falta = t => `<span class="badge warn">No declarado</span> ${escXml(t)}`;
+  const fila = (k, v) => `<tr><th style="text-align:left;width:38%">${k}</th><td>${v}</td></tr>`;
+  const bg = { 'Cumple': 'ok', 'No cumple': 'warn', 'Sin declarar': 'na' };
+
+  const t = a.transformador;
+  const trafoHtml = t ? `<table class="printTable"><tbody>
+      ${fila('Potencia del transformador', `${fmt(t.kva, 1)} kVA`)}
+      ${t.primario ? fila('Tensión del primario', `${fmt(t.primario, 2)} kV`) : ''}
+      ${fila('Tensión del secundario', `${fmt(t.voltage, 0)} V`)}
+      ${fila('Impedancia del transformador (%Z)', `${fmt(t.zPct, 2)} %`)}
+      ${t.zSourcePu > 0 ? fila('Impedancia de la fuente aguas arriba', `${fmt(t.zSourcePu, 4)} p.u.`) : ''}
+      ${fila('Corriente nominal del secundario', `${fmt(t.iNominalA, 1)} A`)}
+      ${fila('Falla trifásica disponible en bornes del secundario', `<b>${fmt(t.iccBornesKA, 2)} kA</b> <span class="hint">= I nominal ÷ (Z fuente + %Z/100)</span>`)}
+    </tbody></table>` : `<p>${falta('Capture kVA, %Z y tensión del secundario del transformador.')}</p>`;
+
+  const tablerosHtml = a.tableros.length ? `<table class="printTable">
+      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación (Art. 110-9)</th></tr></thead>
+      <tbody>${a.tableros.map(x => `<tr>
+        <td>${'&nbsp;&nbsp;'.repeat(x.profundidad)}${escXml(x.nombre)}</td>
+        <td>${fmt(x.iccKA, 2)} kA</td>
+        <td>${x.icuKA === null ? '—' : fmt(x.icuKA, 0) + ' kA'}</td>
+        <td><span class="badge ${bg[x.estado]}">${x.estado}</span></td>
+      </tr>`).join('')}</tbody></table>
+      <p class="hint">La falla de cada tablero parte de la de bornes y se reduce con la impedancia de los alimentadores (Tabla 9, Capítulo 10) hasta ese tablero; la sangría indica el nivel en la cascada. La capacidad interruptiva la declara el proyectista según el interruptor especificado.</p>`
+    : `<p>${falta('La falla por tablero necesita los datos del transformador y circuitos con tablero en la memoria.')}</p>`;
+
+  const e = a.electrodo;
+  const tierraHtml = `<table class="printTable"><tbody>
+      ${fila('Tiempo de despeje de la falla (Art. 110-10)', a.tDespeje ? `${fmt(a.tDespeje, 3)} s <span class="hint">(de la curva tiempo-corriente del dispositivo de protección)</span>` : falta('Capture el tiempo de despeje.'))}
+      ${e ? `
+      ${fila('Electrodo de puesta a tierra', `Varilla vertical de ${fmt(e.largoM, 2)} m × ${fmt(e.diamMm, 1)} mm${e.complementario ? ' + electrodo complementario' : ''}`)}
+      ${fila('Resistividad del terreno', `${fmt(e.rho, 1)} Ω·m`)}
+      ${fila('Resistencia estimada', `<b>${fmt(e.R, 2)} Ω</b> <span class="hint">(fórmula de Dwight: R = ρ/(2πL)·[ln(4L/d) − 1])</span>`)}
+      ${fila('Verificación', `${e.cumple25 || e.complementario ? '<span class="badge ok">Cumple</span>' : '<span class="badge warn">No cumple</span>'} ${escXml(e.verificacion)}`)}
+      ${fila('Dimensiones mínimas (Art. 250-52(a)(5))', `${e.cumpleLargo ? '<span class="badge ok">Longitud ≥ 2.44 m</span>' : '<span class="badge warn">Longitud &lt; 2.44 m</span>'} ${e.cumpleDiam ? '<span class="badge ok">Diámetro ≥ 16 mm</span>' : '<span class="badge warn">Diámetro &lt; 16 mm</span>'}`)}
+      ` : fila('Electrodo de puesta a tierra', falta('Capture resistividad, longitud y diámetro.'))}
+    </tbody></table>`;
+
+  return `<div class="card">
+      <h2>Datos generales de la instalación</h2>
+      <p class="hint">Datos en que se basan las verificaciones de capacidad interruptiva (Art. 110-9), de calentamiento del conductor ante falla (Art. 110-10) y de puesta a tierra (Art. 250-53) de las hojas de cada circuito.</p>
+      <h3>Transformador y falla disponible</h3>${trafoHtml}
+      <h3>Capacidad interruptiva por tablero</h3>${tablerosHtml}
+      <h3>Tiempo de despeje y puesta a tierra</h3>${tierraHtml}
+    </div>`;
+}
+
 document.getElementById('generateMemoria').addEventListener('click', () => {
   const reg = loadRegistry();
   const aviso = document.getElementById('memoriaAviso');
@@ -3142,6 +3197,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
         <tbody>${summaryRows}</tbody>
       </table>
     </div>
+    ${anexoInstalacionHtml()}
     <div class="card">
       <h2>Cuadro de cargas por tablero</h2>
       ${document.getElementById('cuadroCargasWrap').innerHTML}
