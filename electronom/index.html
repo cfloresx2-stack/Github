@@ -323,6 +323,7 @@
   /* Vista de impresión / memoria completa */
   #printArea { display: none; }
   @page { margin: 1.5cm; }
+  @page unifilar { size: landscape; margin: 1cm; }
   @media print {
     body > header, .tabBar, #tabBarHint, body > .wrap > div:first-child, #resultsWrap, .memoriaSection,
     table#registryTable, footer, button, .placeholder { display: none !important; }
@@ -339,6 +340,12 @@
     table.printTable thead tr { break-after: avoid; }
     table.printTable tr { break-inside: avoid; }
     .card { break-inside: avoid; }
+    .indiceMemoria { break-inside: auto; break-after: page; }
+    .indiceMemoria a { color: #000; text-decoration: none; border-bottom: 1px dotted #888; }
+    .indiceMemoria .indiceCircuitos { columns: 2; column-gap: 28px; font-size: 11px; line-height: 1.55; margin: 2px 0 8px; }
+    .indiceMemoria .indiceCircuitos a { display: block; border-bottom: none; }
+    .indiceMemoria .indiceTablero { break-inside: avoid; margin-top: 6px; }
+    .hojasUnifilarImpresion { page: unifilar; }
     .hojasUnifilarImpresion .hojaUnifilar { break-before: page; break-inside: avoid; border: none !important; }
     .hojasUnifilarImpresion .hojaUnifilar svg { min-width: 0 !important; width: 100% !important; }
   }
@@ -2798,17 +2805,18 @@ function circuitosParaUnifilar(reg, tablero) {
 // Arma la hoja de un tablero como lista de elementos neutrales
 function hojaTablero(tablero, ctx) {
   const PASO = 56, POR_FILA = 12, X0 = 140, ALTO_FILA = 190;
+  const KT = 1.3;   // rotulos pequenos (hasta 3.6) un 30 % mas grandes: en papel la hoja se reduce al ancho de la pagina
   const grupos = agruparCircuitosParaUnifilar(circuitosParaUnifilar(ctx.reg, tablero));
   const filas = []; for (let i = 0; i < grupos.length; i += POR_FILA) filas.push(grupos.slice(i, i + POR_FILA));
   if (filas.length === 0) filas.push([]);
   const ancho = Math.max(560, X0 + Math.max(Math.min(grupos.length, POR_FILA), 5) * PASO + 60);
   const pr = ctx.principal;   // interruptor principal + conductor del secundario (transformador fusionado)
   const yBus0 = ctx.esRaizTrafo ? (pr ? 190 : 140) : 100;
-  const alto = yBus0 + (filas.length - 1) * ALTO_FILA + 150;
+  const alto = yBus0 + (filas.length - 1) * ALTO_FILA + 165;
   const padre = ctx.padreDe[tablero];
   const it = [];
   const L = (x1, y1, x2, y2, lw = 0.9) => it.push({ k: 'line', x1, y1, x2, y2, lw });
-  const T = (x, y, t, size = 3.2, anchor = 'middle', bold = false) => it.push({ k: 'text', x, y, t, size, anchor, bold });
+  const T = (x, y, t, size = 3.2, anchor = 'middle', bold = false) => it.push({ k: 'text', x, y, t, size: size <= 3.6 ? Math.round(size * KT * 100) / 100 : size, anchor, bold });
   const S = (n, x, y, tag = '', datos = '') => it.push({ k: 'sym', n, x, y, tag, datos });
 
   it.push({ k: 'rect', x: 2, y: 2, w: ancho - 4, h: alto - 4, lw: 0.6, capa: 'marco' });
@@ -2832,9 +2840,9 @@ function hojaTablero(tablero, ctx) {
       L(xSrc, 86, xSrc, 92);
       S('02_CB_ANSI', xSrc, 106, 'PRINCIPAL', `${pr.breakerA} A ${pr.fases}P`);
       T(xSrc + 7, 105, `${pr.breakerA} A principal`, 3.4, 'start', true);
-      T(xSrc + 7, 109, `${pr.fases}P`, 3, 'start');
+      T(xSrc + 7, 110.5, `${pr.fases}P`, 3, 'start');
       L(xSrc, 120, xSrc, yBus0);
-      [par, pr.systemKey, `T ${pr.awgTierra ?? '—'}`, `Ø ${pr.conduitTrade ?? '—'}`, `${pr.lengthM} m`, `ΔV ${(pr.dropPct ?? 0).toFixed(2)}%`].forEach((t, k) => T(xSrc + 3, 130 + k * 3.7, t, 2.8, 'start'));
+      [par, pr.systemKey, `T ${pr.awgTierra ?? '—'}`, `Ø ${pr.conduitTrade ?? '—'}`, `${pr.lengthM} m`, `ΔV ${(pr.dropPct ?? 0).toFixed(2)}%`].forEach((t, k) => T(xSrc + 3, 130 + k * 3.7 * KT, t, 2.8, 'start'));
       L(xSrc, 89, xSrc + 100, 89);
       S('07_NEUTRO', xSrc + 100, 103, 'N', 'Neutro a tierra');
     } else {
@@ -2867,7 +2875,7 @@ function hojaTablero(tablero, ctx) {
       const par = (g.nParalelo > 1 ? g.nParalelo + '×' : '') + `${g.awg} ${unidadCalibre(g.awg)}`;
       S('02_CB_ANSI', x, yBus + 14, g.base, `${g.breakerA} A ${g.fases}P`);
       T(x + 7, yBus + 13, `${g.breakerA} A`, 3.4, 'start', true);
-      T(x + 7, yBus + 17, `${g.fases}P`, 3, 'start');
+      T(x + 7, yBus + 18.5, `${g.fases}P`, 3, 'start');
       // Motor: el interruptor (cortocircuito) va seguido del contactor (KM) y del relevador de sobrecarga (OL);
       // la carga baja 14 unidades y los rotulos del conductor se recorren a la derecha de los simbolos.
       const arr = g.arranque;
@@ -2883,14 +2891,14 @@ function hojaTablero(tablero, ctx) {
         L(x, yBus + 28, x, yBus + 78);   // conductor entre el interruptor y la carga
       }
       const lin = [par, g.systemKey, `T ${g.awgTierra ?? '—'}`, `Ø ${g.conduitTrade ?? '—'}`, `${g.lengthM} m`, `ΔV ${(g.dropPct ?? 0).toFixed(2)}%`];
-      lin.forEach((t, k) => T(x + (arr ? 8 : 3), yBus + 36 + k * 3.7, t, 2.8, 'start'));
+      lin.forEach((t, k) => T(x + (arr ? 8 : 3), yBus + 36 + k * 3.7 * KT, t, 2.8, 'start'));
       S(g.simbolo, x, yBus + 92 + dy, g.base, `${g.current.toFixed(1)} A${g.n > 1 ? ' x' + g.n : ''}`);
       if (g.n > 1) T(x + 9, yBus + 84 + dy, `×${g.n}`, 4.5, 'start', true);
       let nombre = g.base;
       if (g.destino) nombre = `→ TABLERO ${g.destino}`;
       const lineasNombre = partirTexto(nombre, 15);
-      lineasNombre.forEach((t, k) => T(x, yBus + 112 + dy + k * 3.6, t, 2.8, 'middle', true));
-      T(x, yBus + 112 + dy + lineasNombre.length * 3.6, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
+      lineasNombre.forEach((t, k) => T(x, yBus + 112 + dy + k * 3.6 * KT, t, 2.8, 'middle', true));
+      T(x, yBus + 112 + dy + lineasNombre.length * 3.6 * KT, `${g.current.toFixed(1)} A${g.motor ? ' (FLC)' : ''}`, 2.8, 'middle');
     });
   });
   return { tablero, ancho, alto, items: it };
@@ -3166,12 +3174,33 @@ function anexoInstalacionHtml() {
       ` : fila('Electrodo de puesta a tierra', falta('Capture resistividad, longitud y diámetro.'))}
     </tbody></table>`;
 
-  return `<div class="card">
+  const h3 = 'style="font-size:13px; margin:14px 0 6px; color:var(--navy)"';
+  return `<div class="card" id="memoria-datos">
       <h2>Datos generales de la instalación</h2>
       <p class="hint">Datos en que se basan las verificaciones de capacidad interruptiva (Art. 110-9), de calentamiento del conductor ante falla (Art. 110-10) y de puesta a tierra (Art. 250-53) de las hojas de cada circuito.</p>
-      <h3>Transformador y falla disponible</h3>${trafoHtml}
-      <h3>Capacidad interruptiva por tablero</h3>${tablerosHtml}
-      <h3>Tiempo de despeje y puesta a tierra</h3>${tierraHtml}
+      <h3 ${h3}>Transformador y falla disponible</h3>${trafoHtml}
+      <h3 ${h3}>Capacidad interruptiva por tablero</h3>${tablerosHtml}
+      <h3 ${h3}>Tiempo de despeje y puesta a tierra</h3>${tierraHtml}
+    </div>`;
+}
+
+// Indice de la memoria impresa: enlaces internos (el PDF del navegador los conserva; no puede numerar paginas)
+function indiceMemoriaHtml(reg, hojas) {
+  const ix = armarIndiceMemoria({
+    circuitos: reg.map(r => ({ tablero: r.board, circuito: r.circ })),
+    hojas: hojas || [],
+  });
+  const li = s => `<li><a href="#${s.id}">${escXml(s.titulo)}</a> <span class="hint">— ${escXml(s.detalle)}</span></li>`;
+  return `<div class="card indiceMemoria">
+      <h2>Índice</h2>
+      <ol style="margin:6px 0 0; padding-left:20px; line-height:1.7">
+        ${ix.secciones.map(li).join('')}
+        ${ix.hojas.length ? `<li>Unifilar detallado por tablero: ${ix.hojas.map(x => `<a href="#${x.id}">${escXml(x.etiqueta)}</a>`).join(' &nbsp;·&nbsp; ')}</li>` : ''}
+        <li>Hojas de cálculo por circuito
+          ${ix.porTablero.map(t => `<div class="indiceTablero"><b>Tablero ${escXml(t.tablero)}</b> <span class="hint">(${t.items.length})</span>
+            <div class="indiceCircuitos">${t.items.map(c => `<a href="#${c.id}">${c.n}. ${escXml(c.nombre)}</a>`).join('')}</div></div>`).join('')}
+        </li>
+      </ol>
     </div>`;
 }
 
@@ -3197,7 +3226,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     </tr>`).join("");
 
   const detailSections = reg.map((r, i) => `
-    <details class="circuitSheet" open>
+    <details class="circuitSheet" id="circuito-${i+1}" open>
       <summary>${i+1}. ${r.summaryHtml}</summary>
       <div class="sheetBody">${r.bodyHtml}</div>
     </details>`).join("");
@@ -3207,7 +3236,8 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       <div class="proj">Memoria de Cálculo &mdash; ${proj}</div>
       <div class="sub">Generada el ${today} &middot; ${reg.length} circuito(s) &middot; NOM-001-SEDE-2018</div>
     </div>
-    <div class="card">
+    ${indiceMemoriaHtml(reg, (obtenerHojasUnifilar() || { hojas: [] }).hojas)}
+    <div class="card" id="memoria-resumen">
       <h2>Resumen de circuitos</h2>
       <table class="printTable" id="resumenCircuitosTable">
         <thead><tr><th>#</th><th>Tablero</th><th>Circuito</th><th>Tipo</th><th>Sistema</th><th>Tensión</th><th>Calibre</th><th>Tierra</th><th>Interruptor</th><th>Tubería</th><th>Caída V</th><th>Dictamen</th></tr></thead>
@@ -3216,11 +3246,11 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       ${avisoDesbalanceResumenHtml(reg)}
     </div>
     ${anexoInstalacionHtml()}
-    <div class="card">
+    <div class="card" id="memoria-cuadro">
       <h2>Cuadro de cargas por tablero</h2>
       ${document.getElementById('cuadroCargasWrap').innerHTML}
     </div>
-    <div class="card">
+    <div class="card" id="memoria-diagrama">
       <h2>Diagrama unifilar</h2>
       ${document.getElementById('diagramaAdvertencias').innerHTML}
       ${document.getElementById('diagramaWrap').innerHTML}
@@ -3229,6 +3259,8 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
     ${detailSections}
     <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
   `;
+
+  document.querySelectorAll('#printArea .hojasUnifilarImpresion .hojaUnifilar').forEach((el, i) => { el.id = 'hoja-unifilar-' + (i + 1); });
 
   window.print();
 });

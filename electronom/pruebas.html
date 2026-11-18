@@ -1391,6 +1391,24 @@ grupo("Memoria — datos generales de la instalación", () => {
   esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
 });
 
+grupo("Memoria impresa — índice", () => {
+  const circ = [
+    { tablero: "TG", circuito: "F1 Alimentador a TA" }, { tablero: "TA", circuito: "Aspiradora 1" },
+    { tablero: "TG", circuito: "Bomba 1" }, { tablero: "TA", circuito: "Aspiradora 2" }, { tablero: "", circuito: "" },
+  ];
+  const ix = armarIndiceMemoria({ circuitos: circ, hojas: [{ tablero: "TG" }, { tablero: "TA" }] });
+  esIgual(ix.secciones.map(s => s.id).join(), "memoria-resumen,memoria-datos,memoria-cuadro,memoria-diagrama", "Las cuatro secciones fijas, con los ids de sus enlaces");
+  esIgual(ix.secciones[0].detalle, "5 circuitos", "Cuenta los circuitos");
+  esIgual(ix.porTablero.map(t => t.tablero).join(), "TG,TA,(sin tablero)", "Los tableros salen en el orden en que aparecen");
+  esIgual(ix.porTablero[0].items.map(c => c.n).join(), "1,3", "Cada circuito conserva su número del resumen (1 y 3 en TG)");
+  esIgual(ix.porTablero[1].items.map(c => c.id).join(), "circuito-2,circuito-4", "El enlace apunta a la hoja de ese circuito");
+  esIgual(ix.porTablero[2].items[0].nombre, "(sin nombre)", "Un circuito sin nombre no rompe el índice");
+  esIgual(ix.hojas.map(x => x.etiqueta).join(), "Hoja 1 · TG,Hoja 2 · TA", "Una entrada por cada hoja del unifilar");
+  esIgual(ix.hojas[1].id, "hoja-unifilar-2", "…con su enlace");
+  esIgual(armarIndiceMemoria({ circuitos: [{ tablero: "T", circuito: "C" }], hojas: [] }).secciones[0].detalle, "1 circuito", "Singular");
+  esIgual(armarIndiceMemoria({ circuitos: [], hojas: [] }).porTablero.length, 0, "Sin circuitos: índice vacío");
+});
+
 grupo("Unifilar — arranque del motor (contactor y relevador)", () => {
   const a = cadenaArranqueMotor({ flcTabla: 34, flaPlaca: 30, fs115: true });
   esIgual(a.contactor.etiqueta + a.relevador.etiqueta, "KMOL", "Rótulos KM (contactor) y OL (relevador)");
