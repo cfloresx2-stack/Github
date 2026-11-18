@@ -1433,6 +1433,49 @@ grupo("Tiempo de despeje por tablero", () => {
   esCierto(datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, tPorTablero: { TG: 0.3, TA: 0.1 }, el0 }).despejeCompleto, "Un tiempo propio en cada tablero completa el despeje sin general");
 });
 
+grupo("Motores — corriente a plena carga por hp y tensión (Tablas 430-248 y 430-250)", () => {
+  const f = (hp, fases, voltage) => flcMotorTabla({ hp, fases, voltage });
+  // trifásicos (Tabla 430-250)
+  esIgual(f(5, 3, 220).flc, 15.2, "5 hp trifásico a 220 V (columna 230 V): 15.2 A");
+  esIgual(f(5, 3, 220).tabla + "/" + f(5, 3, 220).columna, "430-250/230", "…de la Tabla 430-250, columna de 230 V");
+  esIgual(f(10, 3, 440).flc, 14, "10 hp a 440 V (columna 460 V): 14 A");
+  esIgual(f(10, 3, 480).flc, 14, "10 hp a 480 V (también columna 460 V): 14 A");
+  esIgual(f(3, 3, 220).flc, 9.6, "3 hp a 220 V: 9.6 A");
+  esIgual(f(7.5, 3, 220).flc, 22, "7½ hp a 220 V: 22 A");
+  esIgual(f(200, 3, 220).flc, 480, "200 hp a 220 V: 480 A");
+  esIgual(f(500, 3, 440).flc, 590, "500 hp a 440 V: 590 A");
+  esIgual(f(0.5, 3, 220).flc, 2.2, "½ hp a 220 V: 2.2 A");
+  esIgual(f(1.5, 3, 220).flc, 6, "1½ hp a 220 V: 6 A");
+  esIgual(f(100, 3, 208).flc, 273, "100 hp a 208 V: 273 A");
+  esIgual(f(75, 3, 575).flc, 77, "75 hp a 575 V: 77 A");
+  // monofásicos (Tabla 430-248)
+  esIgual(f(1, 1, 127).flc, 14, "1 hp monofásico a 127 V (columna de 127 V): 14 A");
+  esIgual(f(1, 1, 220).flc, 8, "1 hp monofásico a 220 V (columna de 230 V): 8 A");
+  esIgual(f(3, 1, 220).flc, 17, "3 hp monofásico a 220 V: 17 A");
+  esIgual(f(10, 1, 220).flc, 50, "10 hp monofásico a 220 V: 50 A");
+  esIgual(f(1 / 6, 1, 127).flc, 4, "1/6 hp a 127 V: 4 A");
+  esIgual(f(3 / 4, 1, 127).flc, 11.5, "¾ hp a 127 V: 11.5 A");
+  esIgual(f(1, 1, 127).tabla, "430-248", "Los monofásicos salen de la Tabla 430-248");
+  // lo que la tabla no trae no se inventa
+  esCierto(f(250, 3, 220).error && f(250, 3, 220).error.includes("250 hp"), "250 hp a 220 V: la tabla no trae valor");
+  esCierto(f(5, 3, 127).error, "Trifásico a 127 V: no hay columna");
+  esCierto(f(15, 1, 220).error && f(15, 1, 220).error.includes("15 hp"), "15 hp monofásico: la Tabla 430-248 llega hasta 10 hp");
+  esCierto(f(4, 3, 220).error, "4 hp no es una potencia de la tabla");
+  esCierto(f(5, 3, 115).error && f(5, 3, 115).error.includes("115 V"), "5 hp a 115 V trifásico: sin valor");
+  // columnas y listas
+  esIgual(columnaTensionMotor(240, 3), 230, "240 V usa la columna de 230 V (rango de 220 a 240 V)");
+  esIgual(columnaTensionMotor(600, 3), 575, "600 V usa la columna de 575 V");
+  esIgual(columnaTensionMotor(300, 3), null, "300 V no cae en ningún rango de la tabla");
+  esCierto(HP_TRIFASICO.length === 27 && HP_MONOFASICO.length === 12, "27 potencias trifásicas (½ a 500 hp) y 12 monofásicas (1/6 a 10 hp)");
+  esCierto(HP_TRIFASICO.every((v, i, a) => i === 0 || v > a[i - 1]), "Las potencias van en orden creciente");
+  esIgual(etiquetaHp(0.5) + "|" + etiquetaHp(1.5) + "|" + etiquetaHp(7.5) + "|" + etiquetaHp(0.75) + "|" + etiquetaHp(1 / 6) + "|" + etiquetaHp(5), "½|1½|7½|¾|1/6|5", "Etiquetas de las potencias");
+  // las columnas del trifásico son consistentes entre sí (200 V > 208 V > 230 V > 460 V > 575 V)
+  esCierto(FLC_TRIFASICO.every(fila => { const [, , a200, a208, a230, a460, a575] = fila; return a230 === null || ((a200 > a208) && (a208 > a230) && (a230 > a460) && (a460 > a575)); }), "Tabla 430-250: la corriente baja al subir la tensión, en todas las filas");
+  // integración con la sobrecarga: la corriente de tabla alimenta el 430-32
+  const s = calcularSobrecargaMotor({ flaPlaca: 0, flcTabla: f(5, 3, 220).flc, fs115: false });
+  esCierto(Math.abs(s.maxA - 15.2 * 1.15) < 1e-9, "Sin placa, el relevador se estima con la corriente de tabla (115 % de 15.2 A)");
+});
+
 grupo("Captura fácil — valores comunes y capacidad mínima", () => {
   esIgual(icuMinimoRequerido(22.08), 25, "La falla de 22.08 kA no la cubre la de 22 kA: se cubre con 25 kA");
   esIgual(icuMinimoRequerido(10), 10, "Una falla exactamente igual a una capacidad normalizada se cubre con ella");

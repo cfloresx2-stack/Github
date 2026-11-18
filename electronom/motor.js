@@ -2208,3 +2208,81 @@ function icuMinimoRequerido(iccKA) {
   const x = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= iccKA);
   return x === undefined ? null : x;
 }
+
+/* =========================================================================
+   CORRIENTE A PLENA CARGA DE MOTORES DE CA  (Tablas 430-248 y 430-250)
+   -------------------------------------------------------------------------
+   Art. 430-6(a)(1): para dimensionar el conductor y el interruptor del motor
+   se usan los valores de estas tablas, no la corriente de placa. Valores
+   copiados de NOM-001-SEDE-2018 (paginas 452-454 del PDF). Las tablas se
+   permiten para sistemas de 110-120, 220-240, 440-480 y 550-600 V.
+     Tabla 430-248: monofasicos, columnas 115, 127, 208 y 230 V.
+     Tabla 430-250: trifasicos de induccion (jaula de ardilla y rotor devanado),
+                    columnas 115, 200, 208, 230, 460 y 575 V. (No se incluye el
+                    tipo sincrono ni la columna de 2300 V.)
+   null = la tabla no trae valor para esa potencia y tension.
+   ========================================================================= */
+// [hp, 115 V, 127 V, 208 V, 230 V]
+const FLC_MONOFASICO = [
+  [1 / 6, 4.4, 4, 2.4, 2.2], [1 / 4, 5.8, 5.3, 3.2, 2.9], [1 / 3, 7.2, 6.5, 4, 3.6], [1 / 2, 9.8, 8.9, 5.4, 4.9],
+  [3 / 4, 13.8, 11.5, 7.6, 6.9], [1, 16, 14, 8.8, 8], [1.5, 20, 18, 11, 10], [2, 24, 22, 13.2, 12],
+  [3, 34, 31, 18.7, 17], [5, 56, 51, 30.8, 28], [7.5, 80, 72, 44, 40], [10, 100, 91, 55, 50],
+];
+const COLUMNAS_FLC_MONOFASICO = [115, 127, 208, 230];
+// [hp, 115 V, 200 V, 208 V, 230 V, 460 V, 575 V]
+const FLC_TRIFASICO = [
+  [0.5, 4.4, 2.5, 2.4, 2.2, 1.1, 0.9], [0.75, 6.4, 3.7, 3.5, 3.2, 1.6, 1.3], [1, 8.4, 4.8, 4.6, 4.2, 2.1, 1.7],
+  [1.5, 12, 6.9, 6.6, 6, 3, 2.4], [2, 13.6, 7.8, 7.5, 6.8, 3.4, 2.7], [3, null, 11, 10.6, 9.6, 4.8, 3.9],
+  [5, null, 17.5, 16.7, 15.2, 7.6, 6.1], [7.5, null, 25.3, 24.2, 22, 11, 9], [10, null, 32.2, 30.8, 28, 14, 11],
+  [15, null, 48.3, 46.2, 42, 21, 17], [20, null, 62.1, 59.4, 54, 27, 22], [25, null, 78.2, 74.8, 68, 34, 27],
+  [30, null, 92, 88, 80, 40, 32], [40, null, 120, 114, 104, 52, 41], [50, null, 150, 143, 130, 65, 52],
+  [60, null, 177, 169, 154, 77, 62], [75, null, 221, 211, 192, 96, 77], [100, null, 285, 273, 248, 124, 99],
+  [125, null, 359, 343, 312, 156, 125], [150, null, 414, 396, 360, 180, 144], [200, null, 552, 528, 480, 240, 192],
+  [250, null, null, null, null, 302, 242], [300, null, null, null, null, 361, 289], [350, null, null, null, null, 414, 336],
+  [400, null, null, null, null, 477, 382], [450, null, null, null, null, 515, 412], [500, null, null, null, null, 590, 472],
+];
+const COLUMNAS_FLC_TRIFASICO = [115, 200, 208, 230, 460, 575];
+const HP_MONOFASICO = FLC_MONOFASICO.map(f => f[0]);
+const HP_TRIFASICO = FLC_TRIFASICO.map(f => f[0]);
+
+// "5", "1½", "¾", "1/6": como se escribe la potencia en las listas
+function etiquetaHp(hp) {
+  const fracciones = { [1 / 6]: '1/6', [1 / 4]: '¼', [1 / 3]: '1/3', [1 / 2]: '½', [3 / 4]: '¾' };
+  if (fracciones[hp]) return fracciones[hp];
+  const entero = Math.floor(hp + 1e-9);
+  if (Math.abs(hp - entero - 0.5) < 1e-9) return `${entero}½`;
+  return String(hp);
+}
+
+// Columna de tension de la tabla que corresponde a la tension nominal del sistema (rangos que permiten las tablas)
+function columnaTensionMotor(voltage, fases) {
+  if (fases === 1) {
+    if (voltage === 127) return 127;
+    if (voltage >= 110 && voltage <= 120) return 115;
+    if (voltage === 208) return 208;
+    if (voltage >= 220 && voltage <= 240) return 230;
+    return null;
+  }
+  if (voltage >= 110 && voltage <= 120) return 115;
+  if (voltage === 200) return 200;
+  if (voltage === 208) return 208;
+  if (voltage >= 220 && voltage <= 240) return 230;
+  if (voltage >= 440 && voltage <= 480) return 460;
+  if (voltage >= 550 && voltage <= 600) return 575;
+  return null;
+}
+
+// Corriente a plena carga de tabla: { flc, tabla, columna } o { error }
+function flcMotorTabla({ hp, fases, voltage }) {
+  const monofasico = fases === 1;
+  const tabla = monofasico ? FLC_MONOFASICO : FLC_TRIFASICO;
+  const columnas = monofasico ? COLUMNAS_FLC_MONOFASICO : COLUMNAS_FLC_TRIFASICO;
+  const nombre = monofasico ? '430-248' : '430-250';
+  const columna = columnaTensionMotor(voltage, monofasico ? 1 : 3);
+  if (columna === null) return { error: `La Tabla ${nombre} no trae una columna para ${voltage} V ${monofasico ? 'monofásicos' : 'trifásicos'}.` };
+  const fila = tabla.find(f => Math.abs(f[0] - hp) < 1e-9);
+  if (!fila) return { error: `La Tabla ${nombre} no incluye motores de ${etiquetaHp(hp)} hp.` };
+  const flc = fila[1 + columnas.indexOf(columna)];
+  if (flc === null) return { error: `La Tabla ${nombre} no trae valor para ${etiquetaHp(hp)} hp a ${columna} V.` };
+  return { flc, tabla: nombre, columna };
+}
