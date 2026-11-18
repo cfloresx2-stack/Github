@@ -852,6 +852,10 @@
                 <label for="instElComp">Se instalará un electrodo complementario</label>
               </div>
             </div>
+            <div class="checkline">
+              <input type="checkbox" id="instElSinCalc">
+              <label for="instElSinCalc">No conozco la resistividad: <b>declaro electrodo complementario</b> y no se calcula la resistencia <span class="hint">(el Art. 250-53(a)(2) queda atendido con el segundo electrodo, separado al menos 1.80 m)</span></label>
+            </div>
             <div class="totalsLine" id="instElResultado" style="margin-top:6px"></div>
           </div>
         </details>
@@ -2570,7 +2574,7 @@ function capturarInstalacion() {
   return {
     kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
     verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), icu: { ...icuPorTablero },
-    electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked },
+    electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked, sinCalculo: document.getElementById('instElSinCalc').checked },
   };
 }
 function guardarInstalacion() {
@@ -2589,6 +2593,8 @@ function restaurarInstalacion(t) {
   document.getElementById('instElEnabled').checked = true;   // el electrodo de la instalacion ya no es opcional
   set('instElRho', e.rho); set('instElLargo', e.largo); set('instElDiam', e.diam);
   document.getElementById('instElComp').checked = !!e.comp;
+  document.getElementById('instElSinCalc').checked = !!e.sinCalculo;
+  actualizarModoElectrodo();
   actualizarResultadoElectrodoInstalacion();
 }
 
@@ -2598,14 +2604,26 @@ function electrodoInstalacion() {
   const largoM = parseFloat(document.getElementById('instElLargo').value) || 0;
   const diamMm = parseFloat(document.getElementById('instElDiam').value) || 0;
   const complementario = document.getElementById('instElComp').checked;
+  if (document.getElementById('instElSinCalc').checked) return largoM > 0 && diamMm > 0 ? electrodoComplementarioDeclarado({ largoM, diamMm }) : null;
   return rho > 0 && largoM > 0 && diamMm > 0 ? calcularElectrodo({ rho, largoM, diamMm, complementario }) : null;
+}
+// Con "declaro electrodo complementario" la resistividad y la casilla de complementario no aplican
+function actualizarModoElectrodo() {
+  const sin = document.getElementById('instElSinCalc').checked;
+  document.getElementById('instElRho').disabled = sin;
+  document.getElementById('instElComp').disabled = sin;
+  if (sin) document.getElementById('instElComp').checked = true;
 }
 function actualizarResultadoElectrodoInstalacion() {
   const el = document.getElementById('instElResultado');
   const e0 = electrodoInstalacion();
+  if (e0 && e0.sinCalculo) {
+    el.innerHTML = `Electrodo complementario declarado: <b>no se calcula la resistencia</b> (Art. 250-53(a)(2) atendido con el segundo electrodo). Se siguen verificando las dimensiones de la varilla (Art. 250-52(a)(5)).`;
+    return;
+  }
   el.innerHTML = e0
     ? `Resistencia estimada: <b>${fmt(e0.R, 2)} Ω</b> — ${e0.cumple25 ? 'cumple los 25 Ω (confirmar con telurómetro)' : (e0.complementario ? 'excede 25 Ω y se declara electrodo complementario' : 'excede 25 Ω: falta electrodo complementario')}`
-    : `<span class="hint">Captura resistividad, longitud y diámetro mayores a cero.</span>`;
+    : `<span class="hint">Captura resistividad, longitud y diámetro mayores a cero (o marca que declaras electrodo complementario).</span>`;
 }
 
 // Datos de la instalacion ya resueltos (cascada de cortocircuito, tiempo de despeje, electrodo), calculados una vez
@@ -2759,9 +2777,9 @@ document.getElementById('instElEnabled').addEventListener('change', (e) => {
   document.getElementById('instElPanel').style.display = e.target.checked ? 'block' : 'none';
   actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion();
 });
-['instElRho','instElLargo','instElDiam','instElComp'].forEach(id => {
-  document.getElementById(id).addEventListener('input', () => { actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
-  document.getElementById(id).addEventListener('change', () => { actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
+['instElRho','instElLargo','instElDiam','instElComp','instElSinCalc'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { actualizarModoElectrodo(); actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
+  document.getElementById(id).addEventListener('change', () => { actualizarModoElectrodo(); actualizarResultadoElectrodoInstalacion(); guardarInstalacion(); aplicarDatosInstalacion(); });
 });
 
 /* =========================================================================
@@ -3167,8 +3185,8 @@ function anexoInstalacionHtml() {
       ${fila('Tiempo de despeje de la falla (Art. 110-10)', a.tDespeje ? `${fmt(a.tDespeje, 3)} s <span class="hint">(de la curva tiempo-corriente del dispositivo de protección)</span>` : falta('Capture el tiempo de despeje.'))}
       ${e ? `
       ${fila('Electrodo de puesta a tierra', `Varilla vertical de ${fmt(e.largoM, 2)} m × ${fmt(e.diamMm, 1)} mm${e.complementario ? ' + electrodo complementario' : ''}`)}
-      ${fila('Resistividad del terreno', `${fmt(e.rho, 1)} Ω·m`)}
-      ${fila('Resistencia estimada', `<b>${fmt(e.R, 2)} Ω</b> <span class="hint">(fórmula de Dwight: R = ρ/(2πL)·[ln(4L/d) − 1])</span>`)}
+      ${e.sinCalculo ? fila('Resistividad y resistencia', '<span class="hint">No se calculan: se declara electrodo complementario (no se conoce la resistividad del terreno)</span>') : `${fila('Resistividad del terreno', `${fmt(e.rho, 1)} Ω·m`)}
+      ${fila('Resistencia estimada', `<b>${fmt(e.R, 2)} Ω</b> <span class="hint">(fórmula de Dwight: R = ρ/(2πL)·[ln(4L/d) − 1])</span>`)}`}
       ${fila('Verificación', `${e.cumple25 || e.complementario ? '<span class="badge ok">Cumple</span>' : '<span class="badge warn">No cumple</span>'} ${escXml(e.verificacion)}`)}
       ${fila('Dimensiones mínimas (Art. 250-52(a)(5))', `${e.cumpleLargo ? '<span class="badge ok">Longitud ≥ 2.44 m</span>' : '<span class="badge warn">Longitud &lt; 2.44 m</span>'} ${e.cumpleDiam ? '<span class="badge ok">Diámetro ≥ 16 mm</span>' : '<span class="badge warn">Diámetro &lt; 16 mm</span>'}`)}
       ` : fila('Electrodo de puesta a tierra', falta('Capture resistividad, longitud y diámetro.'))}

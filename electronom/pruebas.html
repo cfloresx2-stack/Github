@@ -1391,6 +1391,39 @@ grupo("Memoria — datos generales de la instalación", () => {
   esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
 });
 
+grupo("Electrodo complementario declarado, sin resistividad", () => {
+  const el = electrodoComplementarioDeclarado({ largoM: 2.44, diamMm: 16 });
+  esCierto(el.sinCalculo && el.R === null && el.rho === null && el.complementario && el.resuelto, "Sin resistividad: no hay resistencia calculada y el electrodo queda resuelto");
+  esCierto(el.cumpleLargo && el.cumpleDiam, "Las dimensiones mínimas (2.44 m y 16 mm) sí se verifican");
+  esCierto(!electrodoComplementarioDeclarado({ largoM: 2.0, diamMm: 16 }).cumpleLargo && !electrodoComplementarioDeclarado({ largoM: 2.44, diamMm: 12 }).cumpleDiam, "Una varilla corta o delgada no cumple");
+
+  const circ = { input: { material: "cu", scTsc: 0 }, calibreFinal: { awg: "12", mm2: 3.31 }, cc: null, vt: null };
+  const r030 = hs => hs.find(x => x.reglaId === "R-030");
+  const r029 = hs => hs.find(x => x.reglaId === "R-029");
+  const h1 = hallazgosInstalacion({ ...circ, el0: el });
+  esIgual(r030(h1).estado, "Cumple", "R-030: el electrodo complementario declarado cumple el Art. 250-53(a)(2)");
+  esCierto(r030(h1).observacion.includes("1.80 m"), "…y recuerda la separación de 1.80 m");
+  esIgual(r029(h1).estado, "Cumple", "R-029: dimensiones correctas → Cumple");
+  const h2 = hallazgosInstalacion({ ...circ, el0: electrodoComplementarioDeclarado({ largoM: 1.5, diamMm: 16 }) });
+  esIgual(r029(h2).estado, "No cumple", "R-029: una varilla de 1.5 m no cumple aunque se declare complementario");
+  esIgual(r030(hallazgosInstalacion({ ...circ, el0: null })).estado, "No evaluable", "Sin electrodo declarado: sigue sin poder evaluarse");
+  esCierto(r030(hallazgosInstalacion({ ...circ, el0: null })).observacion.includes("sin calcular la resistencia"), "…y dice que existe la opción de declararlo sin calcular");
+  // el modo normal no cambia
+  esIgual(r030(hallazgosInstalacion({ ...circ, el0: calcularElectrodo({ rho: 30, largoM: 2.44, diamMm: 16, complementario: false }) })).estado, "Advertencia", "Con resistividad conocida y R ≤ 25 Ω: sigue la advertencia de medir en sitio");
+
+  // memoria impresa
+  const trafo = { kva: 300, zPct: 5, voltage: 220, primario: 0, zSourcePu: 0 };
+  const a = datosAnexoInstalacion({ trafo, casc: null, icu: {}, tSeg: 0.1, el0: el });
+  esCierto(a.electrodo.sinCalculo && a.electrodo.R === null, "El anexo marca el electrodo como declarado sin cálculo");
+  esCierto(a.electrodo.verificacion.includes("sin calcular la resistencia"), "…con su verificación");
+  esCierto(!a.faltantes.some(x => x.includes("Electrodo")), "El electrodo ya no figura como faltante");
+
+  // compuerta
+  const reg = [{ id: 1, proj: "P", board: "TG", circ: "C1", kind: "derivado", destino: "" }];
+  const ins = { kva: 300, zPct: 5, voltage: 220, tDespeje: 0.1, icu: { TG: 25 }, electrodoValido: true };
+  esIgual(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: ins }).length, 0, "Con el electrodo declarado la compuerta no pide la resistividad");
+});
+
 grupo("Memoria impresa — nombre del PDF", () => {
   esIgual(nombreArchivoMemoria("Autolavado Danjo Mexicali"), "Memoria de cálculo - Autolavado Danjo Mexicali", "El nombre lleva el del proyecto");
   esIgual(nombreArchivoMemoria("Autolavado — cuadro ajustado (v2)"), "Memoria de cálculo - Autolavado — cuadro ajustado (v2)", "Conserva acentos, guiones y paréntesis");
