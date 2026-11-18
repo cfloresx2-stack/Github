@@ -826,8 +826,13 @@
             <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
           </div>
         </div>
-        <label style="margin-top:10px">Tiempo de despeje por defecto <span class="hint">(s, de la curva del interruptor; se usa para verificar el calentamiento del conductor, Art. 110-10, en los tableros que no tengan el suyo en la tabla de abajo)</span></label>
-        <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Ej. 0.02">
+        <label style="margin-top:10px">Tiempo de despeje por defecto <span class="hint">(qué tan rápido abre la protección ante una falla; se usa para verificar el calentamiento del conductor, Art. 110-10, en los tableros que no tengan el suyo en la tabla de abajo)</span></label>
+        <select id="ccArbolTscTipo"></select>
+        <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Segundos, de la curva del fabricante" style="display:none; margin-top:6px">
+        <details style="margin-top:6px">
+          <summary>¿De dónde sale este dato?</summary>
+          <p class="hint" style="margin-top:6px">Es el tiempo que tarda en abrir el interruptor (o fusible) que protege los circuitos de ese tablero cuando hay una falla; sale de su curva tiempo-corriente. <b>Si todavía no tienes la curva</b>, elige el tipo de protección y se usa un valor típico: caja moldeada termomagnética 0.02 s (abre en un ciclo), fusible limitador 0.01 s, electrónico con retardo corto el ajuste que elijas (0.1 a 0.4 s). Son valores típicos: confírmalos con el fabricante cuando se defina el equipo; la memoria indica el tipo elegido. Si tienes la curva exacta, elige «Otro» y captura el tiempo.</p>
+        </details>
         <details open style="margin-top:10px">
           <summary>Electrodo de puesta a tierra de la instalación (Art. 250-53)</summary>
           <input type="checkbox" id="instElEnabled" checked style="display:none">
@@ -2567,6 +2572,8 @@ function renderDiagramaUnifilar() {
    cortocircuito o de electrodo (secciones 5 y 6) conserva el suyo.
    ========================================================================= */
 let icuPorTablero = {};
+let despejeTipoPorTablero = {};   // tipo de proteccion elegido por tablero (ver TIPOS_DESPEJE)
+let despejeTipoGeneral = '';
 let despejePorTablero = {};   // tiempo de despeje propio de cada tablero (s); el campo general aplica a los demas
 const INSTALACION_KEY = 'nomica_instalacion_v1';
 
@@ -2574,7 +2581,7 @@ function capturarInstalacion() {
   const v = id => document.getElementById(id).value;
   return {
     kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
-    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejePorTablero: { ...despejePorTablero }, icu: { ...icuPorTablero },
+    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejeTipo: despejeTipoGeneral, tDespejePorTablero: { ...despejePorTablero }, tDespejeTipoPorTablero: { ...despejeTipoPorTablero }, icu: { ...icuPorTablero },
     electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked, sinCalculo: document.getElementById('instElSinCalc').checked },
   };
 }
@@ -2589,6 +2596,9 @@ function restaurarInstalacion(t) {
   set('ccArbolZsource', t.zSourcePu); set('ccArbolTsc', t.tDespeje);
   icuPorTablero = { ...(t.icu || {}) };
   despejePorTablero = { ...(t.tDespejePorTablero || {}) };
+  despejeTipoPorTablero = { ...(t.tDespejeTipoPorTablero || {}) };
+  despejeTipoGeneral = t.tDespejeTipo || (parseFloat(t.tDespeje) > 0 ? 'otro' : '');   // un tiempo sin tipo (archivos anteriores) se trata como capturado a mano
+  mostrarDespejeGeneral();
   const chk = document.getElementById('ccArbolEnabled');
   chk.checked = true;   // la verificacion de cortocircuito de toda la instalacion ya no es opcional
   const e = t.electrodo || {};
@@ -2727,14 +2737,14 @@ function renderCortocircuitoArbol() {
 
   wrap.innerHTML = `
     <table class="printTable">
-      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th><th>Tiempo de despeje (s)</th></tr></thead>
+      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th><th>Tiempo de despeje de sus interruptores</th></tr></thead>
       <tbody>${filas.map(f => `
         <tr>
           <td>${f.nombre}</td>
           <td>${fmt(f.iccKA, 2)} kA</td>
           <td><select id="${f.slug}Icu"></select></td>
           <td id="${f.slug}Badge"></td>
-          <td><input type="number" id="${f.slug}Tsc" step="0.01" min="0" style="width:90px" placeholder="${parseFloat(document.getElementById('ccArbolTsc').value) > 0 ? 'por defecto' : 'Ej. 0.02'}" title="Tiempo de despeje de los interruptores de este tablero (curva tiempo-corriente)"></td>
+          <td><select id="${f.slug}TscTipo" style="max-width:260px" title="Tiempo en que abren los interruptores de este tablero ante una falla"></select><input type="number" id="${f.slug}Tsc" step="0.01" min="0" style="width:110px; display:none; margin-top:4px" placeholder="Segundos"></td>
         </tr>`).join('')}</tbody>
     </table>`;
 
@@ -2758,8 +2768,18 @@ function renderCortocircuitoArbol() {
           ? `<span class="badge ok">Cumple Art. 110-9</span>`
           : `<span class="badge warn">NO CUMPLE · mín. ${minimo ?? '>200'} kA</span>`;
     }
-    const tin = document.getElementById(`${f.slug}Tsc`);
-    if (despejePorTablero[f.nombre] > 0) tin.value = despejePorTablero[f.nombre];
+    const tin = document.getElementById(`${f.slug}Tsc`), tsel = document.getElementById(`${f.slug}TscTipo`);
+    llenarTiposDespeje(tsel, document.getElementById('ccArbolTscTipo').value ? 'Igual que el valor por defecto' : '— elegir —');
+    // un tiempo sin tipo (archivos anteriores) se muestra como "Otro" con sus segundos
+    tsel.value = despejeTipoPorTablero[f.nombre] || (despejePorTablero[f.nombre] > 0 ? 'otro' : '');
+    if (tsel.value === 'otro') { tin.style.display = 'block'; if (despejePorTablero[f.nombre] > 0) tin.value = despejePorTablero[f.nombre]; }
+    tsel.addEventListener('change', () => {
+      const id = tsel.value, t = tipoDespeje(id);
+      if (!id) { delete despejePorTablero[f.nombre]; delete despejeTipoPorTablero[f.nombre]; tin.value = ''; tin.style.display = 'none'; }
+      else if (id === 'otro') { despejeTipoPorTablero[f.nombre] = 'otro'; tin.style.display = 'block'; if (!(parseFloat(tin.value) > 0)) delete despejePorTablero[f.nombre]; tin.focus(); }
+      else { despejePorTablero[f.nombre] = t.s; despejeTipoPorTablero[f.nombre] = id; tin.value = t.s; tin.style.display = 'none'; }
+      guardarInstalacion(); aplicarDatosInstalacion();
+    });
     tin.addEventListener('change', () => {
       const v = parseFloat(tin.value);
       if (v > 0) despejePorTablero[f.nombre] = v; else delete despejePorTablero[f.nombre];
@@ -2781,6 +2801,26 @@ document.getElementById('ccArbolEnabled').addEventListener('change', (e) => {
 });
 ['ccArbolKva','ccArbolZ','ccArbolVoltage','ccArbolZsource','ccArbolPrim'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => { renderCortocircuitoArbol(); guardarInstalacion(); aplicarDatosInstalacion(); });
+});
+function llenarTiposDespeje(sel, primera) {
+  sel.innerHTML = `<option value="">${primera}</option>` + TIPOS_DESPEJE.map(t => `<option value="${t.id}">${escXml(textoOpcionDespeje(t))}</option>`).join('');
+}
+// Refleja en pantalla el tipo del tiempo general: la lista, y los segundos solo si es "Otro"
+function mostrarDespejeGeneral() {
+  const sel = document.getElementById('ccArbolTscTipo'), inp = document.getElementById('ccArbolTsc');
+  sel.value = despejeTipoGeneral;
+  inp.style.display = despejeTipoGeneral === 'otro' ? 'block' : 'none';
+  // la primera opcion de cada tablero depende de si ya hay un valor por defecto
+  document.querySelectorAll('#ccArbolResultado select[id$="TscTipo"]').forEach(s => { s.options[0].textContent = despejeTipoGeneral ? 'Igual que el valor por defecto' : '— elegir —'; });
+}
+llenarTiposDespeje(document.getElementById('ccArbolTscTipo'), '— elegir el tipo de protección —');
+document.getElementById('ccArbolTscTipo').addEventListener('change', (e) => {
+  despejeTipoGeneral = e.target.value;
+  const t = tipoDespeje(despejeTipoGeneral), inp = document.getElementById('ccArbolTsc');
+  if (t && t.s) inp.value = t.s; else if (!despejeTipoGeneral) inp.value = '';
+  mostrarDespejeGeneral();
+  if (despejeTipoGeneral === 'otro') inp.focus();
+  guardarInstalacion(); aplicarDatosInstalacion();
 });
 document.getElementById('ccArbolTsc').addEventListener('input', () => { guardarInstalacion(); aplicarDatosInstalacion(); });
 document.getElementById('instElEnabled').addEventListener('change', (e) => {
@@ -3162,7 +3202,7 @@ function anexoInstalacionHtml() {
   const ctx = contextoInstalacion();
   const a = datosAnexoInstalacion({
     trafo: { kva: num('ccArbolKva'), zPct: num('ccArbolZ'), voltage: num('ccArbolVoltage'), primario: num('ccArbolPrim'), zSourcePu: num('ccArbolZsource') },
-    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, tPorTablero: despejePorTablero, el0: ctx.el0,
+    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, tPorTablero: despejePorTablero, tTipoPorTablero: despejeTipoPorTablero, tTipoGeneral: despejeTipoGeneral, el0: ctx.el0,
   });
   const falta = t => `<span class="badge warn">No declarado</span> ${escXml(t)}`;
   const fila = (k, v) => `<tr><th style="text-align:left;width:38%">${k}</th><td>${v}</td></tr>`;
@@ -3186,9 +3226,9 @@ function anexoInstalacionHtml() {
         <td>${fmt(x.iccKA, 2)} kA</td>
         <td>${x.icuKA === null ? '—' : fmt(x.icuKA, 0) + ' kA'}</td>
         <td><span class="badge ${bg[x.estado]}">${x.estado}</span></td>
-        <td>${x.tDespejeS === null ? '<span class="badge warn">No declarado</span>' : `${fmt(x.tDespejeS, 3)} s${x.tDespejeOrigen === 'general' ? ' <span class="hint">(por defecto)</span>' : ''}`}</td>
+        <td>${x.tDespejeS === null ? '<span class="badge warn">No declarado</span>' : `${fmt(x.tDespejeS, 3)} s${x.tDespejeTipo || x.tDespejeOrigen === 'general' ? ` <span class="hint">(${[x.tDespejeTipo, x.tDespejeOrigen === 'general' ? 'por defecto' : null].filter(Boolean).join(', ')})</span>` : ''}`}</td>
       </tr>`).join('')}</tbody></table>
-      <p class="hint">La falla de cada tablero parte de la de bornes y se reduce con la impedancia de los alimentadores (Tabla 9, Capítulo 10) hasta ese tablero; la sangría indica el nivel en la cascada. La capacidad interruptiva y el tiempo de despeje (de la curva tiempo-corriente de los interruptores de cada tablero) los declara el proyectista según el equipo especificado.</p>`
+      <p class="hint">La falla de cada tablero parte de la de bornes y se reduce con la impedancia de los alimentadores (Tabla 9, Capítulo 10) hasta ese tablero; la sangría indica el nivel en la cascada. La capacidad interruptiva y el tiempo de despeje (de la curva tiempo-corriente de los interruptores de cada tablero) los declara el proyectista según el equipo especificado. Cuando el tiempo corresponde a un tipo de protección, es un valor típico que debe confirmarse con la curva del fabricante.</p>`
     : `<p>${falta('La falla por tablero necesita los datos del transformador y circuitos con tablero en la memoria.')}</p>`;
 
   const e = a.electrodo;

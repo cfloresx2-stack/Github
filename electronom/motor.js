@@ -2065,7 +2065,7 @@ function estadoRespaldo({ circuitos, ultimaDescarga, ultimoCambio, ahora }) {
    falla disponible y capacidad interruptiva declarada por tablero, tiempo de
    despeje y electrodo. Pura: recibe lo ya calculado y devuelve datos, sin DOM.
    ========================================================================= */
-function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, el0 }) {
+function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, tTipoPorTablero, tTipoGeneral, el0 }) {
   const t = trafo || {};
   const hayTrafo = t.kva > 0 && t.zPct > 0 && t.voltage > 0;
   let transformador = null;
@@ -2085,7 +2085,7 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, el0 }) {
       const icuKA = declarada > 0 ? declarada : null;
       const propio = (tPorTablero || {})[nombre] > 0;
       const tDespejeS = tiempoDespejeDeTablero({ tablero: nombre, porTablero: tPorTablero, general: tSeg }) || null;
-      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, tDespejeS, tDespejeOrigen: tDespejeS === null ? null : (propio ? 'propio' : 'general'), estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
+      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, tDespejeS, tDespejeOrigen: tDespejeS === null ? null : (propio ? 'propio' : 'general'), tDespejeTipo: tDespejeS === null ? null : ((tipoDespeje(propio ? (tTipoPorTablero || {})[nombre] : tTipoGeneral) || {}).corta || null), estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
     }) : [];
 
   let electrodo = null;
@@ -2168,3 +2168,25 @@ function nombreArchivoMemoria(proyecto) {
   const limpio = String(proyecto || '').replace(/[\\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120).trim();
   return `Memoria de cálculo - ${limpio || 'Proyecto sin nombre'}`;
 }
+
+/* =========================================================================
+   TIPOS DE PROTECCION PARA EL TIEMPO DE DESPEJE
+   -------------------------------------------------------------------------
+   Para que el usuario no tenga que leer una curva tiempo-corriente: elige el
+   tipo de proteccion y se usa un valor TIPICO (no normativo, de practica
+   comun). Quien tenga la curva exacta del fabricante elige "Otro" y captura el
+   tiempo. La memoria indica el tipo elegido para que se confirme con el equipo
+   que finalmente se especifique.
+   ========================================================================= */
+const TIPOS_DESPEJE = [
+  { id: 'moldeada', etiqueta: 'Interruptor termomagnético de caja moldeada (abre instantáneo)', corta: 'caja moldeada, instantáneo', s: 0.02 },
+  { id: 'fusible', etiqueta: 'Fusible limitador de corriente', corta: 'fusible limitador', s: 0.01 },
+  { id: 'ret1', etiqueta: 'Interruptor electrónico con retardo corto', corta: 'electrónico, retardo corto', s: 0.1 },
+  { id: 'ret2', etiqueta: 'Interruptor electrónico con retardo corto', corta: 'electrónico, retardo corto', s: 0.2 },
+  { id: 'ret3', etiqueta: 'Interruptor electrónico con retardo corto', corta: 'electrónico, retardo corto', s: 0.3 },
+  { id: 'ret4', etiqueta: 'Interruptor electrónico con retardo corto', corta: 'electrónico, retardo corto', s: 0.4 },
+  { id: 'otro', etiqueta: 'Otro: capturar el tiempo de la curva del fabricante', corta: null, s: null },
+];
+function tipoDespeje(id) { return TIPOS_DESPEJE.find(t => t.id === id) || null; }
+// Texto de la lista desplegable: "Fusible limitador de corriente — 0.01 s"
+function textoOpcionDespeje(t) { return t.s ? `${t.etiqueta} — ${t.s} s` : t.etiqueta; }
