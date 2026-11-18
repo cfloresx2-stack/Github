@@ -423,7 +423,11 @@
       </div>
 
       <div id="motorPanel">
-        <label style="margin-top:0">Dispositivo de protección del circuito derivado del motor</label>
+        <label style="margin-top:0">Potencia del motor <span class="hint">(hp; con la tensión y las fases del circuito se toma la corriente a plena carga de la tabla de la NOM)</span></label>
+        <select id="motorHp"></select>
+        <p class="hint" id="motorFlcInfo" style="margin-top:6px"></p>
+
+        <label style="margin-top:14px">Dispositivo de protección del circuito derivado del motor</label>
         <select id="motorDevice">
           <option value="300">Fusible sin retardo de tiempo &mdash; 300% FLC</option>
           <option value="175">Fusible de dos elementos (retardo) &mdash; 175% FLC</option>
@@ -1086,7 +1090,7 @@ function capturarFormSnapshot() {
   return {
     projName: val('projName'), boardName: val('boardName'), circName: val('circName'),
     circPos: val('circPos'), circuitKind: val('circuitKind'), tableroDestino: val('tableroDestino'),
-    isMotor: chk('isMotor'), motorDevice: val('motorDevice'), motorFla: val('motorFla'), motorFs115: chk('motorFs115'),
+    isMotor: chk('isMotor'), motorHp: val('motorHp'), motorDevice: val('motorDevice'), motorFla: val('motorFla'), motorFs115: chk('motorFs115'),
     isAC: chk('isAC'), acModo: val('acModo'), acMca: val('acMca'), acMocp: val('acMocp'), acRlaPlaca: val('acRlaPlaca'), acRla: val('acRla'), acSel: val('acSel'),
     voltage: val('voltage'), phaseType: val('phaseType'), systemType: val('systemType'), demandFactor: val('demandFactor'),
     loads: getLoads().map(l => ({ name: l.name, watts: l.watts, fp: l.fp, cont: l.cont })),
@@ -1133,6 +1137,7 @@ function restaurarFormSnapshot(s) {
   setVal('length', s.length); setVal('conduitType', s.conduitType);
 
   setChk('isMotor', s.isMotor); setVal('motorDevice', s.motorDevice);
+  llenarHpMotor(); setVal('motorHp', s.motorHp ?? '');
   setVal('motorFla', s.motorFla ?? ''); setChk('motorFs115', !!s.motorFs115);
   setChk('isAC', !!s.isAC); setVal('acModo', s.acModo || 'placa'); setVal('acMca', s.acMca ?? ''); setVal('acMocp', s.acMocp ?? '');
   setVal('acRlaPlaca', s.acRlaPlaca ?? ''); setVal('acRla', s.acRla ?? ''); setVal('acSel', s.acSel ?? '');
@@ -1367,7 +1372,7 @@ function actualizarPanelesMotorAC() {
   document.getElementById('acPlacaWrap').style.display = placa ? 'block' : 'none';
   document.getElementById('acCompWrap').style.display = placa ? 'none' : 'block';
   document.getElementById('loadListHint').textContent = motor
-    ? '(modo motor: agrega UNA fila con la potencia (W) y FP del motor — se usará como corriente a plena carga, FLC)'
+    ? '(modo motor: elige la potencia (hp) arriba y la lista se llena sola con la corriente de la tabla de la NOM; o agrega UNA fila con la potencia (W) y FP del motor)'
     : ac
       ? '(equipo de aire acondicionado: agrega UNA fila con su potencia (W) y FP; sirve para la caída de tensión y el cuadro de cargas — el conductor y el interruptor salen de los datos de placa)'
       : '(todo lo que agregues aquí, incluido lo que sumes desde los ayudantes de abajo, se suma en ESTE circuito)';
@@ -1381,6 +1386,40 @@ document.getElementById('isAC').addEventListener('change', (e) => {
   actualizarPanelesMotorAC();
 });
 document.getElementById('acModo').addEventListener('change', actualizarPanelesMotorAC);
+
+/* ---- Motor por potencia (hp): la corriente sale de la Tabla 430-248 o 430-250 ---- */
+const FP_MOTOR_POR_DEFECTO = 0.9;
+function fasesDelCircuito() { return document.getElementById('phaseType').value === 'tri' ? 3 : 1; }
+function llenarHpMotor() {
+  const sel = document.getElementById('motorHp');
+  const actual = sel.value;
+  const lista = fasesDelCircuito() === 3 ? HP_TRIFASICO : HP_MONOFASICO;
+  sel.innerHTML = '<option value="">— elegir la potencia —</option>' + lista.map(hp => `<option value="${hp}">${etiquetaHp(hp)} hp</option>`).join('');
+  if ([...sel.options].some(o => o.value === actual)) sel.value = actual;
+}
+// Si hay una potencia elegida, llena la lista de cargas con UNA fila cuya corriente es la de la tabla.
+// Devuelve null (no aplica), { error } o { flc, tabla, columna, hp, fases }.
+function aplicarMotorHp() {
+  const info = document.getElementById('motorFlcInfo');
+  const hpTxt = document.getElementById('motorHp').value;
+  if (!document.getElementById('isMotor').checked || !hpTxt) { info.innerHTML = ''; return null; }
+  const hp = parseFloat(hpTxt), fases = fasesDelCircuito(), voltage = parseFloat(document.getElementById('voltage').value);
+  const r = flcMotorTabla({ hp, fases, voltage });
+  if (r.error) { info.innerHTML = `<span style="color:var(--warn)"><b>${escXml(r.error)}</b> Elige otra potencia o captura la lista de cargas a mano.</span>`; return { error: r.error }; }
+  const sys = systemMeta(document.getElementById('systemType').value);
+  const va = r.flc * sys.vDenom * voltage;
+  const fila = document.querySelector('#loadsBody tr');
+  const fp = fila ? (parseFloat(fila.querySelector('.ld-fp').value) || FP_MOTOR_POR_DEFECTO) : FP_MOTOR_POR_DEFECTO;
+  const nombreActual = fila ? fila.querySelector('.ld-name').value.trim() : '';
+  const nombre = nombreActual && !/^(Carga \d+|Motor [\d½¾¼/. ]+ hp)$/.test(nombreActual) ? nombreActual : `Motor ${etiquetaHp(hp)} hp`;
+  document.getElementById('loadsBody').innerHTML = '';
+  addLoadRow(nombre, Math.round(va * fp * 100) / 100, fp, false);
+  updateLoadTotals();
+  info.innerHTML = `Tabla ${r.tabla}: <b>${etiquetaHp(hp)} hp</b> a ${r.columna} V ${fases === 3 ? 'trifásico' : 'monofásico'} → corriente a plena carga <b>${fmt(r.flc, 2)} A</b> (Art. 430-6(a)(1)). La lista de cargas se llenó con ese valor; el conductor y el interruptor usan esta corriente. Puedes ajustar el FP de la fila.`;
+  return { ...r, hp, fases };
+}
+['voltage', 'phaseType', 'systemType', 'isMotor', 'motorHp'].forEach(id => document.getElementById(id).addEventListener('change', () => { llenarHpMotor(); aplicarMotorHp(); }));
+llenarHpMotor();
 
 
 
@@ -1415,7 +1454,7 @@ let editingId = null; // id del circuito de la memoria que se esta editando (nul
 
 function render(data) {
   const el = document.getElementById('resultsWrap');
-  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor, sobrecarga, ac } = data;
+  const { header, input, calibreIni, calibreFinal, vd, breaker, tierra, tuberia, cc, vt, el0, motor, motorTabla, sobrecarga, ac } = data;
 
   const vdBadge = vd.dropPct <= 3
     ? `<span class="badge ok">OK &le; 3% (${input.circuitCite})</span>`
@@ -1439,7 +1478,7 @@ function render(data) {
       <div class="memoria">
         ${input.demandFactor < 1 ? `Carga instalada: <b>${fmt(input.totalVA,0)} VA</b> &times; factor de demanda ${fmt(input.demandFactor,2)} = carga de demanda <b>${fmt(input.totalVAdemanda,0)} VA</b> (criterio simplificado, ver Art. 220 para tablas de demanda por tipo de carga).<br>` : ""}
         ${motor
-          ? `Corriente a plena carga (FLC) estimada de la lista de cargas: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
+          ? `Corriente a plena carga (FLC) ${motorTabla ? `de la <b>Tabla ${motorTabla.tabla}</b> (${etiquetaHp(motorTabla.hp)} hp, ${motorTabla.columna} V, ${motorTabla.fases === 3 ? 'trifásico' : 'monofásico'}; Art. 430-6(a)(1))` : 'estimada de la lista de cargas'}: <b>${fmt(input.current,2)} A</b>. Ampacidad requerida = 125% &times; FLC = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 430-22).`
           : ac
           ? (ac.modo === 'placa'
               ? `Equipo de aire acondicionado con placa: ampacidad mínima del circuito (MCA) = <b>${fmt(ac.mca,2)} A</b>. Ampacidad requerida = <b>${fmt(input.requiredAmpacity,2)} A</b> (Art. 440-35, 440-4(b)). Corriente de la lista de cargas para caída de tensión: ${fmt(input.current,2)} A.`
@@ -1742,11 +1781,15 @@ document.getElementById('calc').addEventListener('click', () => {
   const chCubierta = document.getElementById('chCubierta').checked;
   const chCapaUnica = document.getElementById('chCapaUnica').checked;
 
+  // Motor por potencia (hp): la corriente a plena carga sale de la tabla de la NOM (Art. 430-6(a)(1))
+  const motorTabla = isMotor ? aplicarMotorHp() : null;
+  if (motorTabla && motorTabla.error) { alert(motorTabla.error + ' Elige otra potencia o captura la lista de cargas a mano.'); return; }
   const totals = updateLoadTotals();
   if (totals.totalVA <= 0) { alert('Agrega al menos una carga con VA mayor a cero.'); return; }
 
   // Corriente total del circuito a partir de la lista de cargas, aplicando factor de demanda
-  const current = totals.totalVAdemanda / (sys.vDenom * voltage);
+  // Motor por potencia (hp): se usa EXACTAMENTE el valor de la tabla (la lista de cargas solo lleva el equivalente en W para el cuadro de cargas)
+  const current = motorTabla ? motorTabla.flc : totals.totalVAdemanda / (sys.vDenom * voltage);
   const currentCont = totals.contVAdemanda / (sys.vDenom * voltage);
   const currentNoCont = totals.noContVAdemanda / (sys.vDenom * voltage);
   const fpVD = totals.weightedFP;
@@ -1910,7 +1953,7 @@ document.getElementById('calc').addEventListener('click', () => {
 
   render({
     header: { proj: projName, board: boardName, circ: circName, destino: tableroDestino || null },
-    motor: isMotor, sobrecarga, ac,
+    motor: isMotor, motorTabla, sobrecarga, ac,
     input: {
       current, requiredAmpacity, requiredAmpacityConductor, requiredAmpacityPorConductor, material, insulTemp, insulType, lugarMojado, ambient, length, fpVD,
       systemKey, systemFases: sys.fases, currentCarrying: sys.currentCarrying, totalConductors: sys.totalConductors,
