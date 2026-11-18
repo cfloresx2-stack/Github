@@ -3262,6 +3262,10 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
 
   document.querySelectorAll('#printArea .hojasUnifilarImpresion .hojaUnifilar').forEach((el, i) => { el.id = 'hoja-unifilar-' + (i + 1); });
 
+  // El PDF se propone con el titulo de la pagina: durante la impresion lleva el nombre del proyecto
+  const tituloOriginal = document.title;
+  document.title = nombreArchivoMemoria(proj);
+  window.addEventListener('afterprint', () => { document.title = tituloOriginal; }, { once: true });
   window.print();
 });
 

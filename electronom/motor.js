@@ -2125,3 +2125,9 @@ function armarIndiceMemoria({ circuitos, hojas }) {
     porTablero,
   };
 }
+
+// Nombre con el que el navegador propone guardar el PDF de la memoria (lo toma del titulo de la pagina al imprimir)
+function nombreArchivoMemoria(proyecto) {
+  const limpio = String(proyecto || '').replace(/[\\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120).trim();
+  return `Memoria de cálculo - ${limpio || 'Proyecto sin nombre'}`;
+}
