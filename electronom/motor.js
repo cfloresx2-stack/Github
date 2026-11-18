@@ -2097,3 +2097,31 @@ function cadenaArranqueMotor({ flcTabla, flaPlaca, fs115 }) {
     },
   };
 }
+
+/* =========================================================================
+   INDICE DE LA MEMORIA IMPRESA
+   -------------------------------------------------------------------------
+   Estructura del indice (pura): secciones fijas, hojas del unifilar y los
+   circuitos agrupados por tablero, con el mismo numero que llevan en el
+   resumen y en su hoja de calculo. Los enlaces se arman en la pantalla.
+   ========================================================================= */
+function armarIndiceMemoria({ circuitos, hojas }) {
+  const porTablero = [];
+  const idx = {};
+  (circuitos || []).forEach((c, i) => {
+    const t = String(c.tablero || '').trim() || '(sin tablero)';
+    if (!idx[t]) { idx[t] = { tablero: t, items: [] }; porTablero.push(idx[t]); }
+    idx[t].items.push({ n: i + 1, id: 'circuito-' + (i + 1), nombre: String(c.circuito || '').trim() || '(sin nombre)' });
+  });
+  const n = (circuitos || []).length;
+  return {
+    secciones: [
+      { id: 'memoria-resumen', titulo: 'Resumen de circuitos', detalle: `${n} circuito${n === 1 ? '' : 's'}` },
+      { id: 'memoria-datos', titulo: 'Datos generales de la instalación', detalle: 'transformador, cortocircuito, tierras' },
+      { id: 'memoria-cuadro', titulo: 'Cuadro de cargas por tablero', detalle: `${porTablero.length} tablero${porTablero.length === 1 ? '' : 's'}` },
+      { id: 'memoria-diagrama', titulo: 'Diagrama unifilar', detalle: 'tableros y alimentadores' },
+    ],
+    hojas: (hojas || []).map((h, i) => ({ id: 'hoja-unifilar-' + (i + 1), etiqueta: `Hoja ${i + 1} · ${h.tablero}` })),
+    porTablero,
+  };
+}
