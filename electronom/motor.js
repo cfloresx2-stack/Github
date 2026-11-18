@@ -1904,9 +1904,18 @@ function agruparCircuitosParaUnifilar(circuitos) {
    conviene resolverlo.
    registro: [{ proj, board, circ, kind ('alimentador'|'derivado'), destino }]
    pendiente: texto si hay un circuito sin agregar a la memoria (o null)
-   instalacion: { kva, zPct, voltage, tDespeje, icu: { tablero: kA }, electrodoValido }
+   instalacion: { kva, zPct, voltage, tDespeje (por defecto), tDespejePorTablero: { tablero: s }, icu: { tablero: kA }, electrodoValido }
    Devuelve [{ clave, texto }] (vacio = todo completo).
    ========================================================================= */
+// Tiempo de despeje (s) que aplica a los circuitos que nacen en un tablero: el interruptor de cada circuito vive
+// en su tablero de origen, asi que se usa el tiempo propio de ese tablero si se declaro y, si no, el general.
+// Devuelve 0 si no hay ninguno.
+function tiempoDespejeDeTablero({ tablero, porTablero, general }) {
+  const propio = (porTablero || {})[tablero];
+  if (propio > 0) return propio;
+  return general > 0 ? general : 0;
+}
+
 function evaluarCompletitud({ registro, pendiente, instalacion }) {
   const f = [];
   const reg = registro || [];
@@ -1937,7 +1946,15 @@ function evaluarCompletitud({ registro, pendiente, instalacion }) {
   const tableros = [...new Set(reg.map(r => r.board).filter(Boolean))];
   const sinIcu = tableros.filter(t => !((ins.icu || {})[t] > 0));
   if (sinIcu.length) f.push({ clave: 'icu', texto: `Capacidad interruptiva sin declarar en ${sinIcu.length} tablero(s): ${lista(sinIcu, 6)}.` });
-  if (!(ins.tDespeje > 0)) f.push({ clave: 'despeje', texto: 'Tiempo de despeje de la falla (de la curva del interruptor).' });
+  const tPor = ins.tDespejePorTablero || {};
+  const efectivo = t => tiempoDespejeDeTablero({ tablero: t, porTablero: tPor, general: ins.tDespeje });
+  const sinDespeje = tableros.filter(t => !(efectivo(t) > 0));
+  if (tableros.length === 0 ? !(ins.tDespeje > 0) : sinDespeje.length > 0) {
+    const ninguno = sinDespeje.length === tableros.length && !(ins.tDespeje > 0) && !tableros.some(t => tPor[t] > 0);
+    f.push({ clave: 'despeje', texto: ninguno || tableros.length === 0
+      ? 'Tiempo de despeje de la falla (de la curva del interruptor): captura uno por defecto o uno por tablero en la tarjeta 7.'
+      : `Tiempo de despeje sin declarar en ${sinDespeje.length} tablero(s): ${lista(sinDespeje, 6)}. Captúralo en la tabla de la tarjeta 7, o declara uno por defecto.` });
+  }
   if (!ins.electrodoValido) f.push({ clave: 'electrodo', texto: 'Electrodo de puesta a tierra: resistividad del terreno, longitud y diámetro de la varilla (o, si no se conoce la resistividad, declarar electrodo complementario sin calcular).' });
   return f;
 }
@@ -2048,7 +2065,7 @@ function estadoRespaldo({ circuitos, ultimaDescarga, ultimoCambio, ahora }) {
    falla disponible y capacidad interruptiva declarada por tablero, tiempo de
    despeje y electrodo. Pura: recibe lo ya calculado y devuelve datos, sin DOM.
    ========================================================================= */
-function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
+function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, el0 }) {
   const t = trafo || {};
   const hayTrafo = t.kva > 0 && t.zPct > 0 && t.voltage > 0;
   let transformador = null;
@@ -2066,7 +2083,9 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
     .map(([nombre, r]) => {
       const declarada = (icu || {})[nombre];
       const icuKA = declarada > 0 ? declarada : null;
-      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
+      const propio = (tPorTablero || {})[nombre] > 0;
+      const tDespejeS = tiempoDespejeDeTablero({ tablero: nombre, porTablero: tPorTablero, general: tSeg }) || null;
+      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, tDespejeS, tDespejeOrigen: tDespejeS === null ? null : (propio ? 'propio' : 'general'), estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
     }) : [];
 
   let electrodo = null;
@@ -2085,10 +2104,12 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
   if (!hayTrafo) faltantes.push('Datos del transformador (kVA, %Z y tensión)');
   const sinIcu = tableros.filter(x => x.estado === 'Sin declarar').map(x => x.nombre);
   if (sinIcu.length) faltantes.push(`Capacidad interruptiva de: ${sinIcu.join(', ')}`);
-  if (!(tSeg > 0)) faltantes.push('Tiempo de despeje de la falla');
+  const sinDespeje = tableros.filter(x => x.tDespejeS === null).map(x => x.nombre);
+  const despejeCompleto = tableros.length > 0 ? sinDespeje.length === 0 : tSeg > 0;
+  if (!despejeCompleto) faltantes.push(sinDespeje.length && sinDespeje.length < tableros.length ? `Tiempo de despeje de: ${sinDespeje.join(', ')}` : 'Tiempo de despeje de la falla');
   if (!el0) faltantes.push('Electrodo de puesta a tierra (resistividad, longitud y diámetro, o electrodo complementario declarado sin calcular)');
 
-  return { transformador, tableros, tDespeje: tSeg > 0 ? tSeg : null, electrodo, faltantes };
+  return { transformador, tableros, tDespeje: tSeg > 0 ? tSeg : null, despejeCompleto, electrodo, faltantes };
 }
 
 /* =========================================================================

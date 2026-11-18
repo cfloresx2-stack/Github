@@ -826,7 +826,7 @@
             <input type="number" id="ccArbolZsource" value="0" step="0.001" min="0">
           </div>
         </div>
-        <label style="margin-top:10px">Tiempo de despeje de la falla <span class="hint">(s, de la curva del interruptor; se usa para verificar el calentamiento del conductor, Art. 110-10)</span></label>
+        <label style="margin-top:10px">Tiempo de despeje por defecto <span class="hint">(s, de la curva del interruptor; se usa para verificar el calentamiento del conductor, Art. 110-10, en los tableros que no tengan el suyo en la tabla de abajo)</span></label>
         <input type="number" id="ccArbolTsc" value="" step="0.01" min="0" placeholder="Ej. 0.02">
         <details open style="margin-top:10px">
           <summary>Electrodo de puesta a tierra de la instalación (Art. 250-53)</summary>
@@ -2567,13 +2567,14 @@ function renderDiagramaUnifilar() {
    cortocircuito o de electrodo (secciones 5 y 6) conserva el suyo.
    ========================================================================= */
 let icuPorTablero = {};
+let despejePorTablero = {};   // tiempo de despeje propio de cada tablero (s); el campo general aplica a los demas
 const INSTALACION_KEY = 'nomica_instalacion_v1';
 
 function capturarInstalacion() {
   const v = id => document.getElementById(id).value;
   return {
     kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
-    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), icu: { ...icuPorTablero },
+    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejePorTablero: { ...despejePorTablero }, icu: { ...icuPorTablero },
     electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked, sinCalculo: document.getElementById('instElSinCalc').checked },
   };
 }
@@ -2587,6 +2588,7 @@ function restaurarInstalacion(t) {
   set('ccArbolKva', t.kva); set('ccArbolZ', t.zPct); set('ccArbolVoltage', t.voltage); set('ccArbolPrim', t.primario);
   set('ccArbolZsource', t.zSourcePu); set('ccArbolTsc', t.tDespeje);
   icuPorTablero = { ...(t.icu || {}) };
+  despejePorTablero = { ...(t.tDespejePorTablero || {}) };
   const chk = document.getElementById('ccArbolEnabled');
   chk.checked = true;   // la verificacion de cortocircuito de toda la instalacion ya no es opcional
   const e = t.electrodo || {};
@@ -2651,7 +2653,7 @@ function hallazgosConInstalacionDeCircuito(hallazgos, c, ctx = contextoInstalaci
     hallazgos,
     circuito: { awg: c.awg, nParalelo: c.nParalelo, lengthM: c.lengthM, material: c.material, insulTemp: c.insulTemp },
     nodo: casc ? casc.resultados[c.board] : null, iBase: casc && casc.iBase, zBase: casc && casc.zBase,
-    icuKa: icuPorTablero[c.board] || 0, tSeg, electrodo: el0, conCc: c.conCc, conEl: c.conEl,
+    icuKa: icuPorTablero[c.board] || 0, tSeg: tiempoDespejeDeTablero({ tablero: c.board, porTablero: despejePorTablero, general: tSeg }), electrodo: el0, conCc: c.conCc, conEl: c.conEl,
   });
 }
 
@@ -2725,13 +2727,14 @@ function renderCortocircuitoArbol() {
 
   wrap.innerHTML = `
     <table class="printTable">
-      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th></tr></thead>
+      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th><th>Tiempo de despeje (s)</th></tr></thead>
       <tbody>${filas.map(f => `
         <tr>
           <td>${f.nombre}</td>
           <td>${fmt(f.iccKA, 2)} kA</td>
           <td><select id="${f.slug}Icu"></select></td>
           <td id="${f.slug}Badge"></td>
+          <td><input type="number" id="${f.slug}Tsc" step="0.01" min="0" style="width:90px" placeholder="${parseFloat(document.getElementById('ccArbolTsc').value) > 0 ? 'por defecto' : 'Ej. 0.02'}" title="Tiempo de despeje de los interruptores de este tablero (curva tiempo-corriente)"></td>
         </tr>`).join('')}</tbody>
     </table>`;
 
@@ -2755,6 +2758,13 @@ function renderCortocircuitoArbol() {
           ? `<span class="badge ok">Cumple Art. 110-9</span>`
           : `<span class="badge warn">NO CUMPLE · mín. ${minimo ?? '>200'} kA</span>`;
     }
+    const tin = document.getElementById(`${f.slug}Tsc`);
+    if (despejePorTablero[f.nombre] > 0) tin.value = despejePorTablero[f.nombre];
+    tin.addEventListener('change', () => {
+      const v = parseFloat(tin.value);
+      if (v > 0) despejePorTablero[f.nombre] = v; else delete despejePorTablero[f.nombre];
+      guardarInstalacion(); aplicarDatosInstalacion();
+    });
     // La capacidad interruptiva NO se sugiere sola: la declara el usuario (si no, siempre "cumpliria")
     sel.addEventListener('change', () => {
       if (sel.value) icuPorTablero[f.nombre] = parseFloat(sel.value); else delete icuPorTablero[f.nombre];
@@ -3152,7 +3162,7 @@ function anexoInstalacionHtml() {
   const ctx = contextoInstalacion();
   const a = datosAnexoInstalacion({
     trafo: { kva: num('ccArbolKva'), zPct: num('ccArbolZ'), voltage: num('ccArbolVoltage'), primario: num('ccArbolPrim'), zSourcePu: num('ccArbolZsource') },
-    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, el0: ctx.el0,
+    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, tPorTablero: despejePorTablero, el0: ctx.el0,
   });
   const falta = t => `<span class="badge warn">No declarado</span> ${escXml(t)}`;
   const fila = (k, v) => `<tr><th style="text-align:left;width:38%">${k}</th><td>${v}</td></tr>`;
@@ -3170,19 +3180,20 @@ function anexoInstalacionHtml() {
     </tbody></table>` : `<p>${falta('Capture kVA, %Z y tensión del secundario del transformador.')}</p>`;
 
   const tablerosHtml = a.tableros.length ? `<table class="printTable">
-      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación (Art. 110-9)</th></tr></thead>
+      <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación (Art. 110-9)</th><th>Tiempo de despeje</th></tr></thead>
       <tbody>${a.tableros.map(x => `<tr>
         <td>${'&nbsp;&nbsp;'.repeat(x.profundidad)}${escXml(x.nombre)}</td>
         <td>${fmt(x.iccKA, 2)} kA</td>
         <td>${x.icuKA === null ? '—' : fmt(x.icuKA, 0) + ' kA'}</td>
         <td><span class="badge ${bg[x.estado]}">${x.estado}</span></td>
+        <td>${x.tDespejeS === null ? '<span class="badge warn">No declarado</span>' : `${fmt(x.tDespejeS, 3)} s${x.tDespejeOrigen === 'general' ? ' <span class="hint">(por defecto)</span>' : ''}`}</td>
       </tr>`).join('')}</tbody></table>
-      <p class="hint">La falla de cada tablero parte de la de bornes y se reduce con la impedancia de los alimentadores (Tabla 9, Capítulo 10) hasta ese tablero; la sangría indica el nivel en la cascada. La capacidad interruptiva la declara el proyectista según el interruptor especificado.</p>`
+      <p class="hint">La falla de cada tablero parte de la de bornes y se reduce con la impedancia de los alimentadores (Tabla 9, Capítulo 10) hasta ese tablero; la sangría indica el nivel en la cascada. La capacidad interruptiva y el tiempo de despeje (de la curva tiempo-corriente de los interruptores de cada tablero) los declara el proyectista según el equipo especificado.</p>`
     : `<p>${falta('La falla por tablero necesita los datos del transformador y circuitos con tablero en la memoria.')}</p>`;
 
   const e = a.electrodo;
   const tierraHtml = `<table class="printTable"><tbody>
-      ${fila('Tiempo de despeje de la falla (Art. 110-10)', a.tDespeje ? `${fmt(a.tDespeje, 3)} s <span class="hint">(de la curva tiempo-corriente del dispositivo de protección)</span>` : falta('Capture el tiempo de despeje.'))}
+      ${fila('Tiempo de despeje de la falla (Art. 110-10)', a.tDespeje ? `${fmt(a.tDespeje, 3)} s por defecto <span class="hint">(de la curva tiempo-corriente del dispositivo de protección; los tableros con tiempo propio lo indican en la tabla de arriba)</span>` : (a.despejeCompleto ? 'Declarado por tablero <span class="hint">(ver la tabla de capacidad interruptiva)</span>' : falta('Capture el tiempo de despeje por tablero o uno por defecto.')))}
       ${e ? `
       ${fila('Electrodo de puesta a tierra', `Varilla vertical de ${fmt(e.largoM, 2)} m × ${fmt(e.diamMm, 1)} mm${e.complementario ? ' + electrodo complementario' : ''}`)}
       ${e.sinCalculo ? fila('Resistividad y resistencia', '<span class="hint">No se calculan: se declara electrodo complementario (no se conoce la resistividad del terreno)</span>') : `${fila('Resistividad del terreno', `${fmt(e.rho, 1)} Ω·m`)}
@@ -3487,7 +3498,7 @@ function faltantesCaptura() {
       kva: parseFloat(document.getElementById('ccArbolKva').value) || 0,
       zPct: parseFloat(document.getElementById('ccArbolZ').value) || 0,
       voltage: parseFloat(document.getElementById('ccArbolVoltage').value) || 0,
-      tDespeje: parseFloat(document.getElementById('ccArbolTsc').value) || 0,
+      tDespeje: parseFloat(document.getElementById('ccArbolTsc').value) || 0, tDespejePorTablero: despejePorTablero,
       icu: icuPorTablero, electrodoValido: !!electrodoInstalacion(),
     },
   });
