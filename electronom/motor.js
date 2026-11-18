@@ -2065,7 +2065,7 @@ function estadoRespaldo({ circuitos, ultimaDescarga, ultimoCambio, ahora }) {
    falla disponible y capacidad interruptiva declarada por tablero, tiempo de
    despeje y electrodo. Pura: recibe lo ya calculado y devuelve datos, sin DOM.
    ========================================================================= */
-function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, tTipoPorTablero, tTipoGeneral, el0 }) {
+function datosAnexoInstalacion({ trafo, casc, icu, icuEspecificado, tSeg, tPorTablero, tTipoPorTablero, tTipoGeneral, el0 }) {
   const t = trafo || {};
   const hayTrafo = t.kva > 0 && t.zPct > 0 && t.voltage > 0;
   let transformador = null;
@@ -2083,9 +2083,10 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, tPorTablero, tTipoPorTa
     .map(([nombre, r]) => {
       const declarada = (icu || {})[nombre];
       const icuKA = declarada > 0 ? declarada : null;
+      const icuEsp = icuKA !== null && !!(icuEspecificado || {})[nombre];
       const propio = (tPorTablero || {})[nombre] > 0;
       const tDespejeS = tiempoDespejeDeTablero({ tablero: nombre, porTablero: tPorTablero, general: tSeg }) || null;
-      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, tDespejeS, tDespejeOrigen: tDespejeS === null ? null : (propio ? 'propio' : 'general'), tDespejeTipo: tDespejeS === null ? null : ((tipoDespeje(propio ? (tTipoPorTablero || {})[nombre] : tTipoGeneral) || {}).corta || null), estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
+      return { nombre, profundidad: r.profundidad, iccKA: r.iccKA, icuKA, icuEspecificado: icuEsp, tDespejeS, tDespejeOrigen: tDespejeS === null ? null : (propio ? 'propio' : 'general'), tDespejeTipo: tDespejeS === null ? null : ((tipoDespeje(propio ? (tTipoPorTablero || {})[nombre] : tTipoGeneral) || {}).corta || null), estado: icuKA === null ? 'Sin declarar' : (icuKA >= r.iccKA ? 'Cumple' : 'No cumple') };
     }) : [];
 
   let electrodo = null;
@@ -2190,3 +2191,20 @@ const TIPOS_DESPEJE = [
 function tipoDespeje(id) { return TIPOS_DESPEJE.find(t => t.id === id) || null; }
 // Texto de la lista desplegable: "Fusible limitador de corriente — 0.01 s"
 function textoOpcionDespeje(t) { return t.s ? `${t.etiqueta} — ${t.s} s` : t.etiqueta; }
+
+/* =========================================================================
+   CAPTURA FACIL DE LOS DATOS DE LA INSTALACION
+   -------------------------------------------------------------------------
+   Valores comunes que se sugieren al capturar el transformador (el usuario
+   puede escribir otro) y capacidad interruptiva minima que debe especificarse
+   en un tablero a partir de su falla disponible.
+   ========================================================================= */
+const KVA_TRANSFORMADOR_COMUNES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+const TENSIONES_PRIMARIO_KV = [13.2, 13.8, 23, 34.5];
+const TENSIONES_SECUNDARIO_V = [220, 440, 480];
+
+// Capacidad interruptiva normalizada mas chica que cubre la falla disponible (kA); null si la falla excede la mayor
+function icuMinimoRequerido(iccKA) {
+  const x = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= iccKA);
+  return x === undefined ? null : x;
+}
