@@ -1433,6 +1433,32 @@ grupo("Tiempo de despeje por tablero", () => {
   esCierto(datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, tPorTablero: { TG: 0.3, TA: 0.1 }, el0 }).despejeCompleto, "Un tiempo propio en cada tablero completa el despeje sin general");
 });
 
+grupo("Tiempo de despeje — tipos de protección", () => {
+  const ids = TIPOS_DESPEJE.map(t => t.id);
+  esIgual(new Set(ids).size, ids.length, "Cada tipo tiene un identificador único");
+  esIgual(tipoDespeje("moldeada").s, 0.02, "Caja moldeada termomagnética: 0.02 s (un ciclo)");
+  esIgual(tipoDespeje("fusible").s, 0.01, "Fusible limitador: 0.01 s");
+  esIgual(TIPOS_DESPEJE.filter(t => t.id.startsWith("ret")).map(t => t.s).join(), "0.1,0.2,0.3,0.4", "Electrónico con retardo corto: 0.1 a 0.4 s");
+  esIgual(tipoDespeje("otro").s, null, "«Otro» no trae valor: se captura");
+  esIgual(tipoDespeje("no-existe"), null, "Un tipo desconocido no truena");
+  esCierto(TIPOS_DESPEJE.filter(t => t.s).every(t => t.s > 0 && t.corta), "Todo tipo con valor lleva su nombre corto para la memoria");
+  esIgual(textoOpcionDespeje(tipoDespeje("fusible")), "Fusible limitador de corriente — 0.01 s", "El texto de la lista incluye los segundos");
+  esIgual(textoOpcionDespeje(tipoDespeje("otro")), "Otro: capturar el tiempo de la curva del fabricante", "«Otro» no muestra segundos");
+
+  // memoria impresa: el tipo elegido viaja a cada tablero
+  const trafo = { kva: 300, zPct: 5, voltage: 220, primario: 0, zSourcePu: 0 };
+  const casc = calcularCortocircuitoArbol([{ nombre: "TG", hijos: [{ nombre: "TA", hijos: [] }] }], [{ destino: "TA", awg: "1/0", lengthM: 40, nParalelo: 1 }], trafo);
+  const el0 = calcularElectrodo({ rho: 30, largoM: 2.44, diamMm: 16, complementario: false });
+  const a = datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0.02, tPorTablero: { TG: 0.3 }, tTipoPorTablero: { TG: "ret3" }, tTipoGeneral: "moldeada", el0 });
+  const fila = n => a.tableros.find(x => x.nombre === n);
+  esIgual(fila("TG").tDespejeTipo, "electrónico, retardo corto", "TG: el tipo propio");
+  esIgual(fila("TA").tDespejeTipo, "caja moldeada, instantáneo", "TA: el tipo del valor por defecto");
+  const b = datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0.05, tPorTablero: { TG: 0.07 }, tTipoPorTablero: { TG: "otro" }, tTipoGeneral: "otro", el0 });
+  esIgual(b.tableros.find(x => x.nombre === "TG").tDespejeTipo, null, "Un tiempo capturado a mano («Otro») no lleva tipo");
+  const c = datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0.02, tPorTablero: {}, el0 });
+  esIgual(c.tableros[0].tDespejeTipo, null, "Archivos anteriores (sin tipo): no se inventa uno");
+});
+
 grupo("Electrodo complementario declarado, sin resistividad", () => {
   const el = electrodoComplementarioDeclarado({ largoM: 2.44, diamMm: 16 });
   esCierto(el.sinCalculo && el.R === null && el.rho === null && el.complementario && el.resuelto, "Sin resistividad: no hay resistencia calculada y el electrodo queda resuelto");
