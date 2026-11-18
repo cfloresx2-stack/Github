@@ -1391,6 +1391,48 @@ grupo("Memoria — datos generales de la instalación", () => {
   esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
 });
 
+grupo("Tiempo de despeje por tablero", () => {
+  // --- cuál tiempo aplica
+  esIgual(tiempoDespejeDeTablero({ tablero: "TG", porTablero: { TG: 0.3 }, general: 0.02 }), 0.3, "El tiempo propio del tablero gana");
+  esIgual(tiempoDespejeDeTablero({ tablero: "TA", porTablero: { TG: 0.3 }, general: 0.02 }), 0.02, "Sin tiempo propio se usa el general");
+  esIgual(tiempoDespejeDeTablero({ tablero: "TA", porTablero: { TG: 0.3 }, general: 0 }), 0, "Sin ninguno: 0 (no se puede verificar)");
+  esIgual(tiempoDespejeDeTablero({ tablero: "TA", porTablero: undefined, general: undefined }), 0, "Sin datos no truena");
+  esIgual(tiempoDespejeDeTablero({ tablero: "TG", porTablero: { TG: 0 }, general: 0.05 }), 0.05, "Un tiempo propio en 0 equivale a no declarado");
+
+  // --- el tiempo cambia el resultado térmico (es el motivo de declararlo por tablero)
+  const rapido = calcularVerificacionTermica({ iccA: 10000, tSeg: 0.02, insulTemp: 90, material: "cu", nParalelo: 1 });
+  const lento = calcularVerificacionTermica({ iccA: 10000, tSeg: 0.3, insulTemp: 90, material: "cu", nParalelo: 1 });
+  esCierto(lento.areaMinMm2 > rapido.areaMinMm2 * 3, "Con 0.3 s el conductor necesita casi 4 veces más sección que con 0.02 s (√t)");
+
+  // --- compuerta de captura
+  const reg = [{ id: 1, proj: "P", board: "TG", circ: "F1", kind: "alimentador", destino: "TA" }, { id: 2, proj: "P", board: "TA", circ: "C1", kind: "derivado", destino: "" }];
+  const base = { kva: 300, zPct: 5, voltage: 220, icu: { TG: 25, TA: 14 }, electrodoValido: true };
+  const claves = i => evaluarCompletitud({ registro: reg, pendiente: null, instalacion: i }).map(x => x.clave);
+  esIgual(claves({ ...base, tDespeje: 0.05 }).length, 0, "Un tiempo general cubre todos los tableros");
+  esIgual(claves({ ...base, tDespeje: 0, tDespejePorTablero: { TG: 0.1, TA: 0.02 } }).length, 0, "Un tiempo propio en cada tablero también basta");
+  const parcial = evaluarCompletitud({ registro: reg, pendiente: null, instalacion: { ...base, tDespeje: 0, tDespejePorTablero: { TG: 0.1 } } }).find(x => x.clave === "despeje");
+  esCierto(parcial && parcial.texto.includes("TA") && !parcial.texto.includes("TG"), "Si falta alguno, dice cuál tablero no tiene tiempo");
+  const ninguno = evaluarCompletitud({ registro: reg, pendiente: null, instalacion: { ...base, tDespeje: 0 } }).find(x => x.clave === "despeje");
+  esCierto(ninguno && ninguno.texto.includes("por defecto"), "Sin ninguno, explica que puede ser uno por defecto o uno por tablero");
+  esCierto(claves({ ...base, tDespeje: 0.05, tDespejePorTablero: { TG: 0.2 } }).indexOf("despeje") < 0, "El general más uno propio: nada falta");
+
+  // --- memoria impresa
+  const trafo = { kva: 300, zPct: 5, voltage: 220, primario: 0, zSourcePu: 0 };
+  const casc = calcularCortocircuitoArbol([{ nombre: "TG", hijos: [{ nombre: "TA", hijos: [] }] }], [{ destino: "TA", awg: "1/0", lengthM: 40, nParalelo: 1 }], trafo);
+  const el0 = calcularElectrodo({ rho: 30, largoM: 2.44, diamMm: 16, complementario: false });
+  const a = datosAnexoInstalacion({ trafo, casc, icu: { TG: 25, TA: 10 }, tSeg: 0.02, tPorTablero: { TG: 0.3 }, el0 });
+  const fila = n => a.tableros.find(x => x.nombre === n);
+  esIgual(fila("TG").tDespejeS, 0.3, "El anexo trae el tiempo propio de TG");
+  esIgual(fila("TG").tDespejeOrigen, "propio", "…marcado como propio");
+  esIgual(fila("TA").tDespejeS, 0.02, "TA usa el general");
+  esIgual(fila("TA").tDespejeOrigen, "general", "…marcado como por defecto");
+  esCierto(a.despejeCompleto && a.faltantes.length === 0, "Todo declarado: no falta nada");
+  const b = datosAnexoInstalacion({ trafo, casc, icu: { TG: 25, TA: 10 }, tSeg: 0, tPorTablero: { TG: 0.3 }, el0 });
+  esCierto(!b.despejeCompleto && b.faltantes.some(x => x === "Tiempo de despeje de: TA"), "Sin general y con solo TG: falta TA, y lo dice");
+  esIgual(b.tDespeje, null, "Sin general no hay valor por defecto");
+  esCierto(datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, tPorTablero: { TG: 0.3, TA: 0.1 }, el0 }).despejeCompleto, "Un tiempo propio en cada tablero completa el despeje sin general");
+});
+
 grupo("Electrodo complementario declarado, sin resistividad", () => {
   const el = electrodoComplementarioDeclarado({ largoM: 2.44, diamMm: 16 });
   esCierto(el.sinCalculo && el.R === null && el.rho === null && el.complementario && el.resuelto, "Sin resistividad: no hay resistencia calculada y el electrodo queda resuelto");
