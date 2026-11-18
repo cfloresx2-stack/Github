@@ -1140,6 +1140,17 @@ function calcularElectrodo({ rho, largoM, diamMm, complementario }) {
   return { R, rho, largoM, diamMm, complementario, cumpleLargo, cumpleDiam, cumple25, requiereComplementario, resuelto };
 }
 
+// Electrodo cuando NO se conoce la resistividad del terreno pero se declara que se instalara un electrodo
+// complementario: el Art. 250-53(a)(2) queda atendido sin depender de que R sea <= 25 ohms, asi que no se
+// calcula la resistencia. Las dimensiones minimas de la varilla (250-52(a)(5)) si se siguen verificando.
+function electrodoComplementarioDeclarado({ largoM, diamMm }) {
+  return {
+    sinCalculo: true, R: null, rho: null, largoM, diamMm, complementario: true,
+    cumpleLargo: largoM >= 2.44, cumpleDiam: diamMm >= 16,
+    cumple25: false, requiereComplementario: null, resuelto: true,
+  };
+}
+
 /* =========================================================================
    PASO E: DIAMETRO DE TUBERIA  (Tabla 1, 4 y 5, Cap. 10)
    ========================================================================= */
@@ -1393,7 +1404,7 @@ function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
   // R-029 / 250-52(a)(5) y R-030 / 250-53(a)(2): electrodo de puesta a tierra
   if (!el0) {
     h.push(hallazgo("R-030", ESTADO.NO_EVALUABLE, "Art. 250-53",
-      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario. Captúralo una vez en la tarjeta 7 de la Calculadora (Datos generales de la instalación), o en la sección 6 de este circuito.`));
+      `No se calculó la resistencia del electrodo, por lo que no puede verificarse el criterio de 25 Ω ni la necesidad de electrodo complementario. Captúralo una vez en la tarjeta 7 de la Calculadora (Datos generales de la instalación), o en la sección 6 de este circuito. Si no se conoce la resistividad, puede declararse electrodo complementario sin calcular la resistencia.`));
   } else {
     if (!el0.cumpleLargo || !el0.cumpleDiam) {
       const faltas = [];
@@ -1406,7 +1417,10 @@ function hallazgosInstalacion({ input, calibreFinal, cc, vt, el0 }) {
         `Electrodo de ${fmt(el0.largoM,2)} m y ${fmt(el0.diamMm,1)} mm cumple las dimensiones mínimas.`));
     }
 
-    if (el0.cumple25) {
+    if (el0.sinCalculo) {
+      h.push(hallazgo("R-030", ESTADO.CUMPLE, "Art. 250-53(a)(2)",
+        `Se declara electrodo complementario sin calcular la resistencia (no se conoce la resistividad del terreno): el electrodo único se complementa como exige la norma, sin depender de que su resistencia sea ≤ 25 Ω. Separar los electrodos al menos 1.80 m (Art. 250-53(a)(3)); medir la resistencia en sitio con telurómetro es buena práctica.`));
+    } else if (el0.cumple25) {
       h.push(hallazgo("R-030", ESTADO.ADVERTENCIA, "Art. 250-53(a)(2)",
         `Resistencia estimada ${fmt(el0.R,2)} Ω ≤ 25 Ω, por lo que no se exige electrodo complementario. Es un valor CALCULADO: debe confirmarse con medición en sitio (telurómetro) antes de omitir el segundo electrodo.`));
     } else if (el0.complementario) {
@@ -1924,7 +1938,7 @@ function evaluarCompletitud({ registro, pendiente, instalacion }) {
   const sinIcu = tableros.filter(t => !((ins.icu || {})[t] > 0));
   if (sinIcu.length) f.push({ clave: 'icu', texto: `Capacidad interruptiva sin declarar en ${sinIcu.length} tablero(s): ${lista(sinIcu, 6)}.` });
   if (!(ins.tDespeje > 0)) f.push({ clave: 'despeje', texto: 'Tiempo de despeje de la falla (de la curva del interruptor).' });
-  if (!ins.electrodoValido) f.push({ clave: 'electrodo', texto: 'Electrodo de puesta a tierra: resistividad del terreno, longitud y diámetro de la varilla.' });
+  if (!ins.electrodoValido) f.push({ clave: 'electrodo', texto: 'Electrodo de puesta a tierra: resistividad del terreno, longitud y diámetro de la varilla (o, si no se conoce la resistividad, declarar electrodo complementario sin calcular).' });
   return f;
 }
 
@@ -2058,9 +2072,11 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
   let electrodo = null;
   if (el0) {
     electrodo = {
+      sinCalculo: !!el0.sinCalculo,
       rho: el0.rho, largoM: el0.largoM, diamMm: el0.diamMm, R: el0.R, complementario: !!el0.complementario,
       cumple25: el0.cumple25, cumpleLargo: el0.cumpleLargo, cumpleDiam: el0.cumpleDiam,
-      verificacion: el0.cumple25 ? 'R ≤ 25 Ω (Art. 250-53(a)(2)); confirmar con telurómetro en sitio'
+      verificacion: el0.sinCalculo ? 'Se declara electrodo complementario sin calcular la resistencia (Art. 250-53(a)(2)); separar los electrodos al menos 1.80 m y medir en sitio'
+        : el0.cumple25 ? 'R ≤ 25 Ω (Art. 250-53(a)(2)); confirmar con telurómetro en sitio'
         : (el0.complementario ? 'R > 25 Ω: se declara electrodo complementario (Art. 250-53(a)(2))' : 'R > 25 Ω: FALTA electrodo complementario (Art. 250-53(a)(2))'),
     };
   }
@@ -2070,7 +2086,7 @@ function datosAnexoInstalacion({ trafo, casc, icu, tSeg, el0 }) {
   const sinIcu = tableros.filter(x => x.estado === 'Sin declarar').map(x => x.nombre);
   if (sinIcu.length) faltantes.push(`Capacidad interruptiva de: ${sinIcu.join(', ')}`);
   if (!(tSeg > 0)) faltantes.push('Tiempo de despeje de la falla');
-  if (!el0) faltantes.push('Electrodo de puesta a tierra (resistividad, longitud y diámetro)');
+  if (!el0) faltantes.push('Electrodo de puesta a tierra (resistividad, longitud y diámetro, o electrodo complementario declarado sin calcular)');
 
   return { transformador, tableros, tDespeje: tSeg > 0 ? tSeg : null, electrodo, faltantes };
 }
