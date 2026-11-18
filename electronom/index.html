@@ -802,24 +802,31 @@
         <div class="row2" style="margin-top:10px">
           <div>
             <label>Transformador <span class="hint">(kVA)</span></label>
-            <input type="number" id="ccArbolKva" value="" step="1" min="1" placeholder="Ej. 300">
+            <input type="number" id="ccArbolKva" value="" step="1" min="1" placeholder="Elige uno de la lista o escribe otro" list="listaKva">
+            <datalist id="listaKva"></datalist>
           </div>
           <div>
             <label>Impedancia %Z <span class="hint">(placa)</span></label>
             <input type="number" id="ccArbolZ" value="" step="0.05" min="0.5" max="20" placeholder="Ej. 5">
           </div>
         </div>
+        <details style="margin-top:6px">
+          <summary>¿Dónde encuentro el %Z?</summary>
+          <p class="hint" style="margin-top:6px">Está en la <b>placa del transformador</b> (aparece como «Z %» o «Impedancia») y en su protocolo de pruebas. Si todavía no lo tienes, ten presente que <b>un %Z más bajo da una falla más alta</b>, que es el lado conservador para verificar la capacidad interruptiva (un valor alto subestimaría la falla). Los transformadores de distribución suelen andar entre 2 % y 6 %, pero usa el de la placa en cuanto se defina el equipo.</p>
+        </details>
         <div class="row2">
           <div>
             <label>Tensión del primario <span class="hint">(kV; solo para rotular el unifilar detallado)</span></label>
-            <input type="number" id="ccArbolPrim" value="" step="0.1" min="0" placeholder="Ej. 13.8">
+            <input type="number" id="ccArbolPrim" value="" step="0.1" min="0" placeholder="Ej. 13.8" list="listaPrimario">
+            <datalist id="listaPrimario"></datalist>
           </div>
           <div></div>
         </div>
         <div class="row2">
           <div>
             <label>Tensión del secundario <span class="hint">(V, línea a línea)</span></label>
-            <input type="number" id="ccArbolVoltage" value="" step="1" min="1" placeholder="Ej. 220">
+            <input type="number" id="ccArbolVoltage" value="" step="1" min="1" placeholder="Ej. 220" list="listaSecundario">
+            <datalist id="listaSecundario"></datalist>
           </div>
           <div>
             <label>Impedancia de la fuente <span class="hint">(pu, 0 = conservador)</span></label>
@@ -2572,6 +2579,7 @@ function renderDiagramaUnifilar() {
    cortocircuito o de electrodo (secciones 5 y 6) conserva el suyo.
    ========================================================================= */
 let icuPorTablero = {};
+let icuEspecificadoPorTablero = {};   // capacidades declaradas con el boton 'especificar el minimo requerido' (por especificar al proveedor)
 let despejeTipoPorTablero = {};   // tipo de proteccion elegido por tablero (ver TIPOS_DESPEJE)
 let despejeTipoGeneral = '';
 let despejePorTablero = {};   // tiempo de despeje propio de cada tablero (s); el campo general aplica a los demas
@@ -2581,7 +2589,7 @@ function capturarInstalacion() {
   const v = id => document.getElementById(id).value;
   return {
     kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
-    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejeTipo: despejeTipoGeneral, tDespejePorTablero: { ...despejePorTablero }, tDespejeTipoPorTablero: { ...despejeTipoPorTablero }, icu: { ...icuPorTablero },
+    verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejeTipo: despejeTipoGeneral, tDespejePorTablero: { ...despejePorTablero }, tDespejeTipoPorTablero: { ...despejeTipoPorTablero }, icu: { ...icuPorTablero }, icuEspecificado: { ...icuEspecificadoPorTablero },
     electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked, sinCalculo: document.getElementById('instElSinCalc').checked },
   };
 }
@@ -2595,6 +2603,7 @@ function restaurarInstalacion(t) {
   set('ccArbolKva', t.kva); set('ccArbolZ', t.zPct); set('ccArbolVoltage', t.voltage); set('ccArbolPrim', t.primario);
   set('ccArbolZsource', t.zSourcePu); set('ccArbolTsc', t.tDespeje);
   icuPorTablero = { ...(t.icu || {}) };
+  icuEspecificadoPorTablero = { ...(t.icuEspecificado || {}) };
   despejePorTablero = { ...(t.tDespejePorTablero || {}) };
   despejeTipoPorTablero = { ...(t.tDespejeTipoPorTablero || {}) };
   despejeTipoGeneral = t.tDespejeTipo || (parseFloat(t.tDespeje) > 0 ? 'otro' : '');   // un tiempo sin tipo (archivos anteriores) se trata como capturado a mano
@@ -2736,36 +2745,47 @@ function renderCortocircuitoArbol() {
     });
 
   wrap.innerHTML = `
+    <div style="overflow-x:auto">
     <table class="printTable">
       <thead><tr><th>Tablero</th><th>Falla disponible</th><th>Capacidad interruptiva declarada</th><th>Verificación</th><th>Tiempo de despeje de sus interruptores</th></tr></thead>
       <tbody>${filas.map(f => `
         <tr>
           <td>${f.nombre}</td>
           <td>${fmt(f.iccKA, 2)} kA</td>
-          <td><select id="${f.slug}Icu"></select></td>
+          <td><select id="${f.slug}Icu" style="min-width:96px"></select></td>
           <td id="${f.slug}Badge"></td>
-          <td><select id="${f.slug}TscTipo" style="max-width:260px" title="Tiempo en que abren los interruptores de este tablero ante una falla"></select><input type="number" id="${f.slug}Tsc" step="0.01" min="0" style="width:110px; display:none; margin-top:4px" placeholder="Segundos"></td>
+          <td><select id="${f.slug}TscTipo" style="min-width:130px; max-width:260px" title="Tiempo en que abren los interruptores de este tablero ante una falla"></select><input type="number" id="${f.slug}Tsc" step="0.01" min="0" style="width:110px; display:none; margin-top:4px" placeholder="Segundos"></td>
         </tr>`).join('')}</tbody>
-    </table>`;
+    </table>
+    </div>
+    ${(() => { const n = filas.filter(f => !icuPorTablero[f.nombre] && icuMinimoRequerido(f.iccKA)).length; return n ? `<div style="margin-top:8px"><button type="button" id="icuEspecificarMinimos" class="miniBtn">Especificar la capacidad mínima requerida en los ${n} tablero(s) sin declarar</button> <span class="hint">Úsalo cuando todavía no hay interruptores definidos: declara, en cada tablero, la capacidad normalizada más chica que cubre su falla; es lo que se le pide al proveedor. Cada una queda marcada «por especificar» y puedes cambiarla a mano.</span></div>` : ''; })()}`;
+  const botonMinimos = document.getElementById('icuEspecificarMinimos');
+  if (botonMinimos) botonMinimos.addEventListener('click', () => {
+    filas.forEach(f => {
+      const mn = icuMinimoRequerido(f.iccKA);
+      if (!icuPorTablero[f.nombre] && mn) { icuPorTablero[f.nombre] = mn; icuEspecificadoPorTablero[f.nombre] = true; }
+    });
+    guardarInstalacion(); aplicarDatosInstalacion(); renderCortocircuitoArbol();
+  });
 
   filas.forEach(f => {
     const sel = document.getElementById(`${f.slug}Icu`);
+    const minimo = icuMinimoRequerido(f.iccKA) ?? undefined;
     const vacio = document.createElement('option');
-    vacio.value = ''; vacio.textContent = '— declarar —';
+    vacio.value = ''; vacio.textContent = minimo ? `— elegir (mín. ${minimo} kA) —` : '— elegir —';
     sel.appendChild(vacio);
     INTERRUPTING_CAPACITIES_KA.forEach(ka => {
       const o = document.createElement('option');
       o.value = ka; o.textContent = `${ka} kA`;
       sel.appendChild(o);
     });
-    const minimo = INTERRUPTING_CAPACITIES_KA.find(ka => ka >= f.iccKA);
     if (icuPorTablero[f.nombre]) sel.value = icuPorTablero[f.nombre];
     function actualizar() {
       const icu = parseFloat(sel.value) || 0;
       document.getElementById(`${f.slug}Badge`).innerHTML = !icu
         ? `<span class="badge na">Sin declarar · mín. ${minimo ?? '>200'} kA</span>`
         : icu >= f.iccKA
-          ? `<span class="badge ok">Cumple Art. 110-9</span>`
+          ? `<span class="badge ok">Cumple Art. 110-9</span>${icuEspecificadoPorTablero[f.nombre] ? ' <span class="hint" title="Es la capacidad mínima requerida por la falla de este tablero: se le pide al proveedor del interruptor">por especificar</span>' : ''}`
           : `<span class="badge warn">NO CUMPLE · mín. ${minimo ?? '>200'} kA</span>`;
     }
     const tin = document.getElementById(`${f.slug}Tsc`), tsel = document.getElementById(`${f.slug}TscTipo`);
@@ -2787,6 +2807,7 @@ function renderCortocircuitoArbol() {
     });
     // La capacidad interruptiva NO se sugiere sola: la declara el usuario (si no, siempre "cumpliria")
     sel.addEventListener('change', () => {
+      delete icuEspecificadoPorTablero[f.nombre];   // si la cambia a mano, ya no es 'el minimo requerido'
       if (sel.value) icuPorTablero[f.nombre] = parseFloat(sel.value); else delete icuPorTablero[f.nombre];
       guardarInstalacion(); actualizar(); aplicarDatosInstalacion();
     });
@@ -2814,6 +2835,9 @@ function mostrarDespejeGeneral() {
   document.querySelectorAll('#ccArbolResultado select[id$="TscTipo"]').forEach(s => { s.options[0].textContent = despejeTipoGeneral ? 'Igual que el valor por defecto' : '— elegir —'; });
 }
 llenarTiposDespeje(document.getElementById('ccArbolTscTipo'), '— elegir el tipo de protección —');
+document.getElementById('listaKva').innerHTML = KVA_TRANSFORMADOR_COMUNES.map(v => `<option value="${v}">${v} kVA</option>`).join('');
+document.getElementById('listaPrimario').innerHTML = TENSIONES_PRIMARIO_KV.map(v => `<option value="${v}">${v} kV</option>`).join('');
+document.getElementById('listaSecundario').innerHTML = TENSIONES_SECUNDARIO_V.map(v => `<option value="${v}">${v} V</option>`).join('');
 document.getElementById('ccArbolTscTipo').addEventListener('change', (e) => {
   despejeTipoGeneral = e.target.value;
   const t = tipoDespeje(despejeTipoGeneral), inp = document.getElementById('ccArbolTsc');
@@ -3202,7 +3226,7 @@ function anexoInstalacionHtml() {
   const ctx = contextoInstalacion();
   const a = datosAnexoInstalacion({
     trafo: { kva: num('ccArbolKva'), zPct: num('ccArbolZ'), voltage: num('ccArbolVoltage'), primario: num('ccArbolPrim'), zSourcePu: num('ccArbolZsource') },
-    casc: ctx.casc, icu: icuPorTablero, tSeg: ctx.tSeg, tPorTablero: despejePorTablero, tTipoPorTablero: despejeTipoPorTablero, tTipoGeneral: despejeTipoGeneral, el0: ctx.el0,
+    casc: ctx.casc, icu: icuPorTablero, icuEspecificado: icuEspecificadoPorTablero, tSeg: ctx.tSeg, tPorTablero: despejePorTablero, tTipoPorTablero: despejeTipoPorTablero, tTipoGeneral: despejeTipoGeneral, el0: ctx.el0,
   });
   const falta = t => `<span class="badge warn">No declarado</span> ${escXml(t)}`;
   const fila = (k, v) => `<tr><th style="text-align:left;width:38%">${k}</th><td>${v}</td></tr>`;
@@ -3224,7 +3248,7 @@ function anexoInstalacionHtml() {
       <tbody>${a.tableros.map(x => `<tr>
         <td>${'&nbsp;&nbsp;'.repeat(x.profundidad)}${escXml(x.nombre)}</td>
         <td>${fmt(x.iccKA, 2)} kA</td>
-        <td>${x.icuKA === null ? '—' : fmt(x.icuKA, 0) + ' kA'}</td>
+        <td>${x.icuKA === null ? '—' : fmt(x.icuKA, 0) + ' kA' + (x.icuEspecificado ? ' <span class="hint">(mínimo requerido: por especificar al proveedor)</span>' : '')}</td>
         <td><span class="badge ${bg[x.estado]}">${x.estado}</span></td>
         <td>${x.tDespejeS === null ? '<span class="badge warn">No declarado</span>' : `${fmt(x.tDespejeS, 3)} s${x.tDespejeTipo || x.tDespejeOrigen === 'general' ? ` <span class="hint">(${[x.tDespejeTipo, x.tDespejeOrigen === 'general' ? 'por defecto' : null].filter(Boolean).join(', ')})</span>` : ''}`}</td>
       </tr>`).join('')}</tbody></table>

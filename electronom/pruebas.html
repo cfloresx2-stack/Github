@@ -1433,6 +1433,28 @@ grupo("Tiempo de despeje por tablero", () => {
   esCierto(datosAnexoInstalacion({ trafo, casc, icu: {}, tSeg: 0, tPorTablero: { TG: 0.3, TA: 0.1 }, el0 }).despejeCompleto, "Un tiempo propio en cada tablero completa el despeje sin general");
 });
 
+grupo("Captura fácil — valores comunes y capacidad mínima", () => {
+  esIgual(icuMinimoRequerido(22.08), 25, "La falla de 22.08 kA no la cubre la de 22 kA: se cubre con 25 kA");
+  esIgual(icuMinimoRequerido(10), 10, "Una falla exactamente igual a una capacidad normalizada se cubre con ella");
+  esIgual(icuMinimoRequerido(10.01), 14, "Un poco más de 10 kA pide 14 kA");
+  esIgual(icuMinimoRequerido(0.74), 5, "Fallas chicas: el mínimo normalizado es 5 kA");
+  esIgual(icuMinimoRequerido(200), 200, "200 kA es la mayor capacidad normalizada");
+  esIgual(icuMinimoRequerido(250), null, "Si la falla excede la mayor, no hay mínimo (no se inventa uno)");
+  esCierto(KVA_TRANSFORMADOR_COMUNES.includes(300) && KVA_TRANSFORMADOR_COMUNES.includes(112.5) && KVA_TRANSFORMADOR_COMUNES.every((v, i, a) => i === 0 || v > a[i - 1]), "Potencias comunes de transformador, en orden creciente");
+  esCierto(TENSIONES_PRIMARIO_KV.includes(13.8) && TENSIONES_SECUNDARIO_V.join() === "220,440,480", "Tensiones comunes del primario y del secundario");
+
+  // memoria impresa: lo especificado como mínimo se rotula
+  const trafo = { kva: 300, zPct: 5, voltage: 220, primario: 0, zSourcePu: 0 };
+  const casc = calcularCortocircuitoArbol([{ nombre: "TG", hijos: [{ nombre: "TA", hijos: [] }] }], [{ destino: "TA", awg: "1/0", lengthM: 40, nParalelo: 1 }], trafo);
+  const el0 = calcularElectrodo({ rho: 30, largoM: 2.44, diamMm: 16, complementario: false });
+  const a = datosAnexoInstalacion({ trafo, casc, icu: { TG: 25, TA: 18 }, icuEspecificado: { TG: true }, tSeg: 0.02, el0 });
+  esCierto(a.tableros.find(x => x.nombre === "TG").icuEspecificado === true, "TG se marcó como capacidad por especificar");
+  esCierto(a.tableros.find(x => x.nombre === "TA").icuEspecificado === false, "TA, declarada a mano, no");
+  const b = datosAnexoInstalacion({ trafo, casc, icu: {}, icuEspecificado: { TG: true }, tSeg: 0.02, el0 });
+  esCierto(b.tableros.find(x => x.nombre === "TG").icuEspecificado === false, "Sin capacidad declarada no hay nada que marcar");
+  esIgual(a.tableros.find(x => x.nombre === "TG").estado, "Cumple", "La capacidad mínima especificada cumple el Art. 110-9");
+});
+
 grupo("Tiempo de despeje — tipos de protección", () => {
   const ids = TIPOS_DESPEJE.map(t => t.id);
   esIgual(new Set(ids).size, ids.length, "Cada tipo tiene un identificador único");
