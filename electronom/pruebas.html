@@ -1391,6 +1391,17 @@ grupo("Memoria — datos generales de la instalación", () => {
   esIgual(vacio.faltantes.length, 3, "Faltan transformador, despeje y electrodo");
 });
 
+grupo("Memoria impresa — nombre del PDF", () => {
+  esIgual(nombreArchivoMemoria("Autolavado Danjo Mexicali"), "Memoria de cálculo - Autolavado Danjo Mexicali", "El nombre lleva el del proyecto");
+  esIgual(nombreArchivoMemoria("Autolavado — cuadro ajustado (v2)"), "Memoria de cálculo - Autolavado — cuadro ajustado (v2)", "Conserva acentos, guiones y paréntesis");
+  esIgual(nombreArchivoMemoria("Nave 1/2: bodega*?"), "Memoria de cálculo - Nave 1 2 bodega", "Quita los caracteres que Windows no admite en un archivo");
+  esIgual(nombreArchivoMemoria("A\\B"), "Memoria de cálculo - A B", "La diagonal invertida también");
+  esIgual(nombreArchivoMemoria("  Obra   norte  "), "Memoria de cálculo - Obra norte", "Recorta y junta espacios");
+  esIgual(nombreArchivoMemoria(""), "Memoria de cálculo - Proyecto sin nombre", "Sin nombre de proyecto");
+  esIgual(nombreArchivoMemoria(null), "Memoria de cálculo - Proyecto sin nombre", "Nulo");
+  esIgual(nombreArchivoMemoria("x".repeat(300)).length, 141, "Un nombre larguísimo se recorta a 120 caracteres del proyecto");
+});
+
 grupo("Memoria impresa — índice", () => {
   const circ = [
     { tablero: "TG", circuito: "F1 Alimentador a TA" }, { tablero: "TA", circuito: "Aspiradora 1" },
