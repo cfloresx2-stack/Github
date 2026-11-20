@@ -930,7 +930,13 @@
       <button id="clearRegistry" type="button">Vaciar memoria</button>
       <button id="exportarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">💾 Guardar proyecto (archivo)</button>
       <button id="importarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">📂 Cargar proyecto (archivo)</button>
+      <button id="descargarMateriales" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px" title="Cantidades de conductores, tubería, interruptores, tableros y puesta a tierra">📦 Lista de materiales (Excel)</button>
       <input type="file" id="importarProyectoArchivo" accept=".json,application/json" style="display:none">
+    </div>
+    <div class="checkline" style="margin:8px 0 0">
+      <label for="desperdicioMateriales" style="margin:0">Desperdicio para la lista de materiales</label>
+      <input type="number" id="desperdicioMateriales" value="10" min="0" max="50" step="1" style="width:70px"> <span>%</span>
+      <span class="hint">se suma a los metros de conductor y tubería; ajústalo a tu criterio. La lista también va en la memoria impresa.</span>
     </div>
     <p class="hint" style="margin-top:8px">"Guardar proyecto" descarga un archivo con los datos de captura de todos los circuitos de la memoria (para respaldarlos o pasarlos a otra computadora). "Cargar proyecto" los vuelve a calcular uno por uno con el motor actual y los agrega a la memoria.</p>
     <p id="memoriaAviso" class="hint" style="display:none;color:var(--warn);margin-top:8px;font-weight:bold"></p>
@@ -3343,6 +3349,69 @@ function anexoInstalacionHtml() {
     </div>`;
 }
 
+/* ---- Lista de materiales ---- */
+const DESPERDICIO_KEY = 'nomica_desperdicio_v1';
+function desperdicioMateriales() {
+  const v = parseFloat(document.getElementById('desperdicioMateriales').value);
+  return v >= 0 ? v : 10;
+}
+(function restaurarDesperdicio() {
+  try { const g = localStorage.getItem(DESPERDICIO_KEY); if (g !== null && g !== '') document.getElementById('desperdicioMateriales').value = g; } catch (e) {}
+  document.getElementById('desperdicioMateriales').addEventListener('input', () => { try { localStorage.setItem(DESPERDICIO_KEY, String(desperdicioMateriales())); } catch (e) {} });
+})();
+function materialesDelProyecto() {
+  const e0 = electrodoInstalacion();
+  return listaDeMateriales(loadRegistry(), {
+    desperdicioPct: desperdicioMateriales(),
+    electrodo: e0 ? { complementario: !!e0.complementario, largoM: e0.largoM, diamMm: e0.diamMm } : null,
+  });
+}
+// Tablas de la lista de materiales; con { excel: true } llevan borde para abrirlas en Excel
+function materialesTablasHtml(m, opciones) {
+  const borde = opciones && opciones.excel ? ' border="1"' : '';
+  const tabla = (cabecera, filas) => filas.length
+    ? `<table class="printTable"${borde}><thead><tr>${cabecera.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${filas.map(f => `<tr>${f.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+    : '<p class="hint">Sin datos.</p>';
+  const pct = fmt(m.desperdicioPct, 0);
+  const sub = t => `<h3 style="font-size:12px; margin:10px 0 4px; color:var(--navy)">${t}</h3>`;
+  return `
+    ${sub('Conductores')}
+    ${tabla(['Material', 'Aislamiento', 'Calibre', 'Uso', 'Circuitos', 'Metros', `Con ${pct} % de desperdicio`],
+      m.conductores.map(c => [c.material, escXml(c.aislamiento), `${escXml(c.calibre)} ${unidadCalibre(c.calibre)}`, c.uso, c.circuitos, fmt(c.metros, 0) + ' m', `<b>${fmt(c.conDesperdicio, 0)} m</b>`]))}
+    ${sub('Canalización')}
+    ${tabla(['Tipo', 'Medida', 'Circuitos', 'Metros', `Con ${pct} % de desperdicio`, 'Tramos de 3 m (aprox.)'],
+      m.canalizaciones.map(c => [escXml(c.tipo), escXml(c.medida), c.circuitos, fmt(c.metros, 0) + ' m', `<b>${fmt(c.conDesperdicio, 0)} m</b>`, c.tramos]))}
+    ${sub('Interruptores')}
+    ${tabla(['Capacidad', 'Polos', 'Cantidad'], m.interruptores.map(i => [`${fmt(i.amperes, 0)} A`, i.polos, `<b>${i.cantidad}</b>`]))}
+    ${sub('Tableros')}
+    ${tabla(['Tablero', 'Circuitos', 'Espacios (polos)', 'Interruptor principal sugerido'],
+      m.tableros.map(t => [escXml(t.nombre), t.circuitos, t.espacios, t.principal ? `${fmt(t.principal, 0)} A` : '—']))}
+    ${sub('Puesta a tierra')}
+    ${m.puestaATierra ? tabla(['Concepto', 'Cantidad'], [[`Varilla de puesta a tierra de ${fmt(m.puestaATierra.diamMm, 1)} mm × ${fmt(m.puestaATierra.largoM, 2)} m`, `<b>${m.puestaATierra.varillas}</b>`]])
+      : '<p class="hint">Electrodo sin definir (tarjeta 7 de la Calculadora).</p>'}
+    <p class="hint" style="margin-top:8px">Cantidades estimadas con los largos capturados (un sentido) y los conductores en paralelo de cada circuito; los metros se redondean hacia arriba. La tierra va aparte, a su propio calibre, una por cada tubería en paralelo. Los tramos de 3 m son aproximados (varían según el tipo de tubería). <b>No incluye</b> cajas, soportes, conectores, terminales, accesorios, el conductor al electrodo (Art. 250-66) ni la acometida o el transformador. Los interruptores principales sugeridos de los tableros son los del cuadro de cargas; el interruptor que protege a cada tablero desde su alimentador ya está contado en la tabla de interruptores.${m.sinLongitud.length ? ` <b>${m.sinLongitud.length} circuito(s) sin largo capturado</b> (proyectos anteriores) solo entran en los interruptores: ${escXml(m.sinLongitud.slice(0, 6).join(', '))}.` : ''}</p>`;
+}
+function materialesHtml(m) {
+  return `<div class="card" id="memoria-materiales">
+      <h2>Lista de materiales</h2>
+      ${materialesTablasHtml(m)}
+    </div>`;
+}
+document.getElementById('descargarMateriales').addEventListener('click', () => {
+  if (loadRegistry().length === 0) { alert('Agrega circuitos a la memoria antes de descargar la lista de materiales.'); return; }
+  const proj = nombreDelProyecto();
+  const html = `<html><head><meta charset="UTF-8"></head><body>
+    <h2>Lista de materiales &mdash; ${escXml(proj)}</h2>
+    ${materialesTablasHtml(materialesDelProyecto(), { excel: true })}
+  </body></html>`;
+  const blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `Lista de materiales - ${proj}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
 // Indice de la memoria impresa: enlaces internos (el PDF del navegador los conserva; no puede numerar paginas)
 function indiceMemoriaHtml(reg, hojas) {
   const ix = armarIndiceMemoria({
@@ -3356,6 +3425,7 @@ function indiceMemoriaHtml(reg, hojas) {
       <ol style="margin:4px 0 0; padding-left:20px; line-height:1.5">
         ${ix.secciones.map(li).join('')}
         ${ix.hojas.length ? `<li>Unifilar detallado por tablero: ${ix.hojas.map(x => `<a href="#${x.id}">${escXml(x.etiqueta)}</a>`).join(' &nbsp;·&nbsp; ')}</li>` : ''}
+        <li><a href="#memoria-materiales">Lista de materiales</a> <span class="hint">— conductores, tubería, interruptores, tableros y puesta a tierra</span></li>
         <li>Hojas de cálculo por circuito
           ${ix.porTablero.map(t => `<div class="indiceTablero"><b>Tablero ${escXml(t.tablero)}</b> <span class="hint">(${t.items.length})</span>
             <div class="indiceCircuitos">${t.items.map(c => `<a href="#${c.id}">${c.n}. ${escXml(c.nombre)}</a>`).join('')}</div></div>`).join('')}
@@ -3428,6 +3498,7 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       ${document.getElementById('diagramaWrap').innerHTML}
     </div>
     <div class="hojasUnifilarImpresion">${document.getElementById('unifilarDetalladoWrap').innerHTML}</div>
+    ${materialesHtml(materialesDelProyecto())}
     ${detailSections}
     <p class="hint" style="margin:16px 0">Herramienta de apoyo al diseño — NOM-001-SEDE-2018. Los resultados deben ser revisados y validados por un ingeniero calificado antes de usarse en un proyecto real.</p>
   `;

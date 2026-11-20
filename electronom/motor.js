@@ -2343,3 +2343,80 @@ function nombreDeGrupo(nombres) {
   if (partes.every(p => p && p[1] === partes[0][1])) return `${partes[0][1]} ${partes[0][2]} a ${partes[partes.length - 1][2]}`.trim();
   return limpios.length <= 4 ? limpios.join(' · ') : `${limpios[0]} · … · ${limpios[limpios.length - 1]}`;
 }
+
+/* =========================================================================
+   LISTA DE MATERIALES (cantidades estimadas)
+   -------------------------------------------------------------------------
+   Sale solo de datos ya calculados y capturados: calibre, sistema (fases,
+   neutro y tierra), largo en un sentido, conductores en paralelo, canalizacion,
+   interruptor y polos de cada circuito, mas el electrodo de la instalacion.
+     - Conductores: largo x conductores en paralelo x (fases + neutro) al
+       calibre del circuito; la tierra va aparte, a su propio calibre, una por
+       cada tuberia en paralelo (cada tuberia en paralelo lleva su tierra).
+     - Canalizacion: largo x tuberias en paralelo (una charola lleva todos los
+       paralelos en la misma).
+     - Interruptores: uno por circuito, agrupados por amperes y polos.
+     - Tableros: espacios = suma de polos; principal sugerido del cuadro de cargas.
+   Los metros se redondean hacia arriba y se muestran tambien con desperdicio.
+   NO incluye cajas, soportes, conectores, terminales ni el conductor al electrodo.
+   ========================================================================= */
+function listaDeMateriales(registro, opciones) {
+  const op = opciones || {};
+  const desperdicioPct = Math.max(0, Number(op.desperdicioPct) || 0);
+  const factor = 1 + desperdicioPct / 100;
+  const cond = {}, canal = {}, inter = {};
+  const sinLongitud = [];
+  const sumar = (mapa, clave, base, metros) => {
+    if (!mapa[clave]) mapa[clave] = { ...base, metros: 0, circuitos: 0 };
+    mapa[clave].metros += metros;
+    mapa[clave].circuitos++;
+  };
+
+  (registro || []).forEach(r => {
+    const polos = r.fases || 1;
+    const ki = `${r.breakerA}|${polos}`;
+    if (!inter[ki]) inter[ki] = { amperes: r.breakerA, polos, cantidad: 0 };
+    inter[ki].cantidad++;
+
+    const fs = r.formSnapshot;
+    const largo = fs ? parseFloat(fs.length) : NaN;
+    if (!(largo > 0)) { sinLongitud.push(r.circ || '(sin nombre)'); return; }
+    const n = Math.max(1, parseInt(fs.nParalelo, 10) || 1);
+    const sys = SYSTEM_TYPES[r.systemKey];
+    const material = fs.material === 'al' ? 'Aluminio' : 'Cobre';
+    const aislamiento = fs.insulType || '—';
+    if (sys && r.awg) sumar(cond, `${material}|${aislamiento}|${r.awg}|f`, { material, aislamiento, calibre: String(r.awg), uso: 'fase y neutro' }, largo * n * (sys.fases + (sys.neutro ? 1 : 0)));
+    if (sys && sys.tierra && r.awgTierra) sumar(cond, `${material}|${aislamiento}|${r.awgTierra}|t`, { material, aislamiento, calibre: String(r.awgTierra), uso: 'tierra' }, largo * n);
+    const charola = fs.installMethod === 'charola';
+    const tipo = charola ? 'Charola portacable' : (r.conduitName || 'Tubería');
+    const medida = r.conduitTrade || '—';
+    sumar(canal, `${tipo}|${medida}`, { tipo, medida }, charola ? largo : largo * n);
+  });
+
+  const orden = awg => { const i = AWG_ORDER.indexOf(String(awg)); return i < 0 ? 999 : i; };
+  // medidas comerciales de tuberia en orden de tamano (1/2", 3/4", 1", 1-1/4", ..., 2-1/2", 3", ...)
+  const medidas = (CONDUIT_TABLES.pvc40 ? CONDUIT_TABLES.pvc40.rows : []).map(f => f.trade);
+  const ordenMedida = t => { const i = medidas.indexOf(t); return i < 0 ? 999 : i; };
+  const conMetros = x => ({ ...x, metros: Math.ceil(x.metros - 1e-9), conDesperdicio: Math.ceil(x.metros * factor - 1e-9) });
+  const conductores = Object.values(cond).map(conMetros).sort((a, b) =>
+    (a.uso === b.uso ? 0 : a.uso === 'fase y neutro' ? -1 : 1) || a.material.localeCompare(b.material) || orden(a.calibre) - orden(b.calibre));
+  const canalizaciones = Object.values(canal).map(x => {
+    const y = conMetros(x);
+    return { ...y, tramos: Math.ceil(y.conDesperdicio / 3) };
+  }).sort((a, b) => a.tipo.localeCompare(b.tipo) || ordenMedida(a.medida) - ordenMedida(b.medida) || a.medida.localeCompare(b.medida, 'es', { numeric: true }));
+  const interruptores = Object.values(inter).sort((a, b) => a.amperes - b.amperes || a.polos - b.polos);
+
+  const tableros = generarCuadroDeCargas(registro || []).map(q => {
+    const primero = (q.filas[0] || {}).circuito || {};
+    const iAlim = corrienteAlimentador(q.maxFase, tensionFaseNeutro(primero.voltage || 0, primero.fases || 1));
+    return {
+      nombre: q.tablero, circuitos: q.filas.length,
+      espacios: q.filas.reduce((s, f) => s + (f.circuito.fases || 1), 0),
+      principal: iAlim > 0 ? nextStandardBreaker(iAlim) : null,
+    };
+  });
+
+  const e = op.electrodo;
+  const puestaATierra = e ? { varillas: 1 + (e.complementario ? 1 : 0), largoM: e.largoM, diamMm: e.diamMm } : null;
+  return { desperdicioPct, conductores, canalizaciones, interruptores, tableros, puestaATierra, sinLongitud };
+}
