@@ -1557,6 +1557,44 @@ grupo("Electrodo complementario declarado, sin resistividad", () => {
   esIgual(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: ins }).length, 0, "Con el electrodo declarado la compuerta no pide la resistividad");
 });
 
+grupo("Memoria impresa — circuitos idénticos en una sola hoja", () => {
+  const snap = (nombre, extra = {}) => ({ projName: "P", boardName: "TA", circName: nombre, circPos: "", circuitKind: "derivado", tableroDestino: "", voltage: "220", systemType: "3F-1T", length: "30",
+    loads: [{ name: nombre + " (FLC 15.2 A)", watts: 4923, fp: 0.85, cont: false }], material: "cu", ...extra });
+  const c = (id, nombre, board = "TA", extra = {}) => ({ id, board, circ: nombre, formSnapshot: snap(nombre, extra) });
+  const reg = [ c(1, "Aspiradora 1"), c(2, "Aspiradora 2"), c(3, "Aspiradora 3"), c(4, "Bomba", "TA", { loads: [{ name: "Bomba", watts: 3000, fp: 0.85, cont: false }] }), c(5, "Aspiradora 4", "TA", { length: "45" }), c(6, "Aspiradora 5") ];
+  const g = agruparCircuitosIdenticos(reg);
+  esIgual(g.length, 3, "Tres hojas: las aspiradoras idénticas, la bomba y la de otro largo");
+  esIgual(g[0].indices.join(), "0,1,2,5", "Las idénticas se juntan aunque no sean consecutivas");
+  esIgual(g[0].n, 4, "El grupo sabe cuántos circuitos tiene");
+  esIgual(g[1].indices.join() + "|" + g[2].indices.join(), "3|4", "Un circuito distinto (otro nombre de equipo con distinta carga o largo) conserva su hoja");
+  esIgual(agruparCircuitosIdenticos([c(1, "A"), c(2, "A2", "TB")]).length, 2, "El mismo cálculo en otro tablero no se junta (la falla y el despeje son del tablero)");
+  esIgual(agruparCircuitosIdenticos([c(1, "A"), c(2, "A2", "TA", { circPos: "5" })]).length, 1, "La posición en el tablero no afecta el cálculo");
+  esIgual(agruparCircuitosIdenticos([c(1, "A"), c(2, "A2", "TA", { voltage: "127" })]).length, 2, "Otra tensión sí es otro cálculo");
+  const otraCarga = c(2, "A2"); otraCarga.formSnapshot.loads[0].watts = 5000;
+  esIgual(agruparCircuitosIdenticos([c(1, "A"), otraCarga]).length, 2, "Otra potencia sí es otro cálculo (el nombre de la carga no cuenta, los watts sí)");
+  esIgual(agruparCircuitosIdenticos([{ id: 1, board: "TA", circ: "X" }, { id: 2, board: "TA", circ: "X2" }]).length, 2, "Sin captura guardada (circuitos antiguos) nunca se juntan");
+  esIgual(agruparCircuitosIdenticos([]).length, 0, "Memoria vacía");
+
+  // rótulos
+  esIgual(rotuloNumeros([19]), "19", "Una sola hoja: su número");
+  esIgual(rotuloNumeros([19, 20, 21, 22]), "19 a 22", "Consecutivos: «19 a 22»");
+  esIgual(rotuloNumeros([6, 9, 10]), "6, 9, 10", "No consecutivos: separados por coma");
+  esIgual(nombreDeGrupo(["Aspiradora 1", "Aspiradora 2", "Aspiradora 12"]), "Aspiradora 1 a 12", "Serie numerada: «Aspiradora 1 a 12»");
+  esIgual(nombreDeGrupo(["Bomba A 5 HP", "Reciclador 5 HP"]), "Bomba A 5 HP · Reciclador 5 HP", "Nombres distintos: todos, separados por «·»");
+  esIgual(nombreDeGrupo(["a", "b", "c", "d", "e", "f"]), "a · … · f", "Más de 4 nombres distintos: primero y último");
+  esIgual(nombreDeGrupo(["Solo"]), "Solo", "Un nombre");
+
+  // índice con grupos
+  const circ = reg.map(r => ({ tablero: r.board, circuito: r.circ }));
+  const ix = armarIndiceMemoria({ circuitos: circ, hojas: [], grupos: g });
+  esIgual(ix.porTablero[0].items.length, 3, "El índice trae un renglón por hoja");
+  esIgual(ix.porTablero[0].items[0].n, "1, 2, 3, 6", "El renglón del grupo lleva todos sus números");
+  esIgual(ix.porTablero[0].items[0].id, "circuito-1", "…y enlaza a la hoja del primero");
+  esCierto(ix.porTablero[0].items[0].nombre.endsWith("(×4)"), "…con la cantidad");
+  esIgual(ix.porTablero[0].items[1].nombre, "Bomba", "Una hoja sencilla conserva su nombre");
+  esIgual(armarIndiceMemoria({ circuitos: circ, hojas: [] }).porTablero[0].items.length, 6, "Sin grupos el índice sigue listando cada circuito");
+});
+
 grupo("Memoria impresa — nombre del PDF", () => {
   esIgual(nombreArchivoMemoria("Autolavado Danjo Mexicali"), "Memoria de cálculo - Autolavado Danjo Mexicali", "El nombre lleva el del proyecto");
   esIgual(nombreArchivoMemoria("Autolavado — cuadro ajustado (v2)"), "Memoria de cálculo - Autolavado — cuadro ajustado (v2)", "Conserva acentos, guiones y paréntesis");
