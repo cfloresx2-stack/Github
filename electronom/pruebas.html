@@ -1557,6 +1557,74 @@ grupo("Electrodo complementario declarado, sin resistividad", () => {
   esIgual(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: ins }).length, 0, "Con el electrodo declarado la compuerta no pide la resistividad");
 });
 
+grupo("Lista de materiales", () => {
+  const circ = (id, nombre, board, o) => ({
+    id, circ: nombre, board, va: 5000, voltage: o.voltage || 127, fases: o.fases, systemKey: o.sys, awg: o.awg, awgTierra: o.tierra, breakerA: o.brk,
+    conduitName: o.canal || "PVC Cédula 40 (Art. 352/353)", conduitTrade: o.medida || '1/2"',
+    formSnapshot: o.sinCaptura ? undefined : { length: String(o.largo), nParalelo: String(o.par || 1), material: o.mat || "cu", insulType: o.ais || "THWN-2", installMethod: o.inst || "conduit" },
+  });
+  const reg = [
+    circ(1, "F1 Alimentador a TA", "TG", { fases: 3, sys: "3F-1T", awg: "300", tierra: "1", brk: 600, largo: 20, par: 2, medida: '2-1/2"', voltage: 220 }),
+    circ(2, "Contactos 1", "TA", { fases: 1, sys: "1F-1N-1T", awg: "12", tierra: "12", brk: 20, largo: 30 }),
+    circ(3, "Contactos 2", "TA", { fases: 1, sys: "1F-1N-1T", awg: "12", tierra: "12", brk: 20, largo: 30 }),
+    circ(4, "Bomba 2F", "TA", { fases: 2, sys: "2F-1T", awg: "12", tierra: "12", brk: 20, largo: 10, voltage: 220 }),
+  ];
+  const m = listaDeMateriales(reg, { desperdicioPct: 10, electrodo: { complementario: true, largoM: 2.44, diamMm: 16 } });
+  const fila = (uso, calibre) => m.conductores.find(c => c.uso === uso && c.calibre === calibre);
+
+  // conductores
+  esIgual(fila("fase y neutro", "300").metros, 120, "Alimentador: 3 fases × 20 m × 2 paralelos = 120 m de 300 kcmil");
+  esIgual(fila("tierra", "1").metros, 40, "…y la tierra, una por tubería en paralelo: 20 m × 2 = 40 m de 1 AWG");
+  esIgual(fila("fase y neutro", "12").metros, 140, "12 AWG de fase y neutro: (1+1)×30 + (1+1)×30 + 2×10 (sin neutro) = 140 m");
+  esIgual(fila("tierra", "12").metros, 70, "12 AWG de tierra: 30 + 30 + 10 = 70 m");
+  esIgual(fila("fase y neutro", "12").circuitos, 3, "Cuenta los circuitos que usan ese calibre");
+  esIgual(fila("fase y neutro", "12").conDesperdicio, 154, "Con 10 % de desperdicio: 140 → 154 m");
+  esIgual(fila("tierra", "12").conDesperdicio, 77, "70 m × 1.10 = 77 m (sin error de redondeo)");
+  esIgual(m.conductores[0].uso + "|" + m.conductores[m.conductores.length - 1].uso, "fase y neutro|tierra", "Primero fase y neutro, al final las tierras");
+  esIgual(m.conductores.filter(c => c.uso === "fase y neutro").map(c => c.calibre).join(), "12,300", "Del calibre más chico al más grande");
+
+  // canalización
+  const t = x => m.canalizaciones.find(c => c.medida === x);
+  esIgual(t('2-1/2"').metros, 40, 'Tubería de 2-1/2": 20 m × 2 tuberías en paralelo = 40 m');
+  esIgual(t('1/2"').metros, 70, 'Tubería de 1/2": 30 + 30 + 10 = 70 m');
+  esIgual(t('1/2"').conDesperdicio, 77, "…con desperdicio 77 m");
+  esIgual(t('1/2"').tramos, 26, "…son 26 tramos de 3 m (77 / 3, hacia arriba)");
+  esIgual(t('1/2"').circuitos, 3, "Cuenta los circuitos");
+  const mOrden = listaDeMateriales([
+    circ(1, "a", "TG", { fases: 3, sys: "3F-1T", awg: "4", tierra: "8", brk: 100, largo: 10, medida: '2"' }),
+    circ(2, "b", "TG", { fases: 3, sys: "3F-1T", awg: "4", tierra: "8", brk: 100, largo: 10, medida: '2-1/2"' }),
+    circ(3, "c", "TG", { fases: 3, sys: "3F-1T", awg: "4", tierra: "8", brk: 100, largo: 10, medida: '1/2"' }),
+    circ(4, "d", "TG", { fases: 3, sys: "3F-1T", awg: "4", tierra: "8", brk: 100, largo: 10, medida: '1"' }),
+    circ(5, "e", "TG", { fases: 3, sys: "3F-1T", awg: "4", tierra: "8", brk: 100, largo: 10, medida: '3/4"' }),
+  ]);
+  esIgual(mOrden.canalizaciones.map(c => c.medida).join(" "), '1/2" 3/4" 1" 2" 2-1/2"', "La tubería sale por tamaño comercial, no por orden alfabético");
+
+  // interruptores
+  esIgual(m.interruptores.map(i => `${i.amperes}A${i.polos}P×${i.cantidad}`).join(), "20A1P×2,20A2P×1,600A3P×1", "Interruptores por capacidad y polos");
+
+  // tableros
+  const tab = n => m.tableros.find(x => x.nombre === n);
+  esIgual(tab("TA").circuitos + "|" + tab("TA").espacios, "3|4", "TA: 3 circuitos que ocupan 4 espacios (1 + 1 + 2 polos)");
+  esIgual(tab("TG").espacios, 3, "TG: el alimentador trifásico ocupa 3 espacios");
+  esCierto(BREAKER_SIZES.includes(tab("TA").principal), "El principal sugerido es un valor estándar");
+
+  // puesta a tierra
+  esIgual(m.puestaATierra.varillas, 2, "Electrodo complementario: 2 varillas");
+  esIgual(listaDeMateriales(reg, { electrodo: { complementario: false, largoM: 2.44, diamMm: 16 } }).puestaATierra.varillas, 1, "Sin complementario: 1 varilla");
+  esIgual(listaDeMateriales(reg, {}).puestaATierra, null, "Sin electrodo definido no se inventa");
+
+  // casos especiales
+  const mAl = listaDeMateriales([circ(1, "Al", "TG", { fases: 3, sys: "3F-1T", awg: "4/0", tierra: "4", brk: 200, largo: 10, mat: "al", ais: "XHHW-2" })]);
+  esIgual(mAl.conductores[0].material + "|" + mAl.conductores[0].aislamiento, "Aluminio|XHHW-2", "Aluminio y su aislamiento van en renglón aparte");
+  const mCh = listaDeMateriales([circ(1, "Ch", "TG", { fases: 3, sys: "3F-1T", awg: "250", tierra: "4", brk: 200, largo: 10, par: 2, inst: "charola", canal: "Charola portacable", medida: "30 cm (charola)" })]);
+  esIgual(mCh.canalizaciones[0].tipo + "|" + mCh.canalizaciones[0].metros, "Charola portacable|10", "Una charola lleva los paralelos juntos: 10 m, no 20");
+  const mViejo = listaDeMateriales([circ(1, "Viejo", "TG", { fases: 1, sys: "1F-1N-1T", awg: "12", tierra: "12", brk: 15, largo: 10, sinCaptura: true })]);
+  esIgual(mViejo.conductores.length + "|" + mViejo.interruptores.length + "|" + mViejo.sinLongitud.join(), "0|1|Viejo", "Sin captura guardada: entra en interruptores y se avisa que falta el largo");
+  esIgual(listaDeMateriales([]).conductores.length, 0, "Memoria vacía");
+  esIgual(listaDeMateriales(reg, { desperdicioPct: 0 }).conductores.find(c => c.uso === "tierra" && c.calibre === "12").conDesperdicio, 70, "Sin desperdicio no cambia el metraje");
+  esIgual(listaDeMateriales(reg, { desperdicioPct: -5 }).desperdicioPct, 0, "Un desperdicio negativo se toma como 0");
+});
+
 grupo("Memoria impresa — circuitos idénticos en una sola hoja", () => {
   const snap = (nombre, extra = {}) => ({ projName: "P", boardName: "TA", circName: nombre, circPos: "", circuitKind: "derivado", tableroDestino: "", voltage: "220", systemType: "3F-1T", length: "30",
     loads: [{ name: nombre + " (FLC 15.2 A)", watts: 4923, fp: 0.85, cont: false }], material: "cu", ...extra });
