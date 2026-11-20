@@ -2143,14 +2143,29 @@ function cadenaArranqueMotor({ flcTabla, flaPlaca, fs115 }) {
    circuitos agrupados por tablero, con el mismo numero que llevan en el
    resumen y en su hoja de calculo. Los enlaces se arman en la pantalla.
    ========================================================================= */
-function armarIndiceMemoria({ circuitos, hojas }) {
+function armarIndiceMemoria({ circuitos, hojas, grupos }) {
   const porTablero = [];
   const idx = {};
-  (circuitos || []).forEach((c, i) => {
-    const t = String(c.tablero || '').trim() || '(sin tablero)';
+  const tablero = c => String(c.tablero || '').trim() || '(sin tablero)';
+  const poner = (c, item) => {
+    const t = tablero(c);
     if (!idx[t]) { idx[t] = { tablero: t, items: [] }; porTablero.push(idx[t]); }
-    idx[t].items.push({ n: i + 1, id: 'circuito-' + (i + 1), nombre: String(c.circuito || '').trim() || '(sin nombre)' });
-  });
+    idx[t].items.push(item);
+  };
+  if (grupos) {
+    // un renglon por hoja: los circuitos identicos comparten hoja y se rotulan juntos
+    grupos.forEach(g => {
+      const primero = g.indices[0];
+      poner((circuitos || [])[primero] || {}, {
+        n: rotuloNumeros(g.indices.map(x => x + 1)), id: 'circuito-' + (primero + 1),
+        nombre: g.n > 1 ? `${nombreDeGrupo(g.nombres)} (×${g.n})` : (String(g.nombres[0] || '').trim() || '(sin nombre)'), cantidad: g.n,
+      });
+    });
+  } else {
+    (circuitos || []).forEach((c, i) => {
+      poner(c, { n: i + 1, id: 'circuito-' + (i + 1), nombre: String(c.circuito || '').trim() || '(sin nombre)' });
+    });
+  }
   const n = (circuitos || []).length;
   return {
     secciones: [
@@ -2285,4 +2300,46 @@ function flcMotorTabla({ hp, fases, voltage }) {
   const flc = fila[1 + columnas.indexOf(columna)];
   if (flc === null) return { error: `La Tabla ${nombre} no trae valor para ${etiquetaHp(hp)} hp a ${columna} V.` };
   return { flc, tabla: nombre, columna };
+}
+
+/* =========================================================================
+   CIRCUITOS IDENTICOS EN LA MEMORIA IMPRESA
+   -------------------------------------------------------------------------
+   Los circuitos del mismo tablero con exactamente la misma captura (carga,
+   tension, calibre minimo, longitud, canalizacion, etc.; solo cambian el nombre
+   y la posicion) dan un calculo identico, asi que comparten UNA hoja de calculo
+   en vez de repetirla (p. ej. "Aspiradora 1 a 12"). Los demas circuitos
+   conservan su hoja propia.
+   ========================================================================= */
+function agruparCircuitosIdenticos(registro) {
+  const grupos = [];
+  const porClave = {};
+  (registro || []).forEach((r, i) => {
+    let clave;
+    if (r.formSnapshot) {
+      // el nombre del circuito, de cada carga, la posicion y el proyecto no afectan el calculo
+      const { circName, circPos, projName, loads, ...resto } = r.formSnapshot;
+      clave = String(r.board || '') + '|' + JSON.stringify({ ...resto, loads: (loads || []).map(({ name, ...carga }) => carga) });
+    } else clave = 'sin-captura|' + i;
+    if (porClave[clave] !== undefined) { grupos[porClave[clave]].indices.push(i); return; }
+    porClave[clave] = grupos.length;
+    grupos.push({ indices: [i] });
+  });
+  return grupos.map(g => ({ indices: g.indices, n: g.indices.length, nombres: g.indices.map(i => String((registro[i] || {}).circ || '')) }));
+}
+
+// "19 a 30" si son consecutivos; "19, 22, 25" si no
+function rotuloNumeros(nums) {
+  if (nums.length === 1) return String(nums[0]);
+  const consecutivos = nums.every((x, i) => i === 0 || x === nums[i - 1] + 1);
+  return consecutivos ? `${nums[0]} a ${nums[nums.length - 1]}` : nums.join(', ');
+}
+
+// "Aspiradora 1 a 12" si todos comparten el nombre y solo cambia el numero final; si no, los nombres separados por " · " (hasta 4)
+function nombreDeGrupo(nombres) {
+  const limpios = nombres.map(n => String(n || '').trim());
+  if (limpios.length === 1) return limpios[0] || '(sin nombre)';
+  const partes = limpios.map(n => n.match(/^(.*?)\s*(\d+)$/));
+  if (partes.every(p => p && p[1] === partes[0][1])) return `${partes[0][1]} ${partes[0][2]} a ${partes[partes.length - 1][2]}`.trim();
+  return limpios.length <= 4 ? limpios.join(' · ') : `${limpios[0]} · … · ${limpios[limpios.length - 1]}`;
 }

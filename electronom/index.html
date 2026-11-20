@@ -339,7 +339,30 @@
     .resultsHead .sub { color: var(--muted) !important; }
     table.printTable thead tr { break-after: avoid; }
     table.printTable tr { break-inside: avoid; }
-    .card { break-inside: avoid; }
+    .card { break-inside: avoid; padding: 12px 14px; margin-bottom: 12px; }
+    .card h2 { margin: 0 0 8px; }
+    /* Memoria compacta: mismos datos, menos relleno; las hojas de circuito fluyen sin saltos y cada bloque no se parte */
+    details.circuitSheet { break-inside: auto; overflow: visible; margin-bottom: 10px; border-radius: 4px; }
+    details.circuitSheet > summary { padding: 5px 10px; font-size: 12px; break-after: avoid; }
+    details.circuitSheet > summary .sub { font-size: 9.5px; margin-top: 2px; color: #444 !important; }
+    .sheetBody { padding: 6px 10px; }
+    .result-block { padding: 5px 9px; margin-bottom: 5px; break-inside: avoid; }
+    .result-block h3 { font-size: 11.5px; margin: 0 0 2px; }
+    .headline { font-size: 16px; margin: 0; }
+    .headline .unit { font-size: 10.5px; }
+    .memoria { margin-top: 2px; font-size: 10px; line-height: 1.3; }
+    .memoria table { font-size: 9.5px; margin-top: 2px; }
+    .memoria td, .memoria th { padding: 1px 4px; }
+    .dictamen { padding: 5px 9px; margin-bottom: 5px; break-inside: avoid; }
+    .dictamen h3 { font-size: 11.5px; margin: 0 0 3px; }
+    .dictamenResumen { margin-bottom: 3px; gap: 5px; }
+    .hallazgo { grid-template-columns: 70px 1fr; gap: 6px; padding: 2px 0; font-size: 10px; }
+    .hallazgo .regla { font-size: 9.5px; }
+    .hallazgo .obs { line-height: 1.3; }
+    .badge { font-size: 9px; padding: 1px 6px; }
+    table.printTable { font-size: 10px; margin-top: 3px; }
+    table.printTable th { padding: 3px 5px; font-size: 9.5px; }
+    table.printTable td { padding: 2px 5px; }
     .indiceMemoria { break-inside: auto; break-after: page; }
     .indiceMemoria a { color: #000; text-decoration: none; border-bottom: 1px dotted #888; }
     .indiceMemoria .indiceCircuitos { columns: 2; column-gap: 28px; font-size: 10.5px; line-height: 1.3; margin: 1px 0 4px; }
@@ -3325,6 +3348,7 @@ function indiceMemoriaHtml(reg, hojas) {
   const ix = armarIndiceMemoria({
     circuitos: reg.map(r => ({ tablero: r.board, circuito: r.circ })),
     hojas: hojas || [],
+    grupos: agruparCircuitosIdenticos(reg),
   });
   const li = s => `<li><a href="#${s.id}">${escXml(s.titulo)}</a> <span class="hint">— ${escXml(s.detalle)}</span></li>`;
   return `<div class="card indiceMemoria">
@@ -3361,11 +3385,23 @@ document.getElementById('generateMemoria').addEventListener('click', () => {
       <td>${r.conduitTrade??'—'}</td><td>${fmt(r.dropPct,2)}%</td><td>${r.dictamen ?? '—'}</td>
     </tr>`).join("");
 
-  const detailSections = reg.map((r, i) => `
-    <details class="circuitSheet" id="circuito-${i+1}" open>
-      <summary>${i+1}. ${r.summaryHtml}</summary>
-      <div class="sheetBody">${r.bodyHtml}</div>
-    </details>`).join("");
+  // Circuitos identicos (mismo tablero y misma captura) comparten UNA hoja de calculo
+  const grupos = agruparCircuitosIdenticos(reg);
+  const detailSections = grupos.map(g => {
+    const i = g.indices[0], r = reg[i];
+    const resumen = g.n > 1
+      ? r.summaryHtml.replace('Circuito: ' + (r.circ || '—'), `Circuitos: ${escXml(nombreDeGrupo(g.nombres))} (×${g.n})`)
+      : r.summaryHtml;
+    const anclas = g.indices.slice(1).map(x => `<span id="circuito-${x + 1}"></span>`).join('');
+    const aviso = g.n > 1
+      ? `<p style="margin:0 0 6px;font-size:10px"><b>Esta hoja aplica a ${g.n} circuitos idénticos</b> (misma carga, calibre, longitud y condiciones de instalación): ${g.indices.map(x => `${x + 1}. ${escXml(reg[x].circ || '—')}`).join(' · ')}.</p>`
+      : '';
+    return `
+    <details class="circuitSheet" id="circuito-${i + 1}" open>
+      <summary>${rotuloNumeros(g.indices.map(x => x + 1))}. ${resumen}</summary>
+      <div class="sheetBody">${anclas}${aviso}${r.bodyHtml}</div>
+    </details>`;
+  }).join("");
 
   document.getElementById('printArea').innerHTML = `
     <div class="resultsHead">
