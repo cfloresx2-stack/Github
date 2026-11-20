@@ -2420,3 +2420,108 @@ function listaDeMateriales(registro, opciones) {
   const puestaATierra = e ? { varillas: 1 + (e.complementario ? 1 : 0), largoM: e.largoM, diamMm: e.diamMm } : null;
   return { desperdicioPct, conductores, canalizaciones, interruptores, tableros, puestaATierra, sinLongitud };
 }
+
+/* =========================================================================
+   REPORTE PARA UVIE  (NOM-001-SEDE-2018, Capitulo 11: Procedimiento para la
+   Evaluacion de la Conformidad, numerales 6.2, 7.1 y 7.2)
+   -------------------------------------------------------------------------
+   Con menos de 100 kW (numeral 7.1) el proyecto debe llevar diagrama unifilar,
+   relacion de cargas y lista de materiales y equipos (con la informacion de los
+   transformadores y los documentos que prueben su aprobacion). Con 100 kW o mas,
+   o con areas peligrosas (numeral 7.2): unifilar completo, cuadro de distribucion
+   de cargas por circuito, plano electrico de planta y elevacion, listas de
+   materiales y de equipos, croquis de localizacion y memoria tecnica (corto
+   circuito trifasico, falla de fase a tierra, malla de tierra de la subestacion y
+   caida de tension). ElectroNOM dice, de cada documento, que incluye, cual incluye
+   solo en parte y que debe aportar el proyectista No emite el dictamen: lo emite
+   la UVIE despues de la visita de verificacion.
+   ========================================================================= */
+const TIPOS_INSTALACION_UVIE = [
+  { id: 'concentracion', etiqueta: 'Lugar de concentración pública' },
+  { id: 'peligrosa', etiqueta: 'Área peligrosa (clasificada)' },
+  { id: 'industria', etiqueta: 'Industria' },
+  { id: 'otro', etiqueta: 'Otro' },
+];
+const TIPOS_VERIFICACION_UVIE = [
+  { id: 'nueva', etiqueta: 'Instalación nueva' },
+  { id: 'ampliacion', etiqueta: 'Ampliación de una instalación' },
+  { id: 'modificacion', etiqueta: 'Modificación de una instalación' },
+  { id: 'periodica', etiqueta: 'Verificación periódica (áreas peligrosas)' },
+  { id: 'subestacion', etiqueta: 'Subestación' },
+  { id: 'anterior', etiqueta: 'Instalación construida antes de la NOM-001-SEDE-2018' },
+];
+const SUBESTACIONES_UVIE = [
+  { id: 'poste', etiqueta: 'Tipo poste o neutro corrido del suministrador (no requiere malla de tierra)' },
+  { id: 'otra', etiqueta: 'Otro tipo de subestación (requiere malla de tierra)' },
+  { id: 'sin', etiqueta: 'Sin subestación propia' },
+];
+
+// Carga instalada en kW: suma de los watts de las cargas de los circuitos derivados (un alimentador resume la carga de otro
+// tablero y no se suma otra vez). Es la carga instalada, sin factores de demanda.
+function cargaInstaladaKW(registro) {
+  let w = 0, sinCaptura = 0;
+  (registro || []).forEach(r => {
+    if (r.circuitKindLabel === 'Alimentador' || r.destino) return;
+    const cargas = r.formSnapshot && r.formSnapshot.loads;
+    if (!cargas) { sinCaptura++; return; }
+    w += cargas.reduce((s, l) => s + (parseFloat(l.watts) || 0), 0);
+  });
+  return { kW: w / 1000, sinCaptura };
+}
+
+function nombreArchivoReporteUvie(proyecto) {
+  return nombreArchivoMemoria(proyecto).replace('Memoria de cálculo', 'Reporte para UVIE');
+}
+
+// Campos del expediente que faltan por capturar (la carátula los deja en blanco)
+const CAMPOS_EXPEDIENTE = [
+  ['solicitante', 'nombre o razón social del solicitante'], ['calle', 'calle del domicilio'], ['numero', 'número del domicilio'],
+  ['colonia', 'colonia o población'], ['municipio', 'municipio o delegación'], ['cp', 'código postal'], ['entidad', 'entidad federativa'],
+  ['telefono', 'teléfono'], ['correo', 'correo electrónico'], ['scian', 'clasificación SCIAN de la actividad'],
+  ['tipoInstalacion', 'tipo de instalación'], ['tipoVerificacion', 'tipo de verificación'],
+  ['respNombre', 'nombre del responsable del proyecto'], ['respCedula', 'cédula profesional del responsable'], ['respFecha', 'fecha de elaboración del proyecto'],
+];
+
+function reporteUVIE({ cargaKW, expediente, hayTransformador }) {
+  const ex = expediente || {};
+  const peligrosa = ex.tipoInstalacion === 'peligrosa';
+  const completo = cargaKW >= 100 || peligrosa;
+  const numeral = completo ? '7.2' : '7.1';
+  const I = (numeralDoc, concepto, estado, detalle) => ({ numeral: numeralDoc, concepto, estado, detalle });
+  const INC = 'Incluido', PAR = 'Incluido en parte', APO = 'Lo aporta el proyectista', NA = 'No aplica';
+  const items = [];
+  if (!completo) {
+    items.push(
+      I('7.1', 'Diagrama unifilar', PAR, 'Unifilar detallado en la memoria y en DXF para AutoCAD. Anota en el plano la acometida y el intervalo de ajuste de las protecciones.'),
+      I('7.1', 'Relación de cargas', INC, 'Cuadro de cargas por tablero, con el desbalanceo entre fases (memoria y Excel).'),
+      I('7.1', 'Lista de materiales y equipos utilizados de manera general', INC, 'Lista de materiales (memoria y Excel): conductores, tubería, interruptores, tableros y puesta a tierra.'),
+      I('7.1', 'Información de los transformadores y documentos que comprueban que están aprobados y cumplen las NOM', hayTransformador ? PAR : APO,
+        hayTransformador ? 'Los datos del transformador (kVA, tensiones, %Z) salen en la memoria. Los documentos de aprobación los aporta el proyectista.' : 'Aplica si hay transformador; los documentos los aporta el proyectista.'),
+    );
+  } else {
+    const malla = ex.subestacion === 'poste' || ex.subestacion === 'sin'
+      ? I('7.2.VII.3', 'Malla de tierra de la subestación (resistividad del terreno, tensiones de paso y contacto, resistencia, conductor y electrodos)', NA,
+        ex.subestacion === 'poste' ? 'Subestación tipo poste o neutro corrido del suministrador: la norma no pide la malla.' : 'Sin subestación propia.')
+      : I('7.2.VII.3', 'Malla de tierra de la subestación (resistividad del terreno, tensiones de paso y contacto, resistencia, conductor y electrodos)', APO,
+        ex.subestacion === 'otra' ? 'ElectroNOM no calcula la malla (solo la resistencia de un electrodo de varillas).' : 'ElectroNOM no calcula la malla. Indica el tipo de subestación en la tarjeta 8 para saber si aplica.');
+    items.push(
+      I('7.2.I', 'Diagrama unifilar: acometida, subestación, alimentadores (conductores, longitud y corriente) y protecciones (tipo, capacidad interruptiva e intervalo de ajuste)', PAR,
+        'Unifilar detallado en la memoria y en DXF. Falta anotar las características de la acometida y el intervalo de ajuste de las protecciones de los alimentadores.'),
+      I('7.2.II', 'Cuadro de distribución de cargas por circuito (fase, carga, corriente, conductor, protección y desbalanceo en por ciento)', PAR,
+        'Cuadro de cargas (memoria y Excel) con el desbalanceo. Para alumbrado y contactos la norma también pide el número de lámparas y de contactos por circuito: ElectroNOM no lo captura.'),
+      I('7.2.III', 'Plano eléctrico de planta y elevación (escala legible, datos del solicitante y del responsable del proyecto)', APO,
+        'Se elabora en AutoCAD; los datos del solicitante y del responsable salen en la carátula de este reporte.'),
+      I('7.2.IV', 'Lista de los principales materiales', INC, 'Lista de materiales (memoria y Excel).'),
+      I('7.2.V', 'Lista de los principales equipos (incluidos los transformadores) y documentos que comprueban su aprobación y cumplimiento de las NOM', PAR,
+        'Interruptores y tableros van en la lista de materiales y el transformador en la memoria. Los documentos de aprobación los aporta el proyectista.'),
+      I('7.2.VI', 'Croquis de localización del domicilio de la instalación', APO, 'Lo aporta el proyectista.'),
+      I('7.2.VII.1', 'Memoria técnica: corriente de cortocircuito trifásico', INC, 'Datos generales de la instalación y verificación de capacidad interruptiva (memoria).'),
+      I('7.2.VII.2', 'Memoria técnica: corriente de falla de fase a tierra (monofásico y bifásico)', APO, 'ElectroNOM no la calcula; se anexa aparte.'),
+      malla,
+      I('7.2.VII.4', 'Memoria técnica: caída de tensión en alimentadores y circuitos derivados', INC, 'Memoria de cálculo (hoja de cada circuito).'),
+    );
+  }
+  const faltantes = CAMPOS_EXPEDIENTE.filter(([k]) => !String(ex[k] || '').trim()).map(([, t]) => t);
+  const cuenta = e => items.filter(x => x.estado === e).length;
+  return { numeral, completo, cargaKW, items, faltantes, resumen: { incluido: cuenta(INC), parcial: cuenta(PAR), aporta: cuenta(APO), noAplica: cuenta(NA) } };
+}

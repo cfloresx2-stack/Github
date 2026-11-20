@@ -904,6 +904,44 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>8. Datos del expediente <span class="hint">(opcional; salen en el reporte para UVIE)</span></h2>
+      <p class="hint" style="margin-top:6px">El plano y el expediente piden estos datos del solicitante y del responsable del proyecto. Puedes dejarlos vacíos: en el reporte salen en blanco para llenarlos a mano. No se piden datos personales como RFC o CURP: los captura la UVIE.</p>
+      <label style="margin-top:10px">Solicitante de la verificación <span class="hint">(nombre o razón social)</span></label>
+      <input type="text" id="expSolicitante" autocomplete="off">
+      <div class="row2">
+        <div><label>Calle</label><input type="text" id="expCalle" autocomplete="off"></div>
+        <div><label>Número</label><input type="text" id="expNumero" autocomplete="off"></div>
+      </div>
+      <div class="row2">
+        <div><label>Colonia o población</label><input type="text" id="expColonia" autocomplete="off"></div>
+        <div><label>Municipio o delegación</label><input type="text" id="expMunicipio" autocomplete="off"></div>
+      </div>
+      <div class="row2">
+        <div><label>Código postal</label><input type="text" id="expCP" autocomplete="off"></div>
+        <div><label>Entidad federativa</label><input type="text" id="expEntidad" autocomplete="off"></div>
+      </div>
+      <div class="row2">
+        <div><label>Teléfono</label><input type="text" id="expTelefono" autocomplete="off"></div>
+        <div><label>Correo electrónico</label><input type="text" id="expCorreo" autocomplete="off"></div>
+      </div>
+      <label>Clasificación SCIAN de la actividad <span class="hint">(código o actividad; se consulta en el portal del INEGI)</span></label>
+      <input type="text" id="expScian" autocomplete="off">
+      <div class="row2">
+        <div><label>Tipo de instalación</label><select id="expTipoInstalacion"></select></div>
+        <div><label>Tipo de verificación</label><select id="expTipoVerificacion"></select></div>
+      </div>
+      <label>Subestación <span class="hint">(la norma no pide la malla de tierra si es tipo poste o el neutro es corrido del suministrador)</span></label>
+      <select id="expSubestacion"></select>
+      <h3 style="font-size:13px; margin:14px 0 6px; color:var(--navy)">Responsable del proyecto eléctrico</h3>
+      <div class="row2">
+        <div><label>Nombre completo</label><input type="text" id="expRespNombre" autocomplete="off"></div>
+        <div><label>Cédula profesional</label><input type="text" id="expRespCedula" autocomplete="off"></div>
+      </div>
+      <label>Fecha de elaboración del proyecto</label>
+      <input type="date" id="expRespFecha">
+    </div>
+
     <div id="editandoBanner" class="checkline" style="display:none; background:var(--ice); border-radius:8px; padding:10px 12px; margin-bottom:10px">
       <span>✏️ Editando un circuito ya agregado a la memoria — al calcular y volver a agregar, <b>reemplaza al original</b>.</span>
       <button type="button" id="cancelarEdicion" class="miniBtn" style="margin-left:auto">Cancelar edición</button>
@@ -931,6 +969,7 @@
       <button id="exportarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">💾 Guardar proyecto (archivo)</button>
       <button id="importarProyecto" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px">📂 Cargar proyecto (archivo)</button>
       <button id="descargarMateriales" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px" title="Cantidades de conductores, tubería, interruptores, tableros y puesta a tierra">📦 Lista de materiales (Excel)</button>
+      <button id="generarReporteUvie" type="button" class="miniBtn" style="padding:11px 18px;font-size:13.5px" title="Carátula del expediente, datos para el SEDIVER y lista de verificación de documentos">📋 Reporte para UVIE (PDF)</button>
       <input type="file" id="importarProyectoArchivo" accept=".json,application/json" style="display:none">
     </div>
     <div class="checkline" style="margin:8px 0 0">
@@ -2663,6 +2702,7 @@ function capturarInstalacion() {
     kva: v('ccArbolKva'), zPct: v('ccArbolZ'), voltage: v('ccArbolVoltage'), primario: v('ccArbolPrim'), zSourcePu: v('ccArbolZsource'),
     verificarCc: document.getElementById('ccArbolEnabled').checked, tDespeje: v('ccArbolTsc'), tDespejeTipo: despejeTipoGeneral, tDespejePorTablero: { ...despejePorTablero }, tDespejeTipoPorTablero: { ...despejeTipoPorTablero }, icu: { ...icuPorTablero }, icuEspecificado: { ...icuEspecificadoPorTablero },
     electrodo: { habilitado: document.getElementById('instElEnabled').checked, rho: v('instElRho'), largo: v('instElLargo'), diam: v('instElDiam'), comp: document.getElementById('instElComp').checked, sinCalculo: document.getElementById('instElSinCalc').checked },
+    expediente: capturarExpediente(),
   };
 }
 function guardarInstalacion() {
@@ -2689,6 +2729,7 @@ function restaurarInstalacion(t) {
   document.getElementById('instElSinCalc').checked = !!e.sinCalculo;
   actualizarModoElectrodo();
   actualizarResultadoElectrodoInstalacion();
+  restaurarExpediente(t.expediente);
 }
 
 function electrodoInstalacion() {
@@ -3410,6 +3451,109 @@ document.getElementById('descargarMateriales').addEventListener('click', () => {
   a.href = url; a.download = `Lista de materiales - ${proj}.xls`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+});
+
+/* ---- Datos del expediente y reporte para UVIE ---- */
+const EXPEDIENTE_CAMPOS = {
+  solicitante: 'expSolicitante', calle: 'expCalle', numero: 'expNumero', colonia: 'expColonia', municipio: 'expMunicipio', cp: 'expCP', entidad: 'expEntidad',
+  telefono: 'expTelefono', correo: 'expCorreo', scian: 'expScian', tipoInstalacion: 'expTipoInstalacion', tipoVerificacion: 'expTipoVerificacion',
+  subestacion: 'expSubestacion', respNombre: 'expRespNombre', respCedula: 'expRespCedula', respFecha: 'expRespFecha',
+};
+function capturarExpediente() {
+  const r = {};
+  Object.entries(EXPEDIENTE_CAMPOS).forEach(([k, id]) => { r[k] = document.getElementById(id).value; });
+  return r;
+}
+function restaurarExpediente(ex) {
+  const e = ex || {};
+  Object.entries(EXPEDIENTE_CAMPOS).forEach(([k, id]) => { document.getElementById(id).value = e[k] ?? ''; });
+}
+(function iniciarExpediente() {
+  const lista = (id, opciones, primera) => { document.getElementById(id).innerHTML = `<option value="">${primera}</option>` + opciones.map(o => `<option value="${o.id}">${escXml(o.etiqueta)}</option>`).join(''); };
+  lista('expTipoInstalacion', TIPOS_INSTALACION_UVIE, '— elegir —');
+  lista('expTipoVerificacion', TIPOS_VERIFICACION_UVIE, '— elegir —');
+  lista('expSubestacion', SUBESTACIONES_UVIE, '— elegir —');
+  Object.values(EXPEDIENTE_CAMPOS).forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', guardarInstalacion);
+    el.addEventListener('change', guardarInstalacion);
+  });
+})();
+
+// Reporte para UVIE: caratula del expediente, datos para el SEDIVER y lista de verificacion de documentos
+function reporteUvieHtml() {
+  const reg = loadRegistry();
+  const ex = capturarExpediente();
+  const carga = cargaInstaladaKW(reg);
+  const kva = parseFloat(document.getElementById('ccArbolKva').value) || 0;
+  const volt = parseFloat(document.getElementById('ccArbolVoltage').value) || 0;
+  const r = reporteUVIE({ cargaKW: carga.kW, expediente: ex, hayTransformador: kva > 0 });
+  const proj = nombreDelProyecto('Proyecto sin nombre');
+  const hoy = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+  const blanco = '<span style="color:#999">______________________________</span>';
+  const v = t => (String(t || '').trim() ? escXml(String(t).trim()) : blanco);
+  const etiqueta = (lista, id) => ((lista.find(x => x.id === id) || {}).etiqueta) || '';
+  const fila = (k, valor) => `<tr><th style="text-align:left;width:34%">${k}</th><td>${valor}</td></tr>`;
+  const domicilio = [ex.calle && ex.numero ? `${ex.calle} ${ex.numero}` : (ex.calle || ex.numero), ex.colonia, ex.municipio, ex.cp ? `C.P. ${ex.cp}` : '', ex.entidad].filter(x => String(x || '').trim()).join(', ');
+  const fechaResp = ex.respFecha ? new Date(ex.respFecha + 'T12:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+  const insignia = { 'Incluido': 'ok', 'Incluido en parte': 'adv', 'Lo aporta el proyectista': 'na', 'No aplica': 'na' };
+  return `
+    <div class="resultsHead">
+      <div class="proj">Reporte para UVIE &mdash; ${escXml(proj)}</div>
+      <div class="sub">Generado el ${hoy} &middot; NOM-001-SEDE-2018, Capítulo 11 (Procedimiento para la Evaluación de la Conformidad)</div>
+    </div>
+    <div class="card">
+      <h2>Carátula del expediente</h2>
+      <table class="printTable"><tbody>
+        ${fila('Solicitante de la verificación', v(ex.solicitante))}
+        ${fila('Domicilio de la instalación', v(domicilio))}
+        ${fila('Teléfono', v(ex.telefono))}
+        ${fila('Correo electrónico', v(ex.correo))}
+        ${fila('Clasificación SCIAN de la actividad', v(ex.scian))}
+        ${fila('Responsable del proyecto eléctrico', v(ex.respNombre))}
+        ${fila('Cédula profesional', v(ex.respCedula))}
+        ${fila('Fecha de elaboración del proyecto', v(fechaResp))}
+        ${fila('Firma o carta responsiva', '<div style="height:34px"></div>')}
+      </tbody></table>
+    </div>
+    <div class="card">
+      <h2>Datos de la instalación para el SEDIVER</h2>
+      <table class="printTable"><tbody>
+        ${fila('Carga instalada', `<b>${fmt(carga.kW, 1)} kW</b> <span class="hint">(suma de los watts de las cargas capturadas en los circuitos derivados, sin factores de demanda${carga.sinCaptura ? `; ${carga.sinCaptura} circuito(s) antiguos sin captura no se suman` : ''})</span>`)}
+        ${fila('Tensión eléctrica de suministro', volt > 0 ? `${fmt(volt, 0)} V` : blanco)}
+        ${fila('Capacidad de la subestación', kva > 0 ? `${fmt(kva, 1)} kVA` : blanco)}
+        ${fila('Tipo de instalación', v(etiqueta(TIPOS_INSTALACION_UVIE, ex.tipoInstalacion)))}
+        ${fila('Tipo de verificación', v(etiqueta(TIPOS_VERIFICACION_UVIE, ex.tipoVerificacion)))}
+        ${fila('Subestación', v(etiqueta(SUBESTACIONES_UVIE, ex.subestacion)))}
+        ${fila('Alcance que aplica', `<b>Numeral ${r.numeral} del PEC</b> <span class="hint">${r.completo ? '(carga instalada de 100 kW o más, o con áreas peligrosas: proyecto eléctrico completo)' : '(carga instalada menor a 100 kW: diagrama unifilar, relación de cargas y lista de materiales y equipos)'}</span>`)}
+      </tbody></table>
+    </div>
+    <div class="card" style="break-inside:auto">
+      <h2>Lista de verificación de documentos <span class="hint">(numeral ${r.numeral})</span></h2>
+      <table class="printTable"><thead><tr><th>Numeral</th><th>Documento que pide la norma</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>
+        ${r.items.map(x => `<tr><td>${escXml(x.numeral)}</td><td>${escXml(x.concepto)}</td><td><span class="badge ${insignia[x.estado]}">${escXml(x.estado)}</span></td><td>${escXml(x.detalle)}</td></tr>`).join('')}
+      </tbody></table>
+      <p class="hint" style="margin-top:6px">${r.resumen.incluido} incluido(s) · ${r.resumen.parcial} incluido(s) en parte · ${r.resumen.aporta} por aportar el proyectista${r.resumen.noAplica ? ` · ${r.resumen.noAplica} no aplica` : ''}.</p>
+    </div>
+    <div class="card">
+      <h2>Datos del expediente por completar</h2>
+      ${r.faltantes.length ? `<p style="margin:0 0 4px">Faltan en la tarjeta 8 de la Calculadora (salen en blanco en la carátula): ${r.faltantes.map(escXml).join('; ')}.</p>` : '<p style="margin:0">Los datos del expediente están completos.</p>'}
+    </div>
+    <p class="hint" style="margin:12px 0">Este reporte indica qué documentos del proyecto incluye ElectroNOM y cuáles debe aportar el proyectista. No sustituye la verificación ni el dictamen: los emite la UVIE después de la revisión del proyecto y de la visita (numerales 6.3 a 6.7). Las comprobaciones de resistencia de aislamiento, continuidad, resistencia de la red de tierra y polaridad las realiza la UVIE en su visita (6.6). Los datos personales de identificación (RFC, CURP y similares) los captura la UVIE en el SEDIVER; ElectroNOM no los pide. Herramienta de apoyo al diseño: los resultados deben ser revisados y validados por el responsable del proyecto.</p>`;
+}
+document.getElementById('generarReporteUvie').addEventListener('click', () => {
+  const aviso = document.getElementById('memoriaAviso');
+  if (loadRegistry().length === 0) {
+    aviso.textContent = 'La memoria está vacía: agrega circuitos o carga un proyecto, y vuelve a intentar.';
+    aviso.style.display = 'block';
+    return;
+  }
+  aviso.style.display = 'none';
+  document.getElementById('printArea').innerHTML = reporteUvieHtml();
+  const tituloOriginal = document.title;
+  document.title = nombreArchivoReporteUvie(nombreDelProyecto('Proyecto sin nombre'));
+  window.addEventListener('afterprint', () => { document.title = tituloOriginal; }, { once: true });
+  window.print();
 });
 
 // Indice de la memoria impresa: enlaces internos (el PDF del navegador los conserva; no puede numerar paginas)

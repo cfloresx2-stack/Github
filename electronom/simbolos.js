@@ -5,7 +5,7 @@
    centrados en 0,0, orientacion vertical, terminales en y = +-14) mas 5
    simbolos nuevos (CONT110, CONT220, CONT_GFCI_WP, AC_MINISPLIT, AC_CENTRAL)
    redibujados en el mismo estilo y aprobados por Cesar. CONTACTOR (KM) y
-   REL_SOBRECARGA (OL) son del arranque de motor: pendientes de aprobacion.
+   REL_SOBRECARGA (OL) son del arranque de motor: aprobados por Cesar.
    Primitivas: ['L',x1,y1,x2,y2] linea; ['C',x,y,r] circulo; ['P',[[x,y],...],cerrada]
    polilinea; ['T',x,y,alto,texto] texto; ['D'] punto de union relleno.
    Los nombres llevan el mismo sufijo que los bloques del DXF (ESCO_02_CB_ANSI -> 02_CB_ANSI).
