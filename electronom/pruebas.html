@@ -1557,6 +1557,53 @@ grupo("Electrodo complementario declarado, sin resistividad", () => {
   esIgual(evaluarCompletitud({ registro: reg, pendiente: null, instalacion: ins }).length, 0, "Con el electrodo declarado la compuerta no pide la resistividad");
 });
 
+grupo("Reporte para UVIE (PEC, NOM-001-SEDE-2018 capítulo 11)", () => {
+  const carga = (nombre, watts, extra = {}) => ({ circ: nombre, circuitKindLabel: "Circuito derivado", destino: "", formSnapshot: { loads: [{ name: nombre, watts, fp: 0.9, cont: false }, ...(extra.mas || [])] } });
+  // carga instalada
+  const reg = [
+    { circ: "F1 Alimentador", circuitKindLabel: "Alimentador", destino: "TG", formSnapshot: { loads: [{ name: "x", watts: 999999, fp: 1, cont: true }] } },
+    carga("Bomba", 5000), carga("Alumbrado", 1200, { mas: [{ name: "Contactos", watts: 800, fp: 0.9, cont: false }] }),
+    { circ: "Viejo", circuitKindLabel: "Circuito derivado", destino: "" },
+  ];
+  const c = cargaInstaladaKW(reg);
+  esIgual(c.kW, 7, "Carga instalada: 5000 + 1200 + 800 W = 7 kW (el alimentador no se suma otra vez)");
+  esIgual(c.sinCaptura, 1, "Un circuito antiguo sin captura se avisa");
+  esIgual(cargaInstaladaKW([]).kW, 0, "Memoria vacía");
+
+  // alcance: 100 kW es el límite del numeral 7.1 / 7.2
+  esIgual(reporteUVIE({ cargaKW: 99.9, expediente: {}, hayTransformador: true }).numeral, "7.1", "Menos de 100 kW: numeral 7.1");
+  esIgual(reporteUVIE({ cargaKW: 100, expediente: {}, hayTransformador: true }).numeral, "7.2", "100 kW exactos: numeral 7.2");
+  esIgual(reporteUVIE({ cargaKW: 40, expediente: { tipoInstalacion: "peligrosa" }, hayTransformador: false }).numeral, "7.2", "Con áreas peligrosas aplica el 7.2 aunque la carga sea menor a 100 kW");
+  const menor = reporteUVIE({ cargaKW: 50, expediente: {}, hayTransformador: true });
+  esIgual(menor.items.length, 4, "7.1: unifilar, relación de cargas, lista de materiales y equipos, y datos y documentos del transformador");
+  esIgual(menor.items.find(x => x.concepto === "Relación de cargas").estado, "Incluido", "7.1: la relación de cargas la trae ElectroNOM");
+  esIgual(reporteUVIE({ cargaKW: 50, expediente: {}, hayTransformador: false }).items[3].estado, "Lo aporta el proyectista", "7.1 sin transformador: los documentos los aporta el proyectista");
+
+  // 7.2 completo
+  const r = reporteUVIE({ cargaKW: 184, expediente: {}, hayTransformador: true });
+  const it = n => r.items.find(x => x.numeral === n);
+  esIgual(r.items.map(x => x.numeral).join(), "7.2.I,7.2.II,7.2.III,7.2.IV,7.2.V,7.2.VI,7.2.VII.1,7.2.VII.2,7.2.VII.3,7.2.VII.4", "7.2: los diez conceptos de la norma, en su orden");
+  esIgual(it("7.2.IV").estado + "|" + it("7.2.VII.1").estado + "|" + it("7.2.VII.4").estado, "Incluido|Incluido|Incluido", "Materiales, cortocircuito trifásico y caída de tensión: incluidos");
+  esIgual(it("7.2.I").estado + "|" + it("7.2.II").estado + "|" + it("7.2.V").estado, "Incluido en parte|Incluido en parte|Incluido en parte", "Unifilar, cuadro de cargas y equipos: incluidos en parte, con lo que falta");
+  esCierto(it("7.2.I").detalle.includes("intervalo de ajuste"), "El unifilar dice que falta el intervalo de ajuste de las protecciones");
+  esCierto(it("7.2.II").detalle.includes("lámparas"), "El cuadro de cargas dice que falta el número de lámparas y contactos");
+  esIgual(it("7.2.III").estado + "|" + it("7.2.VI").estado + "|" + it("7.2.VII.2").estado, "Lo aporta el proyectista|Lo aporta el proyectista|Lo aporta el proyectista", "Plano de planta, croquis y falla de fase a tierra: los aporta el proyectista");
+  esIgual(it("7.2.VII.3").estado, "Lo aporta el proyectista", "Malla de tierra: se aporta si no se sabe o si la subestación no es tipo poste");
+  esCierto(it("7.2.VII.3").detalle.includes("tarjeta 8"), "…y pide indicar el tipo de subestación");
+  esIgual(reporteUVIE({ cargaKW: 184, expediente: { subestacion: "poste" }, hayTransformador: true }).items[8].estado, "No aplica", "Subestación tipo poste o neutro corrido: la malla no aplica");
+  esIgual(reporteUVIE({ cargaKW: 184, expediente: { subestacion: "sin" }, hayTransformador: true }).items[8].estado, "No aplica", "Sin subestación propia: la malla no aplica");
+  esIgual(reporteUVIE({ cargaKW: 184, expediente: { subestacion: "otra" }, hayTransformador: true }).items[8].estado, "Lo aporta el proyectista", "Otro tipo de subestación: la malla la aporta el proyectista");
+  esIgual(r.resumen.incluido + "," + r.resumen.parcial + "," + r.resumen.aporta + "," + r.resumen.noAplica, "3,3,4,0", "Resumen: 3 incluidos, 3 en parte y 4 por aportar");
+
+  // datos del expediente
+  esIgual(r.faltantes.length, 15, "Con el expediente vacío faltan los 15 datos");
+  const completo = { solicitante: "Danjo SA", calle: "Calle 1", numero: "10", colonia: "Centro", municipio: "Mexicali", cp: "21000", entidad: "Baja California", telefono: "686", correo: "a@b.mx", scian: "811192", tipoInstalacion: "industria", tipoVerificacion: "nueva", respNombre: "Ing. X", respCedula: "123", respFecha: "2026-11-20" };
+  esIgual(reporteUVIE({ cargaKW: 184, expediente: completo, hayTransformador: true }).faltantes.length, 0, "Con todo capturado no falta nada");
+  esIgual(reporteUVIE({ cargaKW: 184, expediente: { ...completo, respCedula: "  " }, hayTransformador: true }).faltantes.join(), "cédula profesional del responsable", "Un dato en blanco o con solo espacios se avisa");
+  esCierto(TIPOS_INSTALACION_UVIE.length === 4 && TIPOS_VERIFICACION_UVIE.length === 6 && SUBESTACIONES_UVIE.length === 3, "Tipos de instalación (4) y de verificación (6) como los del numeral 6.2.XI; 3 tipos de subestación");
+  esIgual(nombreArchivoReporteUvie("Autolavado Danjo"), "Reporte para UVIE - Autolavado Danjo", "El PDF se propone con el nombre del proyecto");
+});
+
 grupo("Lista de materiales", () => {
   const circ = (id, nombre, board, o) => ({
     id, circ: nombre, board, va: 5000, voltage: o.voltage || 127, fases: o.fases, systemKey: o.sys, awg: o.awg, awgTierra: o.tierra, breakerA: o.brk,
